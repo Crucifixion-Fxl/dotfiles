@@ -13,7 +13,7 @@ log() {
 }
 
 fail() {
-  printf 'terminal-dotfiles: %s\n' "$*" >&2
+  printf 'terminal-tmux: %s\n' "$*" >&2
   exit 1
 }
 
@@ -262,7 +262,7 @@ ensure_shell_loader() {
   touch "$HOME/.zshrc"
   if ! grep -Fqx "$loader" "$HOME/.zshrc"; then
     {
-      printf '\n%s\n' '# terminal-dotfiles: portable tmux window naming'
+      printf '\n%s\n' '# terminal-tmux: portable tmux window naming'
       printf '%s\n' "$loader"
     } >> "$HOME/.zshrc"
   fi
@@ -296,10 +296,10 @@ validate() {
   [[ $(git -C "$HOME/.tmux/plugins/tmux-resurrect" rev-parse HEAD) == "$RESURRECT_COMMIT" ]] || fail "tmux-resurrect commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-continuum" rev-parse HEAD) == "$CONTINUUM_COMMIT" ]] || fail "tmux-continuum commit mismatch"
 
-  tmux -L terminal-dotfiles-check kill-server >/dev/null 2>&1 || true
-  tmux -L terminal-dotfiles-check -f "$DOTFILES_DIR/tmux/tmux.conf" new-session -d -s terminal-dotfiles-check
-  [[ $(tmux -L terminal-dotfiles-check show-options -gqv @continuum-restore) == off ]] || fail "tmux config validation failed"
-  tmux -L terminal-dotfiles-check kill-server
+  tmux -L terminal-tmux-check kill-server >/dev/null 2>&1 || true
+  tmux -L terminal-tmux-check -f "$DOTFILES_DIR/tmux/tmux.conf" new-session -d -s terminal-tmux-check
+  [[ $(tmux -L terminal-tmux-check show-options -gqv @continuum-restore) == off ]] || fail "tmux config validation failed"
+  tmux -L terminal-tmux-check kill-server
 
   printf 'tmux.conf sha256: %s\n' "$(sha256_file "$DOTFILES_DIR/tmux/tmux.conf")"
   printf 'lazygit config sha256: %s\n' "$(sha256_file "$DOTFILES_DIR/lazygit/config.yml")"

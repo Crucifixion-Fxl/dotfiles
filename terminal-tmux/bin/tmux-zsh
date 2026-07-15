@@ -4,7 +4,7 @@ set -eu
 
 zsh_path=$(command -v zsh 2>/dev/null || true)
 if [ -z "$zsh_path" ]; then
-  printf '%s\n' 'terminal-dotfiles: zsh is required but not installed' >&2
+  printf '%s\n' 'terminal-tmux: zsh is required but not installed' >&2
   exit 127
 fi
 
