@@ -57,3 +57,20 @@ done
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $path_setup_line -lt $prerequisite_line ]]
+
+# Codex intentionally follows the latest official npm release instead of the
+# versions.lock policy used by the other tools.
+NPM_ARGS=
+npm() {
+  NPM_ARGS="$*"
+}
+codex() {
+  printf '%s\n' 'codex-cli 999.0.0'
+}
+
+HOME=$TEST_HOME install_codex
+[[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @openai/codex@latest" ]]
+if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
+  printf '%s\n' 'Codex must track latest and must not be pinned in versions.lock' >&2
+  exit 1
+fi
