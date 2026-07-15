@@ -284,12 +284,22 @@ ensure_shell_loader() {
   fi
 }
 
-ensure_profile_path() {
+ensure_shell_path() {
   local path_line='export PATH="$HOME/.local/bin:$PATH"'
-  touch "$HOME/.profile"
-  if ! grep -Fqx "$path_line" "$HOME/.profile"; then
-    printf '\n%s\n' "$path_line" >> "$HOME/.profile"
+  local startup_file
+  local startup_files=("$HOME/.profile" "$HOME/.bashrc" "$HOME/.zshrc")
+
+  # An existing .bash_profile takes precedence over .profile for login Bash.
+  if [[ -e "$HOME/.bash_profile" ]]; then
+    startup_files+=("$HOME/.bash_profile")
   fi
+
+  for startup_file in "${startup_files[@]}"; do
+    touch "$startup_file"
+    if ! grep -Fqx "$path_line" "$startup_file"; then
+      printf '\n%s\n' "$path_line" >> "$startup_file"
+    fi
+  done
 }
 
 validate() {
@@ -330,6 +340,9 @@ main() {
   fi
 
   mkdir -p "$HOME/.local/bin"
+  # Persist the user-local binary path before any fallible installation step.
+  # This cannot change the parent shell, but it applies to newly opened shells.
+  ensure_shell_path
   install_prerequisites
   install_tmux
   ensure_tmux_terminfo
@@ -342,7 +355,6 @@ main() {
 
   install_links
   ensure_shell_loader
-  ensure_profile_path
   validate
 
   if tmux list-sessions >/dev/null 2>&1; then
@@ -350,6 +362,7 @@ main() {
   fi
 
   log "Installation complete"
+  printf '%s\n' 'For the current shell: export PATH="$HOME/.local/bin:$PATH"'
   printf '%s\n' "Connect with: ssh -t <host> 'PATH=\"\$HOME/.local/bin:\$PATH\" exec tmux new-session -A -s main'"
 }
 

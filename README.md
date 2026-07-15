@@ -91,8 +91,16 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/lazygit/config.yml` | `lazygit --print-config-dir` 返回目录中的 `config.yml` |
 
 已有目标文件会先重命名为带时间戳的 `.backup.*` 文件。bootstrap 还会向
-`~/.zshrc` 添加窗口命名模块的 source 行，并确保 `~/.profile` 包含
-`~/.local/bin`。
+`~/.zshrc` 添加窗口命名模块的 source 行，并确保 `~/.profile`、`~/.bashrc`
+和 `~/.zshrc` 都将 `~/.local/bin` 加入 `PATH`。如果已有 `~/.bash_profile`，
+也会同步更新它。PATH 配置会在安装开始时写入，因此后续步骤中断也不会遗漏。
+
+bootstrap 子进程无法修改已经打开的父 shell。首次安装完成后，当前终端可以执行：
+
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+hash -r
+```
 
 远端登录 shell 可以继续使用 bash；tmux 新 pane 统一进入 zsh，以保证窗口命名
 hook 在所有机器上的行为一致。
