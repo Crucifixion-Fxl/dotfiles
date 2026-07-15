@@ -58,6 +58,10 @@ delta_is_locked_version() {
   command -v delta >/dev/null 2>&1 && [[ $(delta --version 2>/dev/null) == "delta $DELTA_VERSION" ]]
 }
 
+codex_is_installed() {
+  command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
+}
+
 detect_platform() {
   case "$(uname -s)" in
     Darwin) PLATFORM_OS=darwin ;;
@@ -78,11 +82,11 @@ install_prerequisites() {
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
     run_as_root apt-get install -y \
-      bash bison ca-certificates curl gcc git make ncurses-base ncurses-bin pkg-config tar zsh \
+      bash bison ca-certificates curl gcc git make ncurses-base ncurses-bin nodejs npm pkg-config tar zsh \
       libevent-dev libncurses-dev libutf8proc-dev
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
-    local packages=(bash bison curl git libevent ncurses pkgconf utf8proc zsh)
+    local packages=(bash bison curl git libevent ncurses node pkgconf utf8proc zsh)
     log "Installing macOS prerequisites with Homebrew"
     brew install "${packages[@]}"
   fi
@@ -223,6 +227,14 @@ install_delta() {
   delta_is_locked_version || fail "git-delta $DELTA_VERSION installation verification failed"
 }
 
+install_codex() {
+  command -v npm >/dev/null 2>&1 || fail "npm is required to install Codex CLI"
+  log "Installing the latest Codex CLI into $HOME/.local/bin"
+  npm install --global --prefix "$HOME/.local" '@openai/codex@latest'
+  codex_is_installed || fail "latest Codex CLI installation verification failed"
+  log "Installed $(codex --version)"
+}
+
 backup_and_link() {
   local source=$1 destination=$2 backup
   mkdir -p "$(dirname "$destination")"
@@ -307,6 +319,7 @@ validate() {
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
   lazygit_is_locked_version || fail "expected lazygit $LAZYGIT_VERSION"
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
+  codex_is_installed || fail "Codex CLI is required"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
@@ -348,6 +361,7 @@ main() {
   ensure_tmux_terminfo
   install_lazygit
   install_delta
+  install_codex
 
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
   install_plugin tmux-resurrect https://github.com/tmux-plugins/tmux-resurrect.git "$RESURRECT_COMMIT"

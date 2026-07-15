@@ -1,8 +1,8 @@
 # dotfiles
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
-Debian/Ubuntu 远端服务器上严格复现的 tmux、lazygit、git-delta、Codex
-状态通知和 zsh 窗口命名配置。
+Debian/Ubuntu 远端服务器上严格复现的 tmux、lazygit、git-delta、Codex CLI、
+Codex 状态通知和 zsh 窗口命名配置。
 
 ## 目录结构
 
@@ -48,10 +48,12 @@ Debian/Ubuntu 远端服务器上严格复现的 tmux、lazygit、git-delta、Cod
 - tmux `3.7b`
 - lazygit `0.63.0`
 - git-delta `0.19.2`
+- Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 
-下载的官方 Release 包均进行 SHA256 校验。插件必须处于锁定 commit；如果插件
-目录存在本地修改，bootstrap 会停止，避免覆盖用户改动。
+tmux、lazygit 和 git-delta 的官方 Release 包均进行 SHA256 校验。插件必须处于
+锁定 commit；如果插件目录存在本地修改，bootstrap 会停止，避免覆盖用户改动。
+Codex CLI 是例外：bootstrap 始终安装 `@openai/codex@latest`。
 
 ## 安装
 
@@ -66,13 +68,15 @@ git clone https://github.com/Crucifixion-Fxl/dotfiles ~/.dotfiles
 Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 
 - `bash`、`zsh`、`git`、`curl`
+- `nodejs`、`npm`（用于安装最新 Codex CLI）
 - `gcc`、`make`、`pkg-config`、`bison`
 - `libevent`、`ncurses`、`utf8proc` 开发包，以及提供 `tmux-256color` 的
   `ncurses-base`
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
 `~/.local`。lazygit 和 git-delta 使用与操作系统、CPU 架构匹配的官方 Release
-包，安装到 `~/.local/bin`。apt 安装需要 root 或 sudo 权限。
+包。Codex CLI 通过官方 npm 包 `@openai/codex@latest` 安装。它们都安装到
+`~/.local/bin`。apt 安装需要 root 或 sudo 权限。
 
 macOS 使用 Homebrew 安装构建依赖；锁定版本已经存在时不会重复安装对应工具。
 
@@ -115,7 +119,7 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- tmux、lazygit、git-delta 版本
+- tmux、lazygit、git-delta、Codex CLI 版本
 - bash、zsh、git、UTF-8 locale 和 `tmux-256color` terminfo
 - shell 脚本语法
 - 三个 tmux 插件 commit
@@ -142,3 +146,9 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 - 本地缓存、下载文件和机器专属配置
 
 这些内容必须保留在各自机器上，不应提交到 dotfiles 仓库。
+
+安装完成后，远端第一次使用 Codex 需要在该机器上单独登录：
+
+```bash
+codex login
+```
