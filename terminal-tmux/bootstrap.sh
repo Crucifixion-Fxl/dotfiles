@@ -78,7 +78,7 @@ install_prerequisites() {
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
     run_as_root apt-get install -y \
-      bash bison ca-certificates curl gcc git make ncurses-bin pkg-config tar zsh \
+      bash bison ca-certificates curl gcc git make ncurses-base ncurses-bin pkg-config tar zsh \
       libevent-dev libncurses-dev libutf8proc-dev
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
@@ -119,11 +119,23 @@ install_tmux() {
     )
   fi
 
-  mkdir -p "$HOME/.terminfo"
-  tic -x -o "$HOME/.terminfo" "$source_dir/tmux.terminfo"
   trap - RETURN
   rm -rf "$work"
   tmux_is_locked_version || fail "tmux $TMUX_VERSION installation verification failed"
+}
+
+ensure_tmux_terminfo() {
+  if infocmp tmux-256color >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if [[ "$PLATFORM_OS" == linux ]]; then
+    log "Installing tmux-256color terminfo from Debian/Ubuntu ncurses-base"
+    run_as_root apt-get install -y ncurses-base
+  fi
+
+  infocmp tmux-256color >/dev/null 2>&1 || \
+    fail "tmux-256color terminfo is missing after installing ncurses prerequisites"
 }
 
 lazygit_asset() {
@@ -316,6 +328,7 @@ main() {
   mkdir -p "$HOME/.local/bin"
   install_prerequisites
   install_tmux
+  ensure_tmux_terminfo
   install_lazygit
   install_delta
 
