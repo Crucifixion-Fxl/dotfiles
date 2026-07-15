@@ -241,7 +241,11 @@ backup_and_link() {
 }
 
 install_plugin() {
-  local name=$1 repository=$2 commit=$3 destination="$HOME/.tmux/plugins/$name"
+  local name repository commit destination
+  name=$1
+  repository=$2
+  commit=$3
+  destination="$HOME/.tmux/plugins/$name"
   mkdir -p "$HOME/.tmux/plugins"
 
   if [[ ! -d "$destination/.git" ]]; then
@@ -349,4 +353,6 @@ main() {
   printf '%s\n' "Connect with: ssh -t <host> 'PATH=\"\$HOME/.local/bin:\$PATH\" exec tmux new-session -A -s main'"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
