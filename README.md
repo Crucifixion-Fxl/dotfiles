@@ -19,6 +19,8 @@ Debian/Ubuntu 远端服务器上严格复现的 tmux、lazygit、git-delta、Cod
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
     ├── shell/
     │   └── tmux-window-name.zsh     # 根据目录和前台命令更新窗口名
+    ├── tests/
+    │   └── test-bootstrap-contract.sh # bootstrap 回归检查
     ├── codex/
     │   ├── hooks.json               # Codex 生命周期 hook 注册
     │   └── notify-tmux.sh           # 🔄、❓、✅ 状态写入 tmux
@@ -65,7 +67,8 @@ Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 
 - `bash`、`zsh`、`git`、`curl`
 - `gcc`、`make`、`pkg-config`、`bison`
-- `libevent`、`ncurses`、`utf8proc` 开发包
+- `libevent`、`ncurses`、`utf8proc` 开发包，以及提供 `tmux-256color` 的
+  `ncurses-base`
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
 `~/.local`。lazygit 和 git-delta 使用与操作系统、CPU 架构匹配的官方 Release
