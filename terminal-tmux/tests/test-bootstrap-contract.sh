@@ -43,3 +43,17 @@ git() {
 }
 
 HOME=$TEST_HOME install_plugin test-plugin https://example.invalid/test.git "$TEST_PLUGIN_COMMIT"
+
+# PATH setup must happen before fallible installation steps and cover both
+# supported interactive shells. Repeated runs must not duplicate entries.
+PATH_LINE='export PATH="$HOME/.local/bin:$PATH"'
+touch "$TEST_HOME/.bash_profile"
+HOME=$TEST_HOME ensure_shell_path
+HOME=$TEST_HOME ensure_shell_path
+for startup_file in .profile .bashrc .bash_profile .zshrc; do
+  [[ $(grep -Fxc "$PATH_LINE" "$TEST_HOME/$startup_file") -eq 1 ]]
+done
+
+path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
+prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $path_setup_line -lt $prerequisite_line ]]
