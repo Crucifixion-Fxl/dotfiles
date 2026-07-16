@@ -108,26 +108,47 @@ enter_container_tmux() {
   ' sh "$CONTAINER_TMUX_SESSION"
 }
 
+terminal_size() {
+  local size lines columns
+
+  size=$(stty size 2>/dev/null || true)
+  if [[ "$size" =~ ^([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)$ ]]; then
+    lines=${BASH_REMATCH[1]}
+    columns=${BASH_REMATCH[2]}
+  else
+    lines=$(tput lines 2>/dev/null || true)
+    columns=$(tput cols 2>/dev/null || true)
+  fi
+  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=${LINES:-24}
+  [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=${COLUMNS:-80}
+  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=24
+  [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=80
+
+  printf '%d %d\n' "$lines" "$columns"
+}
+
 choose_container() {
-  local container_output id name image status key key_tail index selected menu_cursor_saved
+  local container_output id name image status key key_tail index selected
   local interactive menu_resized read_status
-  local page_size page_start page_end
+  local configured_page_size page_size page_start page_end available_rows
+  local terminal_lines terminal_columns menu_width menu_height menu_row menu_column
+  local field_width name_width image_width status_width menu_text render_row
   local -a container_ids=()
   local -a container_names=()
   local -a container_images=()
   local -a container_statuses=()
+  local -a menu_lines=()
 
   command -v docker >/dev/null 2>&1 || fail "宿主机未安装 Docker"
   selected=0
-  menu_cursor_saved=0
   interactive=0
   menu_resized=0
   if [[ -t 0 && -t 1 ]]; then
     interactive=1
     trap 'menu_resized=1' WINCH
   fi
-  page_size=${REMOTE_DEV_MENU_ROWS:-12}
-  [[ "$page_size" =~ ^[1-9][0-9]*$ ]] || page_size=12
+  configured_page_size=${REMOTE_DEV_MENU_ROWS:-12}
+  [[ "$configured_page_size" =~ ^[1-9][0-9]*$ ]] || configured_page_size=12
   while true; do
     container_ids=()
     container_names=()
@@ -147,10 +168,9 @@ choose_container() {
     done <<< "$container_output"
 
     if (( ${#container_ids[@]} == 0 )); then
-      (( interactive == 0 )) || trap - WINCH
-      if (( menu_cursor_saved )) && [[ -t 1 ]]; then
-        printf '\0338\033[J'
-        menu_cursor_saved=0
+      if (( interactive )); then
+        trap - WINCH
+        printf '\033[2J\033[H'
       fi
       printf '%s\n' '没有正在运行的容器，将进入宿主机 tmux。'
       enter_host_tmux
@@ -160,47 +180,97 @@ choose_container() {
     (( selected < ${#container_ids[@]} )) || selected=0
 
     while true; do
-      if (( menu_resized )); then
-        printf '\033[2J\033[H'
-        menu_cursor_saved=0
-        menu_resized=0
+      menu_resized=0
+      page_size=$configured_page_size
+      terminal_lines=24
+      terminal_columns=80
+      if (( interactive )); then
+        read -r terminal_lines terminal_columns <<< "$(terminal_size)"
+        available_rows=$((terminal_lines - 3))
+        (( available_rows > 0 )) || available_rows=1
+        (( page_size <= available_rows )) || page_size=$available_rows
+      fi
+      menu_width=88
+      name_width=24
+      image_width=32
+      status_width=24
+      if (( interactive && terminal_columns < menu_width )); then
+        menu_width=$terminal_columns
+        field_width=$((menu_width - 8))
+        (( field_width >= 3 )) || field_width=3
+        name_width=$((field_width * 3 / 10))
+        image_width=$((field_width * 4 / 10))
+        (( name_width > 0 )) || name_width=1
+        (( image_width > 0 )) || image_width=1
+        status_width=$((field_width - name_width - image_width))
+        (( status_width > 0 )) || status_width=1
       fi
 
       page_start=$(( (selected / page_size) * page_size ))
       page_end=$((page_start + page_size))
       (( page_end <= ${#container_ids[@]} )) || page_end=${#container_ids[@]}
 
-      # Restore the cursor to the beginning of the menu before clearing it.
-      # Counting printed lines is unreliable because long table rows can wrap
-      # to multiple terminal lines.
-      if [[ -t 1 ]]; then
-        if (( menu_cursor_saved )); then
-          printf '\0338\033[J'
-        else
-          printf '\0337'
-          menu_cursor_saved=1
-        fi
+      menu_lines=()
+      if (( interactive && terminal_columns < 60 )); then
+        printf -v menu_text 'Docker 容器 %d（%d-%d）' \
+          "${#container_ids[@]}" "$((page_start + 1))" "$page_end"
+      else
+        printf -v menu_text 'Docker 容器（%d 个正在运行，显示 %d-%d）' \
+          "${#container_ids[@]}" "$((page_start + 1))" "$page_end"
       fi
-
-      printf 'Docker 容器（%d 个正在运行，显示 %d-%d）\n' \
-        "${#container_ids[@]}" "$((page_start + 1))" "$page_end"
-      printf '%s\n' '↑/↓ 选择  Enter 进入  r 刷新  h 宿主机  q 退出'
-      printf '  %-3s %-24s %-32s %s\n' '' 'NAME' 'IMAGE' 'STATUS'
+      menu_lines+=("$menu_text")
+      if (( interactive && terminal_columns < 60 )); then
+        menu_lines+=('↑/↓ Enter进入 h宿主机 q退出')
+      else
+        menu_lines+=('↑/↓ 选择  Enter 进入  r 刷新  h 宿主机  q 退出')
+      fi
+      printf -v menu_text '  %-3s %-*.*s %-*.*s %-*.*s' '' \
+        "$name_width" "$name_width" 'NAME' \
+        "$image_width" "$image_width" 'IMAGE' \
+        "$status_width" "$status_width" 'STATUS'
+      menu_lines+=("$menu_text")
 
       for ((index = page_start; index < page_end; index++)); do
         if (( index == selected )); then
-          if [[ -t 1 && ${TERM:-dumb} != dumb ]]; then
-            printf '\033[7m  %-3s %-24.24s %-32.32s %.24s\033[0m\n' \
-              '>' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
+          if (( interactive )) && [[ ${TERM:-dumb} != dumb ]]; then
+            printf -v menu_text '\033[7m  %-3s %-*.*s %-*.*s %-*.*s\033[0m' '>' \
+              "$name_width" "$name_width" "${container_names[$index]}" \
+              "$image_width" "$image_width" "${container_images[$index]}" \
+              "$status_width" "$status_width" "${container_statuses[$index]}"
           else
-            printf '  %-3s %-24.24s %-32.32s %.24s\n' \
-              '>' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
+            printf -v menu_text '  %-3s %-*.*s %-*.*s %-*.*s' '>' \
+              "$name_width" "$name_width" "${container_names[$index]}" \
+              "$image_width" "$image_width" "${container_images[$index]}" \
+              "$status_width" "$status_width" "${container_statuses[$index]}"
           fi
         else
-          printf '  %-3s %-24.24s %-32.32s %.24s\n' \
-            '' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
+          printf -v menu_text '  %-3s %-*.*s %-*.*s %-*.*s' '' \
+            "$name_width" "$name_width" "${container_names[$index]}" \
+            "$image_width" "$image_width" "${container_images[$index]}" \
+            "$status_width" "$status_width" "${container_statuses[$index]}"
         fi
+        menu_lines+=("$menu_text")
       done
+
+      if (( interactive )); then
+        # Use at most 88 columns, shrinking the fields for narrow terminals.
+        # Center the complete menu block, then position every line absolutely
+        # so resizing cannot retain an old anchor from previous dimensions.
+        menu_height=${#menu_lines[@]}
+        menu_row=$(((terminal_lines - menu_height) / 2 + 1))
+        menu_column=$(((terminal_columns - menu_width) / 2 + 1))
+        (( menu_row > 0 )) || menu_row=1
+        (( menu_column > 0 )) || menu_column=1
+        printf '\033[2J\033[H'
+        render_row=$menu_row
+        for menu_text in "${menu_lines[@]}"; do
+          printf '\033[%d;%dH%s\033[K' "$render_row" "$menu_column" "$menu_text"
+          render_row=$((render_row + 1))
+        done
+      else
+        printf '%s\n' "${menu_lines[@]}"
+      fi
+
       while true; do
         key=
         read_status=0
@@ -223,10 +293,9 @@ choose_container() {
       fi
       case "$key" in
         '')
-          (( interactive == 0 )) || trap - WINCH
-          if (( menu_cursor_saved )) && [[ -t 1 ]]; then
-            printf '\0338\033[J'
-            menu_cursor_saved=0
+          if (( interactive )); then
+            trap - WINCH
+            printf '\033[2J\033[H'
           fi
           enter_container_tmux "${container_ids[$selected]}" "${container_names[$selected]}"
           return
@@ -249,19 +318,17 @@ choose_container() {
           break
           ;;
         h|H)
-          (( interactive == 0 )) || trap - WINCH
-          if (( menu_cursor_saved )) && [[ -t 1 ]]; then
-            printf '\0338\033[J'
-            menu_cursor_saved=0
+          if (( interactive )); then
+            trap - WINCH
+            printf '\033[2J\033[H'
           fi
           enter_host_tmux
           return
           ;;
         q|Q)
-          (( interactive == 0 )) || trap - WINCH
-          if (( menu_cursor_saved )) && [[ -t 1 ]]; then
-            printf '\0338\033[J'
-            menu_cursor_saved=0
+          if (( interactive )); then
+            trap - WINCH
+            printf '\033[2J\033[H'
           fi
           return 0
           ;;
@@ -271,22 +338,11 @@ choose_container() {
 }
 
 render_docker_prompt() {
-  local size lines columns title hint title_row hint_row title_column hint_column
+  local lines columns title hint title_row hint_row title_column hint_column
 
   title='是否进入 Docker 容器？'
   hint='Enter：进入    Esc：进入宿主机'
-  size=$(stty size 2>/dev/null || true)
-  if [[ "$size" =~ ^([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)$ ]]; then
-    lines=${BASH_REMATCH[1]}
-    columns=${BASH_REMATCH[2]}
-  else
-    lines=$(tput lines 2>/dev/null || true)
-    columns=$(tput cols 2>/dev/null || true)
-  fi
-  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=${LINES:-24}
-  [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=${COLUMNS:-80}
-  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=24
-  [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=80
+  read -r lines columns <<< "$(terminal_size)"
 
   title_row=$((lines / 2))
   (( title_row > 0 )) || title_row=1
