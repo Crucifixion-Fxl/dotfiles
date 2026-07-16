@@ -82,7 +82,7 @@ install_prerequisites() {
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
     run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      bash bison ca-certificates curl gcc git make ncurses-base ncurses-bin nodejs npm pkg-config tar zsh \
+      bash bison ca-certificates curl fonts-noto-cjk gcc git locales make ncurses-base ncurses-bin nodejs npm pkg-config tar zsh \
       libevent-dev libncurses-dev libutf8proc-dev
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
@@ -90,6 +90,19 @@ install_prerequisites() {
     log "Installing macOS prerequisites with Homebrew"
     brew install "${packages[@]}"
   fi
+}
+
+configure_locale() {
+  if [[ "$PLATFORM_OS" == linux ]]; then
+    log "Generating zh_CN.UTF-8 locale"
+    run_as_root sed -i \
+      's/^[#[:space:]]*zh_CN.UTF-8[[:space:]]\+UTF-8/zh_CN.UTF-8 UTF-8/' \
+      /etc/locale.gen
+    run_as_root locale-gen zh_CN.UTF-8
+  fi
+
+  export LANG=zh_CN.UTF-8
+  export LC_ALL=zh_CN.UTF-8
 }
 
 install_tmux() {
@@ -291,6 +304,9 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
   backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
+  backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
+  backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
+  backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/codex/notify-tmux.sh" "$HOME/.codex/hooks/notify-tmux.sh"
   backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
@@ -318,6 +334,24 @@ ensure_shell_path() {
   done
 }
 
+ensure_shell_locale() {
+  local startup_file locale_line
+  local startup_files=("$HOME/.bashrc" "$HOME/.zshrc")
+  local locale_lines=(
+    'export LANG=zh_CN.UTF-8'
+    'export LC_ALL=zh_CN.UTF-8'
+  )
+
+  for startup_file in "${startup_files[@]}"; do
+    touch "$startup_file"
+    for locale_line in "${locale_lines[@]}"; do
+      if ! grep -Fqx "$locale_line" "$startup_file"; then
+        printf '\n%s\n' "$locale_line" >> "$startup_file"
+      fi
+    done
+  done
+}
+
 validate() {
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -328,13 +362,19 @@ validate() {
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
   infocmp tmux-256color >/dev/null 2>&1 || fail "tmux-256color terminfo is missing"
-  LC_ALL=C.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "C.UTF-8 locale is required"
+  LC_ALL=zh_CN.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "zh_CN.UTF-8 locale is required"
 
   zsh -n "$DOTFILES_DIR/shell/tmux-window-name.zsh"
   zsh -n "$DOTFILES_DIR/shell/zshrc"
   bash -n "$DOTFILES_DIR/bootstrap.sh"
+  bash -n "$DOTFILES_DIR/bin/remote-dev-entry"
+  bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
+  sh -n "$DOTFILES_DIR/bin/lazygit-safe"
   bash -n "$DOTFILES_DIR/tmux/session-status-counts.sh"
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
+  bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
+  bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
+  sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
   [[ $(git -C "$HOME/.tmux/plugins/tpm" rev-parse HEAD) == "$TPM_COMMIT" ]] || fail "TPM commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-resurrect" rev-parse HEAD) == "$RESURRECT_COMMIT" ]] || fail "tmux-resurrect commit mismatch"
@@ -364,7 +404,9 @@ main() {
   # Persist the user-local binary path before any fallible installation step.
   # This cannot change the parent shell, but it applies to newly opened shells.
   ensure_shell_path
+  ensure_shell_locale
   install_prerequisites
+  configure_locale
   install_tmux
   ensure_tmux_terminfo
   install_lazygit
@@ -384,8 +426,9 @@ main() {
   fi
 
   log "Installation complete"
-  printf '%s\n' 'For the current shell: export PATH="$HOME/.local/bin:$PATH"'
-  printf '%s\n' "Connect with: ssh -t <host> 'PATH=\"\$HOME/.local/bin:\$PATH\" exec tmux new-session -A -s main'"
+  printf '%s\n' 'Reload Bash with: source "$HOME/.bashrc"'
+  printf '%s\n' 'Reload zsh with: exec zsh -l'
+  printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

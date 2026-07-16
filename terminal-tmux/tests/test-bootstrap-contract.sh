@@ -7,7 +7,10 @@ BOOTSTRAP="$ROOT/bootstrap.sh"
 
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
+grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
+grep -q 'locales' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
+grep -q '^configure_locale()' "$BOOTSTRAP"
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
 if grep -q 'run_as_root apt-get install' "$BOOTSTRAP"; then
@@ -62,9 +65,24 @@ for startup_file in .profile .bashrc .bash_profile .zshrc; do
   [[ $(grep -Fxc "$PATH_LINE" "$TEST_HOME/$startup_file") -eq 1 ]]
 done
 
+LANG_LINE='export LANG=zh_CN.UTF-8'
+LC_ALL_LINE='export LC_ALL=zh_CN.UTF-8'
+HOME=$TEST_HOME ensure_shell_locale
+HOME=$TEST_HOME ensure_shell_locale
+for startup_file in .bashrc .zshrc; do
+  [[ $(grep -Fxc "$LANG_LINE" "$TEST_HOME/$startup_file") -eq 1 ]]
+  [[ $(grep -Fxc "$LC_ALL_LINE" "$TEST_HOME/$startup_file") -eq 1 ]]
+done
+grep -Fqx "$LANG_LINE" "$ROOT/shell/zshrc"
+grep -Fqx "$LC_ALL_LINE" "$ROOT/shell/zshrc"
+
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $path_setup_line -lt $prerequisite_line ]]
+locale_setup_line=$(grep -n '^  ensure_shell_locale$' "$BOOTSTRAP" | cut -d: -f1)
+locale_generation_line=$(grep -n '^  configure_locale$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $locale_setup_line -lt $prerequisite_line ]]
+[[ $prerequisite_line -lt $locale_generation_line ]]
 
 # Codex intentionally follows the latest official npm release instead of the
 # versions.lock policy used by the other tools.
@@ -88,5 +106,11 @@ for version_variable in OH_MY_ZSH_COMMIT ZSH_AUTOSUGGESTIONS_COMMIT ZSH_SYNTAX_H
 done
 
 grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
 zsh -n "$ROOT/shell/zshrc"
+bash -n "$ROOT/bin/remote-dev-entry"
+bash -n "$ROOT/bin/connect-remote-dev"
+sh -n "$ROOT/bin/lazygit-safe"

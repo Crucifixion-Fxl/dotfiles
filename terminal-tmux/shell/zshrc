@@ -1,5 +1,7 @@
 # Keep user-local tools available in both interactive and login shells.
 export PATH="$HOME/.local/bin:$PATH"
+export LANG=zh_CN.UTF-8
+export LC_ALL=zh_CN.UTF-8
 
 # Oh My Zsh, theme, and plugins are installed at locked commits by bootstrap.sh.
 export ZSH="$HOME/.oh-my-zsh"
