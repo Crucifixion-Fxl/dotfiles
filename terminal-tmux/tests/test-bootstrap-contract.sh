@@ -75,9 +75,14 @@ if command -v plutil >/dev/null 2>&1; then
   [[ $(readlink "$ITERM_DESTINATION") == "$ITERM_PROFILE" ]]
 fi
 grep -Fq '"Name": "dev-4090"' "$ITERM_PROFILE"
+grep -Fq '"Guid": "8485C550-40AA-4993-9F56-A7F3E3A1F35B"' "$ITERM_PROFILE"
 grep -Fq '"Custom Command": "Yes"' "$ITERM_PROFILE"
 grep -Fq 'connect-remote-dev\" dev-4090' "$ITERM_PROFILE"
 grep -Fq '"Normal Font": "MapleMono-NF-CN-Regular 16"' "$ITERM_PROFILE"
+if grep -Fq '9943041F-8D80-4EC9-B604-20F6DAFFD4ED' "$ITERM_PROFILE"; then
+  printf '%s\n' 'dynamic profile must not reuse the legacy regular profile GUID' >&2
+  exit 1
+fi
 if grep -Fq '/Users/a4x' "$ITERM_PROFILE"; then
   printf '%s\n' 'iTerm2 profile must not contain a machine-specific home path' >&2
   exit 1
