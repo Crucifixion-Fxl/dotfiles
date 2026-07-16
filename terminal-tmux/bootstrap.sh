@@ -252,27 +252,42 @@ backup_and_link() {
   ln -s "$source" "$destination"
 }
 
-install_plugin() {
+install_git_checkout() {
   local name repository commit destination
   name=$1
   repository=$2
   commit=$3
-  destination="$HOME/.tmux/plugins/$name"
-  mkdir -p "$HOME/.tmux/plugins"
+  destination=$4
+  mkdir -p "$(dirname "$destination")"
 
   if [[ ! -d "$destination/.git" ]]; then
     git clone "$repository" "$destination"
   fi
 
-  [[ -z $(git -C "$destination" status --porcelain) ]] || fail "plugin $name has local changes"
+  [[ -z $(git -C "$destination" status --porcelain) ]] || fail "$name has local changes"
   if [[ $(git -C "$destination" rev-parse HEAD) != "$commit" ]]; then
     git -C "$destination" fetch --tags origin
     git -C "$destination" checkout --detach "$commit"
   fi
-  [[ $(git -C "$destination" rev-parse HEAD) == "$commit" ]] || fail "plugin $name commit verification failed"
+  [[ $(git -C "$destination" rev-parse HEAD) == "$commit" ]] || fail "$name commit verification failed"
+}
+
+install_plugin() {
+  local name=$1 repository=$2 commit=$3
+  install_git_checkout "$name" "$repository" "$commit" "$HOME/.tmux/plugins/$name"
+}
+
+install_oh_my_zsh() {
+  install_git_checkout oh-my-zsh https://github.com/ohmyzsh/ohmyzsh.git \
+    "$OH_MY_ZSH_COMMIT" "$HOME/.oh-my-zsh"
+  install_git_checkout zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git \
+    "$ZSH_AUTOSUGGESTIONS_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
+  install_git_checkout zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting.git \
+    "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 }
 
 install_links() {
+  backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
   backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
   backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
@@ -283,17 +298,6 @@ install_links() {
   local lazygit_config_dir
   lazygit_config_dir=$(lazygit --print-config-dir)
   backup_and_link "$DOTFILES_DIR/lazygit/config.yml" "$lazygit_config_dir/config.yml"
-}
-
-ensure_shell_loader() {
-  local loader='source "$HOME/.config/tmux/window-name.zsh"'
-  touch "$HOME/.zshrc"
-  if ! grep -Fqx "$loader" "$HOME/.zshrc"; then
-    {
-      printf '\n%s\n' '# terminal-tmux: portable tmux window naming'
-      printf '%s\n' "$loader"
-    } >> "$HOME/.zshrc"
-  fi
 }
 
 ensure_shell_path() {
@@ -327,6 +331,7 @@ validate() {
   LC_ALL=C.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "C.UTF-8 locale is required"
 
   zsh -n "$DOTFILES_DIR/shell/tmux-window-name.zsh"
+  zsh -n "$DOTFILES_DIR/shell/zshrc"
   bash -n "$DOTFILES_DIR/bootstrap.sh"
   bash -n "$DOTFILES_DIR/tmux/session-status-counts.sh"
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
@@ -334,6 +339,9 @@ validate() {
   [[ $(git -C "$HOME/.tmux/plugins/tpm" rev-parse HEAD) == "$TPM_COMMIT" ]] || fail "TPM commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-resurrect" rev-parse HEAD) == "$RESURRECT_COMMIT" ]] || fail "tmux-resurrect commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-continuum" rev-parse HEAD) == "$CONTINUUM_COMMIT" ]] || fail "tmux-continuum commit mismatch"
+  [[ $(git -C "$HOME/.oh-my-zsh" rev-parse HEAD) == "$OH_MY_ZSH_COMMIT" ]] || fail "Oh My Zsh commit mismatch"
+  [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions" rev-parse HEAD) == "$ZSH_AUTOSUGGESTIONS_COMMIT" ]] || fail "zsh-autosuggestions commit mismatch"
+  [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" rev-parse HEAD) == "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" ]] || fail "zsh-syntax-highlighting commit mismatch"
 
   tmux -L terminal-tmux-check kill-server >/dev/null 2>&1 || true
   tmux -L terminal-tmux-check -f "$DOTFILES_DIR/tmux/tmux.conf" new-session -d -s terminal-tmux-check
@@ -362,13 +370,13 @@ main() {
   install_lazygit
   install_delta
   install_codex
+  install_oh_my_zsh
 
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
   install_plugin tmux-resurrect https://github.com/tmux-plugins/tmux-resurrect.git "$RESURRECT_COMMIT"
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
 
   install_links
-  ensure_shell_loader
   validate
 
   if tmux list-sessions >/dev/null 2>&1; then
