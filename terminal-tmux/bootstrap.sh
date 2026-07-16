@@ -108,7 +108,7 @@ install_prerequisites() {
     packages=(
       bash bison curl git libevent ncurses node pkgconf utf8proc zsh
       yazi ffmpeg-full sevenzip jq poppler fd ripgrep fzf zoxide resvg imagemagick-full
-      font-symbols-only-nerd-font
+      font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
     log "Updating Homebrew"
     brew update
@@ -378,6 +378,18 @@ install_oh_my_zsh() {
     "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 }
 
+install_iterm2_profile() {
+  [[ "$PLATFORM_OS" == darwin ]] || return 0
+
+  local profile destination
+  profile="$DOTFILES_DIR/iterm2/dev-4090.json"
+  destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
+
+  command -v plutil >/dev/null 2>&1 || fail "plutil is required to validate the iTerm2 profile"
+  plutil -convert xml1 -o /dev/null "$profile" || fail "invalid iTerm2 dynamic profile: $profile"
+  backup_and_link "$profile" "$destination"
+}
+
 install_links() {
   backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
   backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
@@ -432,6 +444,8 @@ ensure_shell_locale() {
 }
 
 validate() {
+  local iterm2_profile iterm2_destination
+
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
   lazygit_is_locked_version || fail "expected lazygit $LAZYGIT_VERSION"
@@ -455,6 +469,14 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
+
+  if [[ "$PLATFORM_OS" == darwin ]]; then
+    iterm2_profile="$DOTFILES_DIR/iterm2/dev-4090.json"
+    iterm2_destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
+    plutil -convert xml1 -o /dev/null "$iterm2_profile" || fail "invalid iTerm2 dynamic profile"
+    [[ -L "$iterm2_destination" && $(readlink "$iterm2_destination") == "$iterm2_profile" ]] || \
+      fail "iTerm2 dev-4090 profile link is missing"
+  fi
 
   [[ $(git -C "$HOME/.tmux/plugins/tpm" rev-parse HEAD) == "$TPM_COMMIT" ]] || fail "TPM commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-resurrect" rev-parse HEAD) == "$RESURRECT_COMMIT" ]] || fail "tmux-resurrect commit mismatch"
@@ -501,6 +523,7 @@ main() {
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
 
   install_links
+  install_iterm2_profile
   validate
 
   if tmux list-sessions >/dev/null 2>&1; then

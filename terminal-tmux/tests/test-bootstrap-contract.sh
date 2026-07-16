@@ -4,6 +4,7 @@ set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 BOOTSTRAP="$ROOT/bootstrap.sh"
+ITERM_PROFILE="$ROOT/iterm2/dev-4090.json"
 
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
@@ -14,6 +15,7 @@ grep -q 'ffmpeg' "$BOOTSTRAP"
 grep -q 'poppler-utils' "$BOOTSTRAP"
 grep -q 'resvg' "$BOOTSTRAP"
 grep -q 'unzip' "$BOOTSTRAP"
+grep -q 'font-maple-mono-nf-cn' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
 grep -q '^configure_locale()' "$BOOTSTRAP"
 grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
@@ -61,6 +63,25 @@ git() {
 HOME=$TEST_HOME install_plugin test-plugin https://example.invalid/test.git "$TEST_PLUGIN_COMMIT"
 HOME=$TEST_HOME install_git_checkout test-checkout https://example.invalid/test.git \
   "$TEST_PLUGIN_COMMIT" "$TEST_HOME/.test-checkout"
+
+# iTerm2 profiles are macOS-only dynamic profiles. Linux must skip the link;
+# macOS links the validated repository file into iTerm2's watched directory.
+PLATFORM_OS=linux HOME=$TEST_HOME install_iterm2_profile
+[[ ! -e "$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json" ]]
+if command -v plutil >/dev/null 2>&1; then
+  PLATFORM_OS=darwin HOME=$TEST_HOME install_iterm2_profile
+  ITERM_DESTINATION="$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
+  [[ -L "$ITERM_DESTINATION" ]]
+  [[ $(readlink "$ITERM_DESTINATION") == "$ITERM_PROFILE" ]]
+fi
+grep -Fq '"Name": "dev-4090"' "$ITERM_PROFILE"
+grep -Fq '"Custom Command": "Yes"' "$ITERM_PROFILE"
+grep -Fq 'connect-remote-dev\" dev-4090' "$ITERM_PROFILE"
+grep -Fq '"Normal Font": "MapleMono-NF-CN-Regular 16"' "$ITERM_PROFILE"
+if grep -Fq '/Users/a4x' "$ITERM_PROFILE"; then
+  printf '%s\n' 'iTerm2 profile must not contain a machine-specific home path' >&2
+  exit 1
+fi
 
 # Yazi is pinned and installed from official Release ZIP assets on macOS and
 # Debian/Ubuntu. The yazi and ya versions must always match.
@@ -145,6 +166,7 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
+grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
 grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
