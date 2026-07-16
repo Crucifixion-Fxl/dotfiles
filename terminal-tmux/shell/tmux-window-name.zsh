@@ -1,9 +1,15 @@
-# Keep tmux window names aligned with the foreground command. Agent hooks may
-# temporarily add an emoji prefix; returning to the zsh prompt always restores
-# the current directory name.
+# tmux window 命名状态机：
+#   - precmd（回到 prompt）：window 名恢复为当前目录。
+#   - preexec（命令执行前）：window 名更新为命令或 Python/Node 脚本名。
+#   - Codex hook：临时显示 🔄/❓/✅ codex，回到 prompt 后再由本文件恢复基础名称。
+#
+# 多 pane window 使用 owner 模型：@codex_owner_pane 指定哪个 pane 当前拥有
+# Codex 状态，避免其他 pane 的 precmd/preexec 把正在显示的 Codex 状态覆盖。
 autoload -Uz add-zsh-hook
 
 _tmux_window_name_set() {
+    # 集中处理所有 window 改名。state=idle 表示已回到 prompt，需清理本 pane
+    # 拥有的 Codex 状态。函数在非 tmux 环境中是 no-op。
     local name="${1:-}"
     local state="${2:-command}"
     local target window_id owner_pane owner_window owner_status
@@ -20,6 +26,7 @@ _tmux_window_name_set() {
 
     tmux set-option -pq -t "$target" @tmux_activity_name "$name" >/dev/null 2>&1 || true
 
+    # window 级 owner 记录当前显示 Codex 状态的 pane。
     owner_pane="$(tmux show-options -wqv -t "$window_id" @codex_owner_pane 2>/dev/null)" || true
 
     if [[ "$state" == "idle" && "$owner_pane" == "$target" ]]; then
@@ -39,6 +46,8 @@ _tmux_window_name_set() {
         tmux set-option -puq -t "$owner_pane" @codex_status 2>/dev/null || true
     fi
 
+    # 没有有效 Codex owner 时，window 名应跟随当前活动 pane，不是一定跟随
+    # 触发 hook 的 pane。
     active_pane="$(tmux list-panes -t "$window_id" -F '#{?pane_active,#{pane_id},}' 2>/dev/null | sed -n '/./{p;q;}')" || active_pane=""
     [[ -n "$active_pane" ]] || active_pane="$target"
 
@@ -64,6 +73,8 @@ _tmux_window_name_precmd() {
 }
 
 _tmux_window_name_preexec() {
+    # ${(z)...} 按 zsh 语法切分命令，比普通空格分割更能正确处理引号和转义。
+    # 先跳过 VAR=value 与 command/exec 等前缀，再识别真正命令。
     local command_line="${1:-}"
     local -a words
     local index=1
@@ -91,6 +102,7 @@ _tmux_window_name_preexec() {
     command_path="${words[$index]}"
     command_name="${command_path:t}"
 
+    # Python/Node 优先显示脚本或模块名，而不是泛化的 python/node。
     case "$command_name" in
         python|python[0-9]*|pythonw|pypy|pypy[0-9]*)
             (( index++ ))

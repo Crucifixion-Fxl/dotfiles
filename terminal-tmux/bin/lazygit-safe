@@ -2,6 +2,10 @@
 
 set -eu
 
+# lazygit 安全入口。容器中的 bind mount 常使仓库 owner 与当前用户不同，
+# Git 会因 dubious ownership 拒绝访问。本脚本向上查找当前仓库根目录，
+# 只把这一个绝对路径加入用户级 safe.directory，永不使用通配符 `*`。
+
 find_git_root() {
   directory=$(pwd -P)
 

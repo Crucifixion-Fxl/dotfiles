@@ -1,12 +1,24 @@
-# Keep user-local tools available in both interactive and login shells.
+# =============================================================================
+# 共享 zsh 配置
+#
+# 由 terminal-tmux/bootstrap.sh 链接到 ~/.zshrc，macOS、Ubuntu 和容器共享。
+# 修改后执行 `exec zsh -l` 重新启动 login zsh。
+# 机器专属路径、代理和私密环境变量请放入 ~/.zshrc.local，不要提交到仓库。
+# =============================================================================
+
+# --- 通用环境 ---------------------------------------------------------------
+# bootstrap 安装的 tmux/Yazi/lazygit/Codex 等用户级工具位于 ~/.local/bin。
 export PATH="$HOME/.local/bin:$PATH"
+# 统一中文 UTF-8 locale，避免 SSH、tmux 和容器中的中文显示异常。
 export LANG=zh_CN.UTF-8
 export LC_ALL=zh_CN.UTF-8
 
-# Oh My Zsh, theme, and plugins are installed at locked commits by bootstrap.sh.
+# --- Oh My Zsh ---------------------------------------------------------------
+# Oh My Zsh 和插件由 bootstrap 安装，精确 commit 记录在 versions.lock。
 export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="robbyrussell"
 
+# 插件顺序保持简单：git 别名、历史建议、实时语法高亮。
 plugins=(
   git
   zsh-autosuggestions
@@ -15,8 +27,9 @@ plugins=(
 
 source "$ZSH/oh-my-zsh.sh"
 
-# Preserve the local Conda behavior without assuming the same home directory
-# or requiring Conda on remote hosts.
+# --- Conda（可选）-----------------------------------------------------------
+# 仅当 ~/miniconda3 存在时初始化；远端机器没有 Conda 时不会报错。
+# 优先使用 Conda 官方 zsh hook，失败时再回退到 conda.sh 或 PATH。
 if [[ -x "$HOME/miniconda3/bin/conda" ]]; then
   __conda_setup="$("$HOME/miniconda3/bin/conda" shell.zsh hook 2>/dev/null)"
   if [[ $? -eq 0 ]]; then
@@ -29,10 +42,13 @@ if [[ -x "$HOME/miniconda3/bin/conda" ]]; then
   unset __conda_setup
 fi
 
-# Keep tmux window names aligned with the active command.
+# --- tmux 窗口命名 ----------------------------------------------------------
+# 在 tmux 内根据当前目录/前台命令更新 window 名称；Codex hook 可临时叠加状态。
 source "$HOME/.config/tmux/window-name.zsh"
 
-# Launch Yazi and change this shell to Yazi's last directory on exit.
+# --- Yazi --------------------------------------------------------------------
+# `y` 启动 Yazi。Yazi 退出时会把最后目录写入临时文件，函数再让当前
+# shell cd 过去。直接运行 `yazi` 无法改变父 shell 的工作目录。
 function y() {
 	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
 	command yazi "$@" --cwd-file="$tmp"
@@ -41,5 +57,6 @@ function y() {
 	command rm -f -- "$tmp"
 }
 
-# Optional machine-only additions belong here and are intentionally untracked.
+# --- 机器专属覆盖 ----------------------------------------------------------
+# 最后加载，因此可以追加或覆盖上面的共享值。该文件不由 dotfiles 管理。
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"

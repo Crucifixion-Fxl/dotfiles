@@ -2,6 +2,14 @@
 
 set -euo pipefail
 
+# Codex lifecycle hook 的 tmux 适配器。hooks.json 把 Codex 事件映射为三种状态：
+#   running        -> 🔄 codex
+#   input-required -> ❓ codex
+#   done           -> ✅ codex
+#
+# 不在 tmux 中运行时直接退出。自定义 option 分为 pane 级状态和 window 级
+# owner，让多 pane window 只有一个 Codex 状态能控制 window 名。
+
 case "${1:-}" in
   running) emoji="🔄" ;;
   done) emoji="✅" ;;
@@ -23,6 +31,7 @@ tmux set-option -pq -t "$target" @codex_status "$emoji" >/dev/null 2>&1 || true
 tmux set-option -wq -t "$window_id" @codex_owner_pane "$target" >/dev/null 2>&1 || true
 tmux rename-window -t "$window_id" "$emoji codex" >/dev/null 2>&1 || true
 
+# 清理旧版 PID/基础名实现留下的 option，避免升级后的 session 受旧状态干扰。
 tmux set-option -wuq -t "$window_id" @codex_owner_pid 2>/dev/null || true
 tmux set-option -wuq -t "$window_id" @codex_watcher_pid 2>/dev/null || true
 tmux set-option -wuq -t "$window_id" @codex_base_name 2>/dev/null || true

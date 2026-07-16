@@ -2,6 +2,10 @@
 
 set -eu
 
+# tmux pane 的统一 shell 入口。使用 `zsh -l` 启动 login zsh，确保
+# ~/.zshrc、PATH、locale 和 tmux window-name hook 在 macOS/Ubuntu/容器中一致。
+# 这里使用 POSIX sh，避免在 zsh 尚未定位前依赖 bash 特性。
+
 zsh_path=$(command -v zsh 2>/dev/null || true)
 if [ -z "$zsh_path" ]; then
   printf '%s\n' 'terminal-tmux: zsh is required but not installed' >&2

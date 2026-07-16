@@ -1,4 +1,8 @@
+# lazygit 共享配置。bootstrap 会将它链接到 `lazygit --print-config-dir`
+# 返回的目录。这里只定义 diff pager，其他行为继承 lazygit 默认值。
 git:
   pagers:
+    # lazygit 自己负责滚动，所以禁用 delta 的内置 pager；
+    # `colorArg: always` 确保颜色输出通过管道后仍然保留。
     - pager: delta --paging=never
       colorArg: always
