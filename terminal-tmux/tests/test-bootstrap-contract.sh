@@ -8,6 +8,12 @@ BOOTSTRAP="$ROOT/bootstrap.sh"
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
+[[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
+
+if grep -q 'run_as_root apt-get install' "$BOOTSTRAP"; then
+  printf '%s\n' 'all apt package installs must use the noninteractive debconf frontend' >&2
+  exit 1
+fi
 
 if grep -q 'tmux\.terminfo' "$BOOTSTRAP"; then
   printf '%s\n' 'bootstrap must not expect tmux.terminfo in the tmux release tarball' >&2

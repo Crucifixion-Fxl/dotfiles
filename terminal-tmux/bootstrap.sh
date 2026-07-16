@@ -81,7 +81,7 @@ install_prerequisites() {
     command -v apt-get >/dev/null 2>&1 || fail "Linux bootstrap currently requires a Debian/Ubuntu apt host"
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
-    run_as_root apt-get install -y \
+    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
       bash bison ca-certificates curl gcc git make ncurses-base ncurses-bin nodejs npm pkg-config tar zsh \
       libevent-dev libncurses-dev libutf8proc-dev
   else
@@ -135,7 +135,7 @@ ensure_tmux_terminfo() {
 
   if [[ "$PLATFORM_OS" == linux ]]; then
     log "Installing tmux-256color terminfo from Debian/Ubuntu ncurses-base"
-    run_as_root apt-get install -y ncurses-base
+    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y ncurses-base
   fi
 
   infocmp tmux-256color >/dev/null 2>&1 || \
