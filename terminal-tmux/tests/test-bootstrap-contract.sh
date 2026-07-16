@@ -4,7 +4,7 @@ set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 BOOTSTRAP="$ROOT/bootstrap.sh"
-ITERM_PROFILE="$ROOT/iterm2/dev-4090.json"
+ITERM_PROFILE="$ROOT/iterm2/dev.json"
 
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
@@ -67,14 +67,14 @@ HOME=$TEST_HOME install_git_checkout test-checkout https://example.invalid/test.
 # iTerm2 profiles are macOS-only dynamic profiles. Linux must skip the link;
 # macOS links the validated repository file into iTerm2's watched directory.
 PLATFORM_OS=linux HOME=$TEST_HOME install_iterm2_profile
-[[ ! -e "$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json" ]]
+[[ ! -e "$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json" ]]
 if command -v plutil >/dev/null 2>&1; then
   PLATFORM_OS=darwin HOME=$TEST_HOME install_iterm2_profile
-  ITERM_DESTINATION="$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
+  ITERM_DESTINATION="$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
   [[ -L "$ITERM_DESTINATION" ]]
   [[ $(readlink "$ITERM_DESTINATION") == "$ITERM_PROFILE" ]]
 fi
-grep -Fq '"Name": "dev-4090"' "$ITERM_PROFILE"
+grep -Fq '"Name": "dev"' "$ITERM_PROFILE"
 grep -Fq '"Guid": "8485C550-40AA-4993-9F56-A7F3E3A1F35B"' "$ITERM_PROFILE"
 grep -Fq '"Custom Command": "Yes"' "$ITERM_PROFILE"
 grep -Fq 'connect-remote-dev\" dev-4090' "$ITERM_PROFILE"
