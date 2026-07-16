@@ -110,6 +110,7 @@ enter_container_tmux() {
 
 choose_container() {
   local container_output id name image status key key_tail index selected menu_cursor_saved
+  local interactive menu_resized read_status
   local page_size page_start page_end
   local -a container_ids=()
   local -a container_names=()
@@ -119,6 +120,12 @@ choose_container() {
   command -v docker >/dev/null 2>&1 || fail "宿主机未安装 Docker"
   selected=0
   menu_cursor_saved=0
+  interactive=0
+  menu_resized=0
+  if [[ -t 0 && -t 1 ]]; then
+    interactive=1
+    trap 'menu_resized=1' WINCH
+  fi
   page_size=${REMOTE_DEV_MENU_ROWS:-12}
   [[ "$page_size" =~ ^[1-9][0-9]*$ ]] || page_size=12
   while true; do
@@ -140,6 +147,7 @@ choose_container() {
     done <<< "$container_output"
 
     if (( ${#container_ids[@]} == 0 )); then
+      (( interactive == 0 )) || trap - WINCH
       if (( menu_cursor_saved )) && [[ -t 1 ]]; then
         printf '\0338\033[J'
         menu_cursor_saved=0
@@ -152,6 +160,12 @@ choose_container() {
     (( selected < ${#container_ids[@]} )) || selected=0
 
     while true; do
+      if (( menu_resized )); then
+        printf '\033[2J\033[H'
+        menu_cursor_saved=0
+        menu_resized=0
+      fi
+
       page_start=$(( (selected / page_size) * page_size ))
       page_end=$((page_start + page_size))
       (( page_end <= ${#container_ids[@]} )) || page_end=${#container_ids[@]}
@@ -187,10 +201,29 @@ choose_container() {
             '' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
         fi
       done
-      key=
-      IFS= read -rsn1 key || key=q
+      while true; do
+        key=
+        read_status=0
+        if (( interactive )); then
+          # macOS ships Bash 3.2, whose read builtin accepts integer timeouts
+          # only. Poll once per second so a WINCH flag is rendered promptly.
+          IFS= read -rsn1 -t 1 key || read_status=$?
+        else
+          IFS= read -rsn1 key || read_status=$?
+        fi
+        (( menu_resized )) && break
+        if (( read_status != 0 && interactive )); then
+          continue
+        fi
+        (( read_status == 0 )) || key=q
+        break
+      done
+      if (( menu_resized )); then
+        continue
+      fi
       case "$key" in
         '')
+          (( interactive == 0 )) || trap - WINCH
           if (( menu_cursor_saved )) && [[ -t 1 ]]; then
             printf '\0338\033[J'
             menu_cursor_saved=0
@@ -216,6 +249,7 @@ choose_container() {
           break
           ;;
         h|H)
+          (( interactive == 0 )) || trap - WINCH
           if (( menu_cursor_saved )) && [[ -t 1 ]]; then
             printf '\0338\033[J'
             menu_cursor_saved=0
@@ -224,6 +258,7 @@ choose_container() {
           return
           ;;
         q|Q)
+          (( interactive == 0 )) || trap - WINCH
           if (( menu_cursor_saved )) && [[ -t 1 ]]; then
             printf '\0338\033[J'
             menu_cursor_saved=0
@@ -236,12 +271,18 @@ choose_container() {
 }
 
 render_docker_prompt() {
-  local lines columns title hint title_row hint_row title_column hint_column
+  local size lines columns title hint title_row hint_row title_column hint_column
 
   title='是否进入 Docker 容器？'
   hint='Enter：进入    Esc：进入宿主机'
-  lines=$(tput lines 2>/dev/null || true)
-  columns=$(tput cols 2>/dev/null || true)
+  size=$(stty size 2>/dev/null || true)
+  if [[ "$size" =~ ^([1-9][0-9]*)[[:space:]]+([1-9][0-9]*)$ ]]; then
+    lines=${BASH_REMATCH[1]}
+    columns=${BASH_REMATCH[2]}
+  else
+    lines=$(tput lines 2>/dev/null || true)
+    columns=$(tput cols 2>/dev/null || true)
+  fi
   [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=${LINES:-24}
   [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=${COLUMNS:-80}
   [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=24
@@ -264,21 +305,32 @@ render_docker_prompt() {
 }
 
 read_docker_choice() {
-  local answer read_status interactive
+  local answer read_status interactive prompt_resized
 
   DOCKER_CHOICE=host
   interactive=0
+  prompt_resized=0
   if [[ -t 0 && -t 1 ]]; then
     interactive=1
-    trap 'render_docker_prompt' WINCH
-    render_docker_prompt
+    prompt_resized=1
+    trap 'prompt_resized=1' WINCH
   else
     printf '%s' '是否进入 Docker 容器？Enter：进入  Esc：进入宿主机 '
   fi
 
   while true; do
+    if (( prompt_resized )); then
+      render_docker_prompt
+      prompt_resized=0
+    fi
     answer=
-    if IFS= read -rsn1 answer; then
+    read_status=0
+    if (( interactive )); then
+      IFS= read -rsn1 -t 1 answer || read_status=$?
+    else
+      IFS= read -rsn1 answer || read_status=$?
+    fi
+    if (( read_status == 0 )); then
       case "$answer" in
         '')
           DOCKER_CHOICE=container
@@ -293,8 +345,7 @@ read_docker_choice() {
           ;;
       esac
     else
-      read_status=$?
-      if (( interactive && read_status > 128 )); then
+      if (( interactive )); then
         continue
       fi
       DOCKER_CHOICE=host

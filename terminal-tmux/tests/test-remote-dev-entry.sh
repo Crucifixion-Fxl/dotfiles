@@ -100,7 +100,9 @@ grep -Fq 'tmux select-window -t "$zsh_window"' "$ENTRY"
 grep -Fq 'tmux select-pane -t "$zsh_pane"' "$ENTRY"
 grep -Fq 'exec zsh -lic' "$ENTRY"
 grep -Fq 'tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"' "$ENTRY"
-grep -Fq "trap 'render_docker_prompt' WINCH" "$ENTRY"
+grep -Fq 'size=$(stty size 2>/dev/null || true)' "$ENTRY"
+grep -Fq "trap 'prompt_resized=1' WINCH" "$ENTRY"
+grep -Fq "trap 'menu_resized=1' WINCH" "$ENTRY"
 grep -Fq "\$'\\033')" "$ENTRY"
 grep -Fq 'Enter：进入    Esc：进入宿主机' "$ENTRY"
 grep -Fq "printf '\\0337'" "$ENTRY"
@@ -109,3 +111,12 @@ if grep -Fq 'rendered_lines' "$ENTRY"; then
   printf '%s\n' 'container menu must not clear by counting wrapped lines' >&2
   exit 1
 fi
+
+stty() {
+  if [[ ${1:-} == size ]]; then
+    printf '30 100\n'
+  fi
+}
+prompt_output=$(render_docker_prompt)
+grep -Fq $'\033[15;40H是否进入 Docker 容器？' <<< "$prompt_output"
+grep -Fq $'\033[17;36HEnter：进入    Esc：进入宿主机' <<< "$prompt_output"

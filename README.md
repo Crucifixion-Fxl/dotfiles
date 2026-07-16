@@ -216,9 +216,9 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 `~/.local/bin/remote-dev-entry`、设置仅当前用户可执行，然后立即启动菜单。SSH 的
 stdin 始终保留给交互菜单，因此不会额外建立上传连接。
 
-入口先在终端中央询问是否进入 Docker，并在终端尺寸变化时保持居中。按 `Enter`
-列出正在运行的容器，按 `Esc` 则直接进入宿主机的 `dev` tmux。容器列表使用
-`↑/↓` 移动高亮，按 `Enter` 进入；
+入口先在终端中央询问是否进入 Docker，并在终端尺寸变化时重新居中。按 `Enter`
+列出正在运行的容器，按 `Esc` 则直接进入宿主机的 `dev` tmux。容器列表也会在
+窗口缩放后清屏重绘并重设光标锚点；使用 `↑/↓` 移动高亮，按 `Enter` 进入；
 列表默认每页显示 12 个并随高亮自动翻页，`r` 刷新列表、`h` 返回宿主机、`q`
 退出。选中后直接执行 `docker exec`，并在容器内部附加或创建名为 `dev` 的
 tmux。容器路径不会创建或附加宿主机 tmux，因此不存在宿主机 tmux 嵌套容器
