@@ -398,8 +398,8 @@ install_iterm2_profile() {
   [[ "$PLATFORM_OS" == darwin ]] || return 0
 
   local profile destination
-  profile="$DOTFILES_DIR/iterm2/dev-4090.json"
-  destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
+  profile="$DOTFILES_DIR/iterm2/dev.json"
+  destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
 
   command -v plutil >/dev/null 2>&1 || fail "plutil is required to validate the iTerm2 profile"
   plutil -convert xml1 -o /dev/null "$profile" || fail "invalid iTerm2 dynamic profile: $profile"
@@ -489,11 +489,11 @@ validate() {
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
   if [[ "$PLATFORM_OS" == darwin ]]; then
-    iterm2_profile="$DOTFILES_DIR/iterm2/dev-4090.json"
-    iterm2_destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
+    iterm2_profile="$DOTFILES_DIR/iterm2/dev.json"
+    iterm2_destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
     plutil -convert xml1 -o /dev/null "$iterm2_profile" || fail "invalid iTerm2 dynamic profile"
     [[ -L "$iterm2_destination" && $(readlink "$iterm2_destination") == "$iterm2_profile" ]] || \
-      fail "iTerm2 dev-4090 profile link is missing"
+      fail "iTerm2 dev profile link is missing"
   fi
 
   [[ $(git -C "$HOME/.tmux/plugins/tpm" rev-parse HEAD) == "$TPM_COMMIT" ]] || fail "TPM commit mismatch"
