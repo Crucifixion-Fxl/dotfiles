@@ -105,8 +105,14 @@ grep -Fq "trap 'prompt_resized=1' WINCH" "$ENTRY"
 grep -Fq "trap 'menu_resized=1' WINCH" "$ENTRY"
 grep -Fq "\$'\\033')" "$ENTRY"
 grep -Fq 'Enter：进入    Esc：进入宿主机' "$ENTRY"
-grep -Fq "printf '\\0337'" "$ENTRY"
-grep -Fq "printf '\\0338\\033[J'" "$ENTRY"
+grep -Fq 'menu_width=88' "$ENTRY"
+grep -Fq 'menu_width=$terminal_columns' "$ENTRY"
+grep -Fq 'field_width=$((menu_width - 8))' "$ENTRY"
+grep -Fq 'available_rows=$((terminal_lines - 3))' "$ENTRY"
+grep -Fq 'menu_row=$(((terminal_lines - menu_height) / 2 + 1))' "$ENTRY"
+grep -Fq 'menu_column=$(((terminal_columns - menu_width) / 2 + 1))' "$ENTRY"
+grep -Fq "printf '\\033[%d;%dH%s\\033[K'" "$ENTRY"
+grep -Fq '↑/↓ Enter进入 h宿主机 q退出' "$ENTRY"
 if grep -Fq 'rendered_lines' "$ENTRY"; then
   printf '%s\n' 'container menu must not clear by counting wrapped lines' >&2
   exit 1
@@ -117,6 +123,7 @@ stty() {
     printf '30 100\n'
   fi
 }
+[[ $(terminal_size) == '30 100' ]]
 prompt_output=$(render_docker_prompt)
 grep -Fq $'\033[15;40H是否进入 Docker 容器？' <<< "$prompt_output"
 grep -Fq $'\033[17;36HEnter：进入    Esc：进入宿主机' <<< "$prompt_output"
