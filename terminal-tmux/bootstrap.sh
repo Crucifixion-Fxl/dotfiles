@@ -2,6 +2,19 @@
 
 set -euo pipefail
 
+# =============================================================================
+# macOS + Debian/Ubuntu 可复现安装入口
+#
+# 默认模式：安装系统依赖、锁定版本工具/插件、刷新配置链接，最后验证。
+# --check 模式：只读验证现有安装，不修改文件或安装软件。
+#
+# 可复现策略：
+#   - tmux/lazygit/delta/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
+#   - Codex CLI 按约定始终安装 @openai/codex@latest，不锁版本。
+#   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
+# =============================================================================
+
 DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
@@ -69,6 +82,7 @@ codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
 }
 
+# --- 平台检测与系统依赖 -------------------------------------------------
 detect_platform() {
   case "$(uname -s)" in
     Darwin) PLATFORM_OS=darwin ;;
@@ -138,6 +152,7 @@ configure_locale() {
   export LC_ALL=zh_CN.UTF-8
 }
 
+# --- 锁定版本的用户级 CLI -------------------------------------------------
 install_tmux() {
   tmux_is_locked_version && return 0
 
@@ -327,6 +342,7 @@ install_codex() {
   log "Installed $(codex --version)"
 }
 
+# --- 配置备份、插件和符号链接 -----------------------------------------------
 backup_and_link() {
   local source=$1 destination=$2 backup
   mkdir -p "$(dirname "$destination")"
@@ -407,6 +423,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/lazygit/config.yml" "$lazygit_config_dir/config.yml"
 }
 
+# --- Shell 持久环境 ---------------------------------------------------------
 ensure_shell_path() {
   local path_line='export PATH="$HOME/.local/bin:$PATH"'
   local startup_file
@@ -443,6 +460,7 @@ ensure_shell_locale() {
   done
 }
 
+# --- 安装后合同验证 ---------------------------------------------------------
 validate() {
   local iterm2_profile iterm2_destination
 
@@ -503,8 +521,8 @@ main() {
   fi
 
   mkdir -p "$HOME/.local/bin"
-  # Persist the user-local binary path before any fallible installation step.
-  # This cannot change the parent shell, but it applies to newly opened shells.
+  # PATH/locale 必须在可能失败的下载之前持久化。bootstrap 子进程无法改变
+  # 已打开的父 shell，但后续新 shell 会立即获得 ~/.local/bin 和正确 locale。
   ensure_shell_path
   ensure_shell_locale
   install_prerequisites

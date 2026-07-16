@@ -1,27 +1,41 @@
+# =============================================================================
+# 可复现工具链版本锁
+#
+# bootstrap.sh 会 source 此文件。升级 Release 时必须同时更新对应平台的
+# SHA256，不要只改版本号。插件使用完整 Git commit，避免上游分支漂移。
+# Codex CLI 是例外：它由 bootstrap 始终安装 @openai/codex@latest，因此不在此锁定。
+# =============================================================================
+
+# --- tmux 官方 Release ----------------------------------------------------
 TMUX_VERSION=3.7b
 TMUX_SHA256=87f2e99e3b685973f2ca002ffd6ed7e51a5744f7009daae5a15670b6d532db96
 
+# --- lazygit 官方 Release -------------------------------------------------
 LAZYGIT_VERSION=0.63.0
 LAZYGIT_SHA256_DARWIN_ARM64=60e6bf29a1501a57a9d078538aa576a1b4db45779db2e3dd6931a7207f560a9c
 LAZYGIT_SHA256_DARWIN_X86_64=304b1bf7f7bbb5a5d59e34145bce63d42733cd828e4fe41428ced9ee4dbfe942
 LAZYGIT_SHA256_LINUX_ARM64=aac147abf5ce43afe6ae8bcb14b0d479111975a189302d7a99386deca70d57f7
 LAZYGIT_SHA256_LINUX_X86_64=cf5cfa3e116d7775f3600a51ec1d9ce7ba554a08b9566c7c2da83cb0023efabf
 
+# --- git-delta 官方 Release -----------------------------------------------
 DELTA_VERSION=0.19.2
 DELTA_SHA256_DARWIN_ARM64=9be36612a5a13e9e386dc498fb8e50dc87c72ee42b63db0ea05b32f99a72a69a
 DELTA_SHA256_LINUX_ARM64=0bfce159a5cddd5feb3d6db4a616d883ff51253ce08ac7ec11cb1d208cfaab9e
 DELTA_SHA256_LINUX_X86_64=8e695c5f586a8c53d6c3b01be0b4a422ed218bfed2a56191caebe373a1c18ab2
 
+# --- Yazi 官方 Release ----------------------------------------------------
 YAZI_VERSION=26.5.6
 YAZI_SHA256_DARWIN_ARM64=7abd71725e2fe27bed036becbf6ce79fa17964eb68491d34190011c94b8c7ca8
 YAZI_SHA256_DARWIN_X86_64=6846066f992c1688d8ec77431a3ab53f5ef268019fcef86e5649b8c27010868d
 YAZI_SHA256_LINUX_ARM64=c38b07961e7fc4c76503fd0f4a1b4bd0b379a99835b818cd899b0315c728e1e1
 YAZI_SHA256_LINUX_X86_64=1c9096f0a83b8102c194385f644cdeff93cc8269426163c9d033041ebd537bd2
 
+# --- tmux 插件 commit -----------------------------------------------------
 TPM_COMMIT=e261deb1b47614eed3400089ce7197dc68acc4eb
 RESURRECT_COMMIT=cff343cf9e81983d3da0c8562b01616f12e8d548
 CONTINUUM_COMMIT=0698e8f4b17d6454c71bf5212895ec055c578da0
 
+# --- zsh 框架与插件 commit ------------------------------------------------
 OH_MY_ZSH_COMMIT=677a4592b18c08ddea737f8aca70bac0e9fc9313
 ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04

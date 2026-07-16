@@ -162,6 +162,34 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/lazygit/config.yml` | `lazygit --print-config-dir` 返回目录中的 `config.yml` |
 | `terminal-tmux/iterm2/dev-4090.json` | `~/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json`（仅 macOS） |
 
+修改配置时应编辑仓库内的源文件，不要直接改上表右侧的链接目标。
+
+### 配置阅读与维护指南
+
+可执行的 shell/tmux/YAML 配置使用中文分区注释，重点说明“为什么这样配置”
+和“修改时不能破坏什么”。建议按以下入口查找：
+
+| 想修改的行为 | 主要文件 | 注意事项 |
+| --- | --- | --- |
+| zsh 环境、插件、Yazi `y()` | `shell/zshrc` | 机器专属配置放 `~/.zshrc.local` |
+| tmux 按键、状态栏、插件 | `tmux/tmux.conf` | Prefix 仍为 `Ctrl-b`；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
+| tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
+| Codex 的 🔄/❓/✅ 状态 | `codex/hooks.json` + `codex/notify-tmux.sh` | JSON 事件和 shell 状态名必须一致 |
+| lazygit diff 渲染 | `lazygit/config.yml` | lazygit 负责滚动，delta 不再开二级 pager |
+| Docker 询问和容器列表 | `bin/remote-dev-entry` | 容器分支必须直接 `exec docker exec`，不嵌套宿主机 tmux |
+| 连接并更新远程入口 | `bin/connect-remote-dev` | 保持单条 SSH 连接和原子替换 |
+| 工具版本 | `versions.lock` | 升级 Release 时同时更新版本和各平台 SHA256 |
+
+JSON 标准不允许写注释，因此不要在下面两个文件中加 `//` 或 `#`：
+
+- `codex/hooks.json`：`UserPromptSubmit` 和 `PostToolUse` 设为 `running`，
+  `PermissionRequest` 设为 `input-required`，`Stop` 设为 `done`。每个 hook
+  最多运行 5 秒，最终调用 `notify-tmux.sh`。
+- `iterm2/dev-4090.json`：这是 iTerm2 导出的完整 Dynamic Profile。常用可维护字段为
+  `Name`、`Guid`、`Command` 和 `Normal Font`。`Guid` 必须全局唯一，不能复用
+  普通 Profile 的 GUID；颜色字段数量较多，建议在 iTerm2 中调整后重新导出，
+  不要手工逐项修改。
+
 已有目标文件会先重命名为带时间戳的 `.backup.*` 文件。`~/.zshrc` 由仓库完整
 托管，包含中文 locale、Oh My Zsh、主题、插件、Conda 条件加载和 tmux 窗口命名配置。
 机器专属且不应提交的 zsh 配置可以写入 `~/.zshrc.local`，托管配置会在最后

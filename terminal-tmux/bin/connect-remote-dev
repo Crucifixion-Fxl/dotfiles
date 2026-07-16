@@ -2,6 +2,15 @@
 
 set -euo pipefail
 
+# 本机 SSH 入口。用法：`connect-remote-dev <ssh-host>`。
+#
+# 设计意图：
+#   1. 每次连接都使用本机 dotfiles 中最新的 remote-dev-entry。
+#   2. 在同一条 SSH 连接内原子写入远程 ~/.local/bin，不需要额外 scp。
+#   3. stdin 始终留给交互式菜单，因此脚本内容通过 Base64 嵌入远程命令。
+#
+# 此脚本不安装远程 tmux/zsh；要复现完整环境，仍应在远程运行 bootstrap。
+
 fail() {
   printf 'connect-remote-dev：%s\n' "$*" >&2
   exit 1
@@ -24,9 +33,8 @@ main() {
   command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
   command -v ssh >/dev/null 2>&1 || fail "本机未安装 ssh"
 
-  # Base64 keeps the script payload shell-safe and lets stdin remain attached
-  # to the interactive SSH TTY. The remote write uses a temporary file + mv so
-  # an interrupted connection cannot leave a partially written entry script.
+  # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
+  # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
   payload=$(base64 < "$entry" | tr -d '\r\n')
   remote_command='set -eu
 command -v base64 >/dev/null 2>&1 || {

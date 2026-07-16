@@ -2,6 +2,15 @@
 
 set -euo pipefail
 
+# 远程交互入口：先选择宿主机还是 Docker，再进入对应环境的 tmux。
+#
+# 核心约束：
+#   - 宿主机分支直接 exec 宿主机 tmux。
+#   - 容器分支直接 exec docker exec，tmux 只在容器内启动。
+#   - 两个分支都不保留外层 shell/宿主机 tmux，避免多层 tmux 嵌套。
+#   - 所有交互界面都监听 WINCH，终端缩放后会清屏并重新居中。
+
+# 可在运行脚本前通过环境变量改名，默认两边都使用 dev。
 HOST_TMUX_SESSION=${HOST_TMUX_SESSION:-dev}
 CONTAINER_TMUX_SESSION=${CONTAINER_TMUX_SESSION:-dev}
 
@@ -11,6 +20,7 @@ fail() {
 }
 
 enter_host_tmux() {
+  # exec 会让 tmux 取代入口脚本，SSH 退出时不留额外进程。
   command -v tmux >/dev/null 2>&1 || fail "宿主机未安装 tmux"
   exec tmux new-session -A -s "$HOST_TMUX_SESSION"
 }
@@ -21,8 +31,8 @@ enter_container_tmux() {
   printf '正在进入容器 %s（tmux session: %s）\n' \
     "$container_name" "$CONTAINER_TMUX_SESSION"
 
-  # No host tmux is created on this path. docker exec becomes the SSH session,
-  # and the tmux command below is resolved and started inside the container.
+  # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
+  # 命令只会在容器内解析和启动。
   exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
@@ -58,8 +68,8 @@ enter_container_tmux() {
       exit 127
     fi
 
-    # An existing tmux server keeps the environment from when it was started.
-    # Refresh its environment and reload the managed config before attaching.
+    # 已运行的 tmux server 会保留启动时的环境，因此附加前需要同步
+    # locale，并重新加载受管配置。
     if [ -n "$utf8_locale" ]; then
       tmux set-environment -g LANG "$LANG" 2>/dev/null || true
       tmux set-environment -g LC_ALL "$LC_ALL" 2>/dev/null || true
@@ -71,10 +81,8 @@ enter_container_tmux() {
       }
     fi
 
-    # A persistent session may currently point at a pane running bash or
-    # another foreground command. Prefer an idle zsh pane for this new client;
-    # create one only when the session has no idle zsh pane. Existing panes and
-    # their processes are never terminated.
+    # 持久 session 可能正指向一个运行 bash/其他前台命令的 pane。新客户端优先选择
+    # 空闲 zsh pane；只在没有空闲 zsh 时新建 window，永不终止已有进程。
     if tmux has-session -t "=$tmux_session" 2>/dev/null; then
       zsh_pane=
       attempt=0
@@ -102,13 +110,14 @@ enter_container_tmux() {
       tmux select-pane -t "$zsh_pane"
     fi
 
-    # Match the working manual flow: load the interactive login zsh config,
-    # then start tmux with an explicit config path when no server exists yet.
+    # 与手动进入流程保持一致：先加载 interactive login zsh，再显式使用
+    # ~/.tmux.conf 创建/附加 session。
     exec zsh -lic '\''exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"'\'' zsh "$tmux_session"
   ' sh "$CONTAINER_TMUX_SESSION"
 }
 
 terminal_size() {
+  # 优先从 stty 读取实际 TTY 尺寸，tput/LINES/COLUMNS 只是兼容回退。
   local size lines columns
 
   size=$(stty size 2>/dev/null || true)
@@ -128,6 +137,8 @@ terminal_size() {
 }
 
 choose_container() {
+  # 菜单每次外层循环都重新读取 docker ps；内层循环处理翻页、键盘和缩放。
+  # REMOTE_DEV_MENU_ROWS 可改每页目标行数，实际行数仍会受终端高度限制。
   local container_output id name image status key key_tail index selected
   local interactive menu_resized read_status
   local configured_page_size page_size page_start page_end available_rows
@@ -253,9 +264,8 @@ choose_container() {
       done
 
       if (( interactive )); then
-        # Use at most 88 columns, shrinking the fields for narrow terminals.
-        # Center the complete menu block, then position every line absolutely
-        # so resizing cannot retain an old anchor from previous dimensions.
+        # 菜单最宽 88 列，窄终端会按比例压缩字段。先计算整个菜单块的居中原点，
+        # 再绝对定位每一行；每次缩放先清屏，不会沿用旧尺寸的锚点。
         menu_height=${#menu_lines[@]}
         menu_row=$(((terminal_lines - menu_height) / 2 + 1))
         menu_column=$(((terminal_columns - menu_width) / 2 + 1))
@@ -275,8 +285,8 @@ choose_container() {
         key=
         read_status=0
         if (( interactive )); then
-          # macOS ships Bash 3.2, whose read builtin accepts integer timeouts
-          # only. Poll once per second so a WINCH flag is rendered promptly.
+          # macOS 自带 Bash 3.2，read 只接受整数超时。每秒轮询一次，使 WINCH
+          # 设置的重绘标志能快速生效。
           IFS= read -rsn1 -t 1 key || read_status=$?
         else
           IFS= read -rsn1 key || read_status=$?
@@ -338,6 +348,7 @@ choose_container() {
 }
 
 render_docker_prompt() {
+  # 初始询问界面只有两行，根据每次重绘时的 TTY 大小动态居中。
   local lines columns title hint title_row hint_row title_column hint_column
 
   title='是否进入 Docker 容器？'
@@ -349,7 +360,7 @@ render_docker_prompt() {
   hint_row=$((title_row + 2))
   (( hint_row <= lines )) || hint_row=$lines
 
-  # Display widths: title=22, hint=30. Chinese characters occupy two columns.
+  # 这里使用的是终端显示宽度而非字符数：中文字符占两列。
   title_column=$(((columns - 22) / 2 + 1))
   hint_column=$(((columns - 30) / 2 + 1))
   (( title_column > 0 )) || title_column=1
@@ -361,6 +372,7 @@ render_docker_prompt() {
 }
 
 read_docker_choice() {
+  # 交互 TTY 中 Enter 进容器菜单、Esc 进宿主机；非交互输入结束时安全回退宿主机。
   local answer read_status interactive prompt_resized
 
   DOCKER_CHOICE=host
