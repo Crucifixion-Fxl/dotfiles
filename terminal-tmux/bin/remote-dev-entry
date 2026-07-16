@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+HOST_TMUX_SESSION=${HOST_TMUX_SESSION:-dev}
+CONTAINER_TMUX_SESSION=${CONTAINER_TMUX_SESSION:-dev}
+
+fail() {
+  printf 'remote-dev-entry：%s\n' "$*" >&2
+  exit 1
+}
+
+enter_host_tmux() {
+  command -v tmux >/dev/null 2>&1 || fail "宿主机未安装 tmux"
+  exec tmux new-session -A -s "$HOST_TMUX_SESSION"
+}
+
+enter_container_tmux() {
+  local container_id=$1 container_name=$2
+
+  printf '正在进入容器 %s（tmux session: %s）\n' \
+    "$container_name" "$CONTAINER_TMUX_SESSION"
+
+  # No host tmux is created on this path. docker exec becomes the SSH session,
+  # and the tmux command below is resolved and started inside the container.
+  exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
+    export PATH="$HOME/.local/bin:$PATH"
+    if ! command -v tmux >/dev/null 2>&1; then
+      printf "%s\n" "remote-dev-entry：容器内未安装 tmux" >&2
+      printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
+      exit 127
+    fi
+    exec tmux new-session -A -s "$1"
+  ' sh "$CONTAINER_TMUX_SESSION"
+}
+
+choose_container() {
+  local container_output id name image status key key_tail index selected rendered_lines
+  local page_size page_start page_end visible_count
+  local -a container_ids=()
+  local -a container_names=()
+  local -a container_images=()
+  local -a container_statuses=()
+
+  command -v docker >/dev/null 2>&1 || fail "宿主机未安装 Docker"
+  selected=0
+  rendered_lines=0
+  page_size=${REMOTE_DEV_MENU_ROWS:-12}
+  [[ "$page_size" =~ ^[1-9][0-9]*$ ]] || page_size=12
+  while true; do
+    container_ids=()
+    container_names=()
+    container_images=()
+    container_statuses=()
+
+    if ! container_output=$(docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}'); then
+      fail "无法列出 Docker 容器，请检查 Docker daemon 和当前用户权限"
+    fi
+
+    while IFS=$'\t' read -r id name image status; do
+      [[ -n "$id" ]] || continue
+      container_ids+=("$id")
+      container_names+=("$name")
+      container_images+=("$image")
+      container_statuses+=("$status")
+    done <<< "$container_output"
+
+    if (( ${#container_ids[@]} == 0 )); then
+      printf '%s\n' '没有正在运行的容器，将进入宿主机 tmux。'
+      enter_host_tmux
+      return
+    fi
+
+    (( selected < ${#container_ids[@]} )) || selected=0
+
+    while true; do
+      page_start=$(( (selected / page_size) * page_size ))
+      page_end=$((page_start + page_size))
+      (( page_end <= ${#container_ids[@]} )) || page_end=${#container_ids[@]}
+      visible_count=$((page_end - page_start))
+
+      if (( rendered_lines > 0 )) && [[ -t 1 ]]; then
+        printf '\033[%dA\033[J' "$rendered_lines"
+      fi
+
+      printf 'Docker 容器（%d 个正在运行，显示 %d-%d）\n' \
+        "${#container_ids[@]}" "$((page_start + 1))" "$page_end"
+      printf '%s\n' '↑/↓ 选择  Enter 进入  r 刷新  h 宿主机  q 退出'
+      printf '  %-3s %-24s %-32s %s\n' '' 'NAME' 'IMAGE' 'STATUS'
+
+      for ((index = page_start; index < page_end; index++)); do
+        if (( index == selected )); then
+          if [[ -t 1 && ${TERM:-dumb} != dumb ]]; then
+            printf '\033[7m  %-3s %-24.24s %-32.32s %.24s\033[0m\n' \
+              '>' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
+          else
+            printf '  %-3s %-24.24s %-32.32s %.24s\n' \
+              '>' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
+          fi
+        else
+          printf '  %-3s %-24.24s %-32.32s %.24s\n' \
+            '' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
+        fi
+      done
+      rendered_lines=$((visible_count + 3))
+
+      key=
+      IFS= read -rsn1 key || key=q
+      case "$key" in
+        '')
+          if (( rendered_lines > 0 )) && [[ -t 1 ]]; then
+            printf '\033[%dA\033[J' "$rendered_lines"
+          fi
+          enter_container_tmux "${container_ids[$selected]}" "${container_names[$selected]}"
+          return
+          ;;
+        $'\033')
+          key_tail=
+          IFS= read -rsn2 -t 1 key_tail || true
+          case "$key_tail" in
+            '[A') selected=$(( (selected - 1 + ${#container_ids[@]}) % ${#container_ids[@]} )) ;;
+            '[B') selected=$(( (selected + 1) % ${#container_ids[@]} )) ;;
+          esac
+          ;;
+        k|K)
+          selected=$(( (selected - 1 + ${#container_ids[@]}) % ${#container_ids[@]} ))
+          ;;
+        j|J)
+          selected=$(( (selected + 1) % ${#container_ids[@]} ))
+          ;;
+        r|R)
+          break
+          ;;
+        h|H)
+          if (( rendered_lines > 0 )) && [[ -t 1 ]]; then
+            printf '\033[%dA\033[J' "$rendered_lines"
+          fi
+          enter_host_tmux
+          return
+          ;;
+        q|Q)
+          return 0
+          ;;
+      esac
+    done
+  done
+}
+
+main() {
+  local answer
+
+  printf '是否进入 Docker 容器？[y/N] '
+  IFS= read -r answer || answer=n
+
+  case "$answer" in
+    y|Y|yes|YES|Yes)
+      choose_container
+      ;;
+    q|Q|quit|exit)
+      return 0
+      ;;
+    *)
+      enter_host_tmux
+      ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

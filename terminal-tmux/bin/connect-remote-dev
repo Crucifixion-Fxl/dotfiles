@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+fail() {
+  printf 'connect-remote-dev：%s\n' "$*" >&2
+  exit 1
+}
+
+run_ssh() {
+  local host=$1 remote_command=$2
+  exec ssh -t "$host" "$remote_command"
+}
+
+main() {
+  local host script_dir entry payload remote_command
+
+  [[ $# -eq 1 ]] || fail "用法：connect-remote-dev <ssh-host>"
+  host=$1
+  script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+  entry="$script_dir/remote-dev-entry"
+
+  [[ -f "$entry" ]] || fail "找不到 $entry"
+  command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
+  command -v ssh >/dev/null 2>&1 || fail "本机未安装 ssh"
+
+  # Base64 keeps the script payload shell-safe and lets stdin remain attached
+  # to the interactive SSH TTY. The remote write uses a temporary file + mv so
+  # an interrupted connection cannot leave a partially written entry script.
+  payload=$(base64 < "$entry" | tr -d '\r\n')
+  remote_command='set -eu
+command -v base64 >/dev/null 2>&1 || {
+  printf "%s\n" "connect-remote-dev：远端未安装 base64" >&2
+  exit 127
+}
+directory="$HOME/.local/bin"
+temporary="$directory/.remote-dev-entry.$$"
+payload='"'$payload'"'
+umask 077
+mkdir -p "$directory"
+trap '\''rm -f "$temporary"'\'' 0 HUP INT TERM
+printf "%s" "$payload" | base64 -d > "$temporary"
+chmod 700 "$temporary"
+mv -f "$temporary" "$directory/remote-dev-entry"
+trap - 0 HUP INT TERM
+PATH="$directory:$PATH"
+export PATH
+exec "$directory/remote-dev-entry"'
+
+  run_ssh "$host" "$remote_command"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

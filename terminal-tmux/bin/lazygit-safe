@@ -1,0 +1,56 @@
+#!/usr/bin/env sh
+
+set -eu
+
+find_git_root() {
+  directory=$(pwd -P)
+
+  while :; do
+    if [ -e "$directory/.git" ]; then
+      printf '%s\n' "$directory"
+      return 0
+    fi
+    [ "$directory" != / ] || return 1
+    directory=${directory%/*}
+    [ -n "$directory" ] || directory=/
+  done
+}
+
+ensure_safe_directory() {
+  repository=$1
+
+  if git config --global --get-all safe.directory 2>/dev/null | grep -Fqx "$repository"; then
+    return 0
+  fi
+
+  git config --global --add safe.directory "$repository" || {
+    printf 'lazygit-safe: failed to trust repository: %s\n' "$repository" >&2
+    return 1
+  }
+}
+
+launch_lazygit() {
+  exec lazygit "$@"
+}
+
+main() {
+  command -v git >/dev/null 2>&1 || {
+    printf '%s\n' 'lazygit-safe: git is not installed' >&2
+    return 127
+  }
+  command -v lazygit >/dev/null 2>&1 || {
+    printf '%s\n' 'lazygit-safe: lazygit is not installed' >&2
+    return 127
+  }
+
+  repository=$(find_git_root 2>/dev/null || true)
+  if [ -n "$repository" ]; then
+    ensure_safe_directory "$repository"
+  fi
+
+  launch_lazygit "$@"
+}
+
+if [ "${0##*/}" = lazygit-safe ]; then
+  main "$@"
+fi
