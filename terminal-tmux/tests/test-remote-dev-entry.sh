@@ -43,31 +43,31 @@ enter_container_tmux() {
   printf 'selected:container:%s:%s:%s\n' "$1" "$2" "$CONTAINER_TMUX_SESSION"
 }
 
-host_output=$(printf 'n\n' | main)
+host_output=$(printf '\033' | main)
 grep -Fq 'selected:host:dev' <<< "$host_output"
 if grep -Fq 'selected:container:' <<< "$host_output"; then
   printf '%s\n' 'host selection must not enter a container' >&2
   exit 1
 fi
 
-container_output=$(printf 'y\n\n' | main)
+container_output=$(printf '\n\n' | main)
 grep -Fq 'selected:container:abc123:api-dev:dev' <<< "$container_output"
 if grep -Fq 'selected:host:' <<< "$container_output"; then
   printf '%s\n' 'container selection must not start host tmux' >&2
   exit 1
 fi
 
-arrow_output=$(printf 'y\n\033[B\n' | DOCKER_TEST_MODE=multiple main)
+arrow_output=$(printf '\n\033[B\n' | DOCKER_TEST_MODE=multiple main)
 grep -Fq 'selected:container:def456:web-dev:dev' <<< "$arrow_output"
 if grep -Fq 'selected:host:' <<< "$arrow_output"; then
   printf '%s\n' 'arrow-key container selection must not start host tmux' >&2
   exit 1
 fi
 
-host_from_menu_output=$(printf 'y\nh' | main)
+host_from_menu_output=$(printf '\nh' | main)
 grep -Fq 'selected:host:dev' <<< "$host_from_menu_output"
 
-many_input=$'y\n'
+many_input=$'\n'
 for ((index = 0; index < 12; index++)); do
   many_input+=$'\033[B'
 done
@@ -76,16 +76,25 @@ many_output=$(printf '%s' "$many_input" | DOCKER_TEST_MODE=many main)
 grep -Fq 'Docker 容器（13 个正在运行，显示 13-13）' <<< "$many_output"
 grep -Fq 'selected:container:id13:container-13:dev' <<< "$many_output"
 
-empty_output=$(printf 'y\n' | DOCKER_TEST_MODE=empty main)
+empty_output=$(printf '\n' | DOCKER_TEST_MODE=empty main)
 grep -Fq 'selected:host:dev' <<< "$empty_output"
 
-if printf 'y\n' | DOCKER_TEST_MODE=denied main >/dev/null 2>&1; then
+if printf '\n' | DOCKER_TEST_MODE=denied main >/dev/null 2>&1; then
   printf '%s\n' 'Docker permission failure must stop the entry flow' >&2
   exit 1
 fi
 
 grep -Fq 'exec docker exec -it' "$ENTRY"
-grep -Fq 'exec tmux new-session -A -s "$1"' "$ENTRY"
+grep -Fq 'grep -Eim1 "^zh_CN\\.utf-?8$"' "$ENTRY"
+grep -Fq 'grep -Eim1 "^C\\.utf-?8$"' "$ENTRY"
+grep -Fq 'tmux set-environment -g LANG "$LANG"' "$ENTRY"
+grep -Fq 'tmux set-environment -g LC_ALL "$LC_ALL"' "$ENTRY"
+grep -Fq 'tmux source-file "$HOME/.tmux.conf"' "$ENTRY"
+grep -Fq 'exec zsh -lic' "$ENTRY"
+grep -Fq 'tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"' "$ENTRY"
+grep -Fq "trap 'render_docker_prompt' WINCH" "$ENTRY"
+grep -Fq "\$'\\033')" "$ENTRY"
+grep -Fq 'Enter：进入    Esc：进入宿主机' "$ENTRY"
 grep -Fq "printf '\\0337'" "$ENTRY"
 grep -Fq "printf '\\0338\\033[J'" "$ENTRY"
 if grep -Fq 'rendered_lines' "$ENTRY"; then
