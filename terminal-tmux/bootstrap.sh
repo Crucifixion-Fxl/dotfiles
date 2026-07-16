@@ -58,6 +58,13 @@ delta_is_locked_version() {
   command -v delta >/dev/null 2>&1 && [[ $(delta --version 2>/dev/null) == "delta $DELTA_VERSION" ]]
 }
 
+yazi_is_locked_version() {
+  command -v yazi >/dev/null 2>&1 &&
+    command -v ya >/dev/null 2>&1 &&
+    [[ $(yazi --version 2>/dev/null | awk '{print $1, $2}') == "Yazi $YAZI_VERSION" ]] &&
+    [[ $(ya --version 2>/dev/null | awk '{print $1, $2}') == "Ya $YAZI_VERSION" ]]
+}
+
 codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
 }
@@ -77,18 +84,44 @@ detect_platform() {
 }
 
 install_prerequisites() {
+  local packages optional_package
+
   if [[ "$PLATFORM_OS" == linux ]]; then
     command -v apt-get >/dev/null 2>&1 || fail "Linux bootstrap currently requires a Debian/Ubuntu apt host"
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
-    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      bash bison ca-certificates curl fonts-noto-cjk gcc git locales make ncurses-base ncurses-bin nodejs npm pkg-config tar zsh \
+    packages=(
+      bash bison ca-certificates curl fd-find ffmpeg file fonts-noto-cjk fzf gcc git imagemagick jq locales make
+      ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils ripgrep tar unzip zsh
       libevent-dev libncurses-dev libutf8proc-dev
+    )
+    for optional_package in resvg zoxide; do
+      if apt-cache show "$optional_package" >/dev/null 2>&1; then
+        packages+=("$optional_package")
+      else
+        log "Skipping unavailable optional apt package: $optional_package"
+      fi
+    done
+    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
-    local packages=(bash bison curl git libevent ncurses node pkgconf utf8proc zsh)
+    packages=(
+      bash bison curl git libevent ncurses node pkgconf utf8proc zsh
+      yazi ffmpeg-full sevenzip jq poppler fd ripgrep fzf zoxide resvg imagemagick-full
+      font-symbols-only-nerd-font
+    )
+    log "Updating Homebrew"
+    brew update
     log "Installing macOS prerequisites with Homebrew"
     brew install "${packages[@]}"
+    brew link ffmpeg-full imagemagick-full -f --overwrite
+  fi
+}
+
+ensure_linux_fd_command() {
+  if [[ "$PLATFORM_OS" == linux ]] && ! command -v fd >/dev/null 2>&1; then
+    command -v fdfind >/dev/null 2>&1 || fail "fd-find was installed but fdfind is unavailable"
+    backup_and_link "$(command -v fdfind)" "$HOME/.local/bin/fd"
   fi
 }
 
@@ -240,6 +273,52 @@ install_delta() {
   delta_is_locked_version || fail "git-delta $DELTA_VERSION installation verification failed"
 }
 
+yazi_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="yazi-aarch64-apple-darwin.zip"
+      ASSET_SHA256=$YAZI_SHA256_DARWIN_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="yazi-x86_64-apple-darwin.zip"
+      ASSET_SHA256=$YAZI_SHA256_DARWIN_X86_64
+      ;;
+    linux/arm64)
+      ASSET="yazi-aarch64-unknown-linux-gnu.zip"
+      ASSET_SHA256=$YAZI_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="yazi-x86_64-unknown-linux-gnu.zip"
+      ASSET_SHA256=$YAZI_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_yazi() {
+  yazi_is_locked_version && return 0
+
+  local work archive yazi_binary ya_binary
+  yazi_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing Yazi $YAZI_VERSION into $HOME/.local/bin"
+  download "https://github.com/sxyazi/yazi/releases/download/v$YAZI_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  unzip -q "$archive" -d "$work"
+  yazi_binary=$(find "$work" -type f -name yazi | head -1)
+  ya_binary=$(find "$work" -type f -name ya | head -1)
+  [[ -n "$yazi_binary" ]] || fail "yazi binary not found in $ASSET"
+  [[ -n "$ya_binary" ]] || fail "ya binary not found in $ASSET"
+  install -m 0755 "$yazi_binary" "$HOME/.local/bin/yazi"
+  install -m 0755 "$ya_binary" "$HOME/.local/bin/ya"
+
+  trap - RETURN
+  rm -rf "$work"
+  yazi_is_locked_version || fail "Yazi $YAZI_VERSION installation verification failed"
+}
+
 install_codex() {
   command -v npm >/dev/null 2>&1 || fail "npm is required to install Codex CLI"
   log "Installing the latest Codex CLI into $HOME/.local/bin"
@@ -357,6 +436,7 @@ validate() {
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
   lazygit_is_locked_version || fail "expected lazygit $LAZYGIT_VERSION"
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
+  yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   codex_is_installed || fail "Codex CLI is required"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
@@ -406,11 +486,13 @@ main() {
   ensure_shell_path
   ensure_shell_locale
   install_prerequisites
+  ensure_linux_fd_command
   configure_locale
   install_tmux
   ensure_tmux_terminfo
   install_lazygit
   install_delta
+  install_yazi
   install_codex
   install_oh_my_zsh
 

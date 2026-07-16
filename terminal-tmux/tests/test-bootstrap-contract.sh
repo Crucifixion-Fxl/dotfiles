@@ -9,8 +9,15 @@ bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
 grep -q 'locales' "$BOOTSTRAP"
+grep -q 'fd-find' "$BOOTSTRAP"
+grep -q 'ffmpeg' "$BOOTSTRAP"
+grep -q 'poppler-utils' "$BOOTSTRAP"
+grep -q 'resvg' "$BOOTSTRAP"
+grep -q 'unzip' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
 grep -q '^configure_locale()' "$BOOTSTRAP"
+grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
+grep -q '^install_yazi()' "$BOOTSTRAP"
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
 if grep -q 'run_as_root apt-get install' "$BOOTSTRAP"; then
@@ -54,6 +61,34 @@ git() {
 HOME=$TEST_HOME install_plugin test-plugin https://example.invalid/test.git "$TEST_PLUGIN_COMMIT"
 HOME=$TEST_HOME install_git_checkout test-checkout https://example.invalid/test.git \
   "$TEST_PLUGIN_COMMIT" "$TEST_HOME/.test-checkout"
+
+# Yazi is pinned and installed from official Release ZIP assets on macOS and
+# Debian/Ubuntu. The yazi and ya versions must always match.
+yazi() {
+  printf 'Yazi %s (test)\n' "$YAZI_VERSION"
+}
+ya() {
+  printf 'Ya %s (test)\n' "$YAZI_VERSION"
+}
+yazi_is_locked_version
+
+for version_variable in \
+  YAZI_VERSION \
+  YAZI_SHA256_DARWIN_ARM64 \
+  YAZI_SHA256_DARWIN_X86_64 \
+  YAZI_SHA256_LINUX_ARM64 \
+  YAZI_SHA256_LINUX_X86_64; do
+  grep -q "^${version_variable}=" "$ROOT/versions.lock"
+done
+
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 yazi_asset
+[[ $ASSET == yazi-aarch64-apple-darwin.zip ]]
+PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 yazi_asset
+[[ $ASSET == yazi-x86_64-apple-darwin.zip ]]
+PLATFORM_OS=linux PLATFORM_ARCH=arm64 yazi_asset
+[[ $ASSET == yazi-aarch64-unknown-linux-gnu.zip ]]
+PLATFORM_OS=linux PLATFORM_ARCH=x86_64 yazi_asset
+[[ $ASSET == yazi-x86_64-unknown-linux-gnu.zip ]]
 
 # PATH setup must happen before fallible installation steps and cover both
 # supported interactive shells. Repeated runs must not duplicate entries.
@@ -110,6 +145,9 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
+grep -Fq '  install_yazi' "$BOOTSTRAP"
+grep -Fq 'function y()' "$ROOT/shell/zshrc"
+grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"

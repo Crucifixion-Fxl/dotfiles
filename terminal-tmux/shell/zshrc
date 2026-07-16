@@ -32,5 +32,14 @@ fi
 # Keep tmux window names aligned with the active command.
 source "$HOME/.config/tmux/window-name.zsh"
 
+# Launch Yazi and change this shell to Yazi's last directory on exit.
+function y() {
+	local tmp="$(mktemp -t "yazi-cwd.XXXXXX")" cwd
+	command yazi "$@" --cwd-file="$tmp"
+	IFS= read -r -d '' cwd < "$tmp"
+	[ "$cwd" != "$PWD" ] && [ -d "$cwd" ] && builtin cd -- "$cwd"
+	command rm -f -- "$tmp"
+}
+
 # Optional machine-only additions belong here and are intentionally untracked.
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
