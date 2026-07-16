@@ -35,8 +35,8 @@ enter_container_tmux() {
 }
 
 choose_container() {
-  local container_output id name image status key key_tail index selected rendered_lines
-  local page_size page_start page_end visible_count
+  local container_output id name image status key key_tail index selected menu_cursor_saved
+  local page_size page_start page_end
   local -a container_ids=()
   local -a container_names=()
   local -a container_images=()
@@ -44,7 +44,7 @@ choose_container() {
 
   command -v docker >/dev/null 2>&1 || fail "宿主机未安装 Docker"
   selected=0
-  rendered_lines=0
+  menu_cursor_saved=0
   page_size=${REMOTE_DEV_MENU_ROWS:-12}
   [[ "$page_size" =~ ^[1-9][0-9]*$ ]] || page_size=12
   while true; do
@@ -66,6 +66,10 @@ choose_container() {
     done <<< "$container_output"
 
     if (( ${#container_ids[@]} == 0 )); then
+      if (( menu_cursor_saved )) && [[ -t 1 ]]; then
+        printf '\0338\033[J'
+        menu_cursor_saved=0
+      fi
       printf '%s\n' '没有正在运行的容器，将进入宿主机 tmux。'
       enter_host_tmux
       return
@@ -77,10 +81,17 @@ choose_container() {
       page_start=$(( (selected / page_size) * page_size ))
       page_end=$((page_start + page_size))
       (( page_end <= ${#container_ids[@]} )) || page_end=${#container_ids[@]}
-      visible_count=$((page_end - page_start))
 
-      if (( rendered_lines > 0 )) && [[ -t 1 ]]; then
-        printf '\033[%dA\033[J' "$rendered_lines"
+      # Restore the cursor to the beginning of the menu before clearing it.
+      # Counting printed lines is unreliable because long table rows can wrap
+      # to multiple terminal lines.
+      if [[ -t 1 ]]; then
+        if (( menu_cursor_saved )); then
+          printf '\0338\033[J'
+        else
+          printf '\0337'
+          menu_cursor_saved=1
+        fi
       fi
 
       printf 'Docker 容器（%d 个正在运行，显示 %d-%d）\n' \
@@ -102,14 +113,13 @@ choose_container() {
             '' "${container_names[$index]}" "${container_images[$index]}" "${container_statuses[$index]}"
         fi
       done
-      rendered_lines=$((visible_count + 3))
-
       key=
       IFS= read -rsn1 key || key=q
       case "$key" in
         '')
-          if (( rendered_lines > 0 )) && [[ -t 1 ]]; then
-            printf '\033[%dA\033[J' "$rendered_lines"
+          if (( menu_cursor_saved )) && [[ -t 1 ]]; then
+            printf '\0338\033[J'
+            menu_cursor_saved=0
           fi
           enter_container_tmux "${container_ids[$selected]}" "${container_names[$selected]}"
           return
@@ -132,13 +142,18 @@ choose_container() {
           break
           ;;
         h|H)
-          if (( rendered_lines > 0 )) && [[ -t 1 ]]; then
-            printf '\033[%dA\033[J' "$rendered_lines"
+          if (( menu_cursor_saved )) && [[ -t 1 ]]; then
+            printf '\0338\033[J'
+            menu_cursor_saved=0
           fi
           enter_host_tmux
           return
           ;;
         q|Q)
+          if (( menu_cursor_saved )) && [[ -t 1 ]]; then
+            printf '\0338\033[J'
+            menu_cursor_saved=0
+          fi
           return 0
           ;;
       esac

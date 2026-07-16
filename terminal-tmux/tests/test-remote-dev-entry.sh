@@ -86,3 +86,9 @@ fi
 
 grep -Fq 'exec docker exec -it' "$ENTRY"
 grep -Fq 'exec tmux new-session -A -s "$1"' "$ENTRY"
+grep -Fq "printf '\\0337'" "$ENTRY"
+grep -Fq "printf '\\0338\\033[J'" "$ENTRY"
+if grep -Fq 'rendered_lines' "$ENTRY"; then
+  printf '%s\n' 'container menu must not clear by counting wrapped lines' >&2
+  exit 1
+fi
