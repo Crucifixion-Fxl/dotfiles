@@ -25,6 +25,7 @@ enter_container_tmux() {
   # and the tmux command below is resolved and started inside the container.
   exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
     export PATH="$HOME/.local/bin:$PATH"
+    tmux_session=$1
 
     utf8_locale=
     if command -v locale >/dev/null 2>&1; then
@@ -70,9 +71,40 @@ enter_container_tmux() {
       }
     fi
 
+    # A persistent session may currently point at a pane running bash or
+    # another foreground command. Prefer an idle zsh pane for this new client;
+    # create one only when the session has no idle zsh pane. Existing panes and
+    # their processes are never terminated.
+    if tmux has-session -t "=$tmux_session" 2>/dev/null; then
+      zsh_pane=
+      attempt=0
+      while [ "$attempt" -lt 10 ] && [ -z "$zsh_pane" ]; do
+        set -- $(tmux list-panes -s -t "=$tmux_session" \
+          -F "#{pane_id} #{pane_current_command}")
+        while [ "$#" -ge 2 ]; do
+          pane_id=$1
+          pane_command=$2
+          shift 2
+          if [ "$pane_command" = zsh ]; then
+            zsh_pane=$pane_id
+            break
+          fi
+        done
+        attempt=$((attempt + 1))
+        [ -n "$zsh_pane" ] || sleep 0.05
+      done
+      if [ -z "$zsh_pane" ]; then
+        zsh_pane=$(tmux new-window -d -P -F "#{pane_id}" -t "$tmux_session:" -n shell \
+          "$HOME/.local/bin/tmux-zsh")
+      fi
+      zsh_window=$(tmux display-message -p -t "$zsh_pane" "#{window_id}")
+      tmux select-window -t "$zsh_window"
+      tmux select-pane -t "$zsh_pane"
+    fi
+
     # Match the working manual flow: load the interactive login zsh config,
     # then start tmux with an explicit config path when no server exists yet.
-    exec zsh -lic '\''exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"'\'' zsh "$1"
+    exec zsh -lic '\''exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"'\'' zsh "$tmux_session"
   ' sh "$CONTAINER_TMUX_SESSION"
 }
 
