@@ -25,12 +25,54 @@ enter_container_tmux() {
   # and the tmux command below is resolved and started inside the container.
   exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
     export PATH="$HOME/.local/bin:$PATH"
+
+    utf8_locale=
+    if command -v locale >/dev/null 2>&1; then
+      utf8_locale=$(locale -a 2>/dev/null | grep -Eim1 "^zh_CN\\.utf-?8$" || true)
+      if [ -z "$utf8_locale" ]; then
+        utf8_locale=$(locale -a 2>/dev/null | grep -Eim1 "^C\\.utf-?8$" || true)
+      fi
+    fi
+    if [ -n "$utf8_locale" ]; then
+      export LANG="$utf8_locale"
+      export LC_ALL="$utf8_locale"
+    else
+      printf "%s\n" "remote-dev-entry：容器内没有可用的 UTF-8 locale，中文可能显示异常" >&2
+      printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
+    fi
+
     if ! command -v tmux >/dev/null 2>&1; then
       printf "%s\n" "remote-dev-entry：容器内未安装 tmux" >&2
       printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
       exit 127
     fi
-    exec tmux new-session -A -s "$1"
+    if ! command -v zsh >/dev/null 2>&1; then
+      printf "%s\n" "remote-dev-entry：容器内未安装 zsh" >&2
+      printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
+      exit 127
+    fi
+    if [ ! -r "$HOME/.tmux.conf" ]; then
+      printf "%s\n" "remote-dev-entry：找不到 $HOME/.tmux.conf" >&2
+      printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
+      exit 127
+    fi
+
+    # An existing tmux server keeps the environment from when it was started.
+    # Refresh its environment and reload the managed config before attaching.
+    if [ -n "$utf8_locale" ]; then
+      tmux set-environment -g LANG "$LANG" 2>/dev/null || true
+      tmux set-environment -g LC_ALL "$LC_ALL" 2>/dev/null || true
+    fi
+    if tmux list-sessions >/dev/null 2>&1; then
+      tmux source-file "$HOME/.tmux.conf" || {
+        printf "%s\n" "remote-dev-entry：无法重新加载 $HOME/.tmux.conf" >&2
+        exit 1
+      }
+    fi
+
+    # Match the working manual flow: load the interactive login zsh config,
+    # then start tmux with an explicit config path when no server exists yet.
+    exec zsh -lic '\''exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"'\'' zsh "$1"
   ' sh "$CONTAINER_TMUX_SESSION"
 }
 
@@ -161,18 +203,85 @@ choose_container() {
   done
 }
 
+render_docker_prompt() {
+  local lines columns title hint title_row hint_row title_column hint_column
+
+  title='是否进入 Docker 容器？'
+  hint='Enter：进入    Esc：进入宿主机'
+  lines=$(tput lines 2>/dev/null || true)
+  columns=$(tput cols 2>/dev/null || true)
+  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=${LINES:-24}
+  [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=${COLUMNS:-80}
+  [[ "$lines" =~ ^[1-9][0-9]*$ ]] || lines=24
+  [[ "$columns" =~ ^[1-9][0-9]*$ ]] || columns=80
+
+  title_row=$((lines / 2))
+  (( title_row > 0 )) || title_row=1
+  hint_row=$((title_row + 2))
+  (( hint_row <= lines )) || hint_row=$lines
+
+  # Display widths: title=22, hint=30. Chinese characters occupy two columns.
+  title_column=$(((columns - 22) / 2 + 1))
+  hint_column=$(((columns - 30) / 2 + 1))
+  (( title_column > 0 )) || title_column=1
+  (( hint_column > 0 )) || hint_column=1
+
+  printf '\033[2J\033[H'
+  printf '\033[%d;%dH%s' "$title_row" "$title_column" "$title"
+  printf '\033[%d;%dH%s' "$hint_row" "$hint_column" "$hint"
+}
+
+read_docker_choice() {
+  local answer read_status interactive
+
+  DOCKER_CHOICE=host
+  interactive=0
+  if [[ -t 0 && -t 1 ]]; then
+    interactive=1
+    trap 'render_docker_prompt' WINCH
+    render_docker_prompt
+  else
+    printf '%s' '是否进入 Docker 容器？Enter：进入  Esc：进入宿主机 '
+  fi
+
+  while true; do
+    answer=
+    if IFS= read -rsn1 answer; then
+      case "$answer" in
+        '')
+          DOCKER_CHOICE=container
+          break
+          ;;
+        $'\033')
+          DOCKER_CHOICE=host
+          break
+          ;;
+        *)
+          (( interactive == 0 )) || printf '\a'
+          ;;
+      esac
+    else
+      read_status=$?
+      if (( interactive && read_status > 128 )); then
+        continue
+      fi
+      DOCKER_CHOICE=host
+      break
+    fi
+  done
+
+  if (( interactive )); then
+    trap - WINCH
+    printf '\033[2J\033[H'
+  fi
+}
+
 main() {
-  local answer
+  read_docker_choice
 
-  printf '是否进入 Docker 容器？[y/N] '
-  IFS= read -r answer || answer=n
-
-  case "$answer" in
-    y|Y|yes|YES|Yes)
+  case "$DOCKER_CHOICE" in
+    container)
       choose_container
-      ;;
-    q|Q|quit|exit)
-      return 0
       ;;
     *)
       enter_host_tmux
