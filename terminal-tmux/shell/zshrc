@@ -53,6 +53,10 @@ fi
 source "$HOME/.config/tmux/window-name.zsh"
 
 # --- Yazi --------------------------------------------------------------------
+# Yazi 的 zoxide picker 会把半块字符作为 fzf 滚动条；在 zh_CN.UTF-8 下，
+# 部分 fzf 版本会把它判定为双宽字符。禁用该 picker 的滚动条可避免启动失败。
+export YAZI_ZOXIDE_OPTS="--no-scrollbar"
+
 # `y` 启动 Yazi。Yazi 退出时会把最后目录写入临时文件，函数再让当前
 # shell cd 过去。直接运行 `yazi` 无法改变父 shell 的工作目录。
 function y() {
