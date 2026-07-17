@@ -33,6 +33,9 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
     │   └── notify-tmux.sh           # 🔄、❓、✅ 状态写入 tmux
     ├── lazygit/
     │   └── config.yml               # 使用 git-delta 渲染 diff
+    ├── yazi/
+    │   ├── yazi.toml                # 文本编辑 opener 与 Vim 鼠标支持
+    │   └── init.lua                 # zoxide 历史同步
     └── iterm2/
         └── dev.json                 # 可移植的 iTerm2 Dynamic Profile
 ```
@@ -51,6 +54,7 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 - zsh 使用 Oh My Zsh 的 `robbyrussell` 主题，并启用 `git`、
   `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件。
 - 使用 `y` 启动 Yazi；退出时当前 shell 会切换到 Yazi 最后所在目录。
+- Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
 - macOS 自动加载 `dev` iTerm2 Profile，并用可移植的 `$HOME` 路径启动远端选择器。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
@@ -165,6 +169,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/bin/remote-dev-entry` | `~/.local/bin/remote-dev-entry` |
 | `terminal-tmux/bin/connect-remote-dev` | `~/.local/bin/connect-remote-dev` |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
+| `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
 | `terminal-tmux/yazi/init.lua` | `~/.config/yazi/init.lua` |
 | `terminal-tmux/codex/notify-tmux.sh` | `~/.codex/hooks/notify-tmux.sh` |
 | `terminal-tmux/codex/hooks.json` | `~/.codex/hooks.json` |
@@ -181,6 +186,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 想修改的行为 | 主要文件 | 注意事项 |
 | --- | --- | --- |
 | zsh 环境、插件、Yazi `y()` | `shell/zshrc` | 机器专属配置放 `~/.zshrc.local` |
+| Yazi 文本编辑与滚轮 | `yazi/yazi.toml` | Enter 用启用了 `mouse=a` 的 Vim |
 | Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
 | tmux 按键、状态栏、插件 | `tmux/tmux.conf` | Prefix 仍为 `Ctrl-b`；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
 | tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
