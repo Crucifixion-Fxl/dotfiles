@@ -208,6 +208,8 @@ done
 grep -Fqx "$LANG_LINE" "$ROOT/shell/zshrc"
 grep -Fqx "$LC_ALL_LINE" "$ROOT/shell/zshrc"
 grep -Fqx 'export YAZI_ZOXIDE_OPTS="--no-scrollbar"' "$ROOT/shell/zshrc"
+grep -Fqx 'bind-key < swap-window -d -t -1' "$ROOT/tmux/tmux.conf"
+grep -Fqx 'bind-key > swap-window -d -t +1' "$ROOT/tmux/tmux.conf"
 
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
