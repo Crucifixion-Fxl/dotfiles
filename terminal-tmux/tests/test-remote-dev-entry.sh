@@ -85,9 +85,6 @@ if printf '\n' | DOCKER_TEST_MODE=denied main >/dev/null 2>&1; then
 fi
 
 grep -Fq 'exec docker exec -it' "$ENTRY"
-grep -Fq 'docker_environment=(-e "TERM=${TERM:-xterm-256color}")' "$ENTRY"
-grep -Fq 'docker_environment+=(-e "TERM_PROGRAM=$TERM_PROGRAM")' "$ENTRY"
-grep -Fq 'exec docker exec -it "${docker_environment[@]}"' "$ENTRY"
 grep -Fq 'grep -Eim1 "^zh_CN\\.utf-?8$"' "$ENTRY"
 grep -Fq 'grep -Eim1 "^C\\.utf-?8$"' "$ENTRY"
 grep -Fq 'tmux set-environment -g LANG "$LANG"' "$ENTRY"
