@@ -27,13 +27,19 @@ enter_host_tmux() {
 
 enter_container_tmux() {
   local container_id=$1 container_name=$2
+  local -a docker_environment
 
   printf '正在进入容器 %s（tmux session: %s）\n' \
     "$container_name" "$CONTAINER_TMUX_SESSION"
 
   # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
-  # 命令只会在容器内解析和启动。
-  exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
+  # 命令只会在容器内解析和启动。TERM_PROGRAM 用于让 Yazi 识别 iTerm2 的
+  # 图像协议；非受管入口未提供该变量时不向容器注入空值。
+  docker_environment=(-e "TERM=${TERM:-xterm-256color}")
+  if [[ -n ${TERM_PROGRAM:-} ]]; then
+    docker_environment+=(-e "TERM_PROGRAM=$TERM_PROGRAM")
+  fi
+  exec docker exec -it "${docker_environment[@]}" "$container_id" sh -lc '
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
 
