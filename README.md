@@ -63,12 +63,15 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 - tmux `3.7b`
 - lazygit `0.63.0`
 - git-delta `0.19.2`
+- fzf `0.74.0`
+- zoxide `0.10.0`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-autosuggestions、zsh-syntax-highlighting 的固定 Git commit
 
-tmux、lazygit、git-delta 和 Yazi 的官方 Release 包均进行 SHA256 校验。tmux 和 zsh
+tmux、lazygit、git-delta、fzf、zoxide 和 Yazi 的官方 Release 包均进行 SHA256
+校验。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
 避免覆盖用户改动。Codex CLI 是例外：bootstrap 始终安装
 `@openai/codex@latest`。
@@ -90,16 +93,16 @@ Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 - `nodejs`、`npm`（用于安装最新 Codex CLI）
 - `gcc`、`make`、`pkg-config`、`bison`
 - Yazi 所需的 `file`、`unzip`，以及预览/搜索依赖 `ffmpeg`、`p7zip-full`、
-  `jq`、`poppler-utils`、`fd-find`、`ripgrep`、`fzf`、`zoxide`、`resvg`、
+  `jq`、`poppler-utils`、`fd-find`、`ripgrep`、`resvg`、
   `imagemagick`
 - `libevent`、`ncurses`、`utf8proc` 开发包，以及提供 `tmux-256color` 的
   `ncurses-base`
 
 apt 安装使用 `DEBIAN_FRONTEND=noninteractive`，适用于容器、CI 和没有
 `dialog`/`whiptail` 的精简服务器，不会等待 debconf 交互输入。
-不同 Ubuntu/Debian 版本不一定提供可选的 `resvg` 或 `zoxide`；bootstrap 会在
-apt 索引中检查后安装，缺失时只跳过对应的 SVG 预览或历史目录导航能力，不影响
-Yazi 本体安装。
+不同 Ubuntu/Debian 版本不一定提供可选的 `resvg`；bootstrap 会在 apt 索引中
+检查后安装，缺失时只跳过 SVG 预览能力，不影响 Yazi 本体安装。fzf 和 zoxide
+不使用发行版中可能过旧的 apt 包，而是安装锁定的官方 Release。
 
 bootstrap 会在 `/etc/locale.gen` 中启用并生成 `zh_CN.UTF-8`，并向 Bash 与
 托管 zshrc 持久化：
@@ -114,18 +117,18 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 文字最终仍由本机 iTerm2 字体渲染。
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
-`~/.local`。lazygit、git-delta 和 Yazi 使用与操作系统、CPU 架构匹配的官方
-Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。Yazi 的 `yazi` 与 `ya` 会一起
-安装并验证版本一致。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，bootstrap 会在
-`~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
+`~/.local`。lazygit、git-delta、fzf、zoxide 和 Yazi 使用与操作系统、CPU 架构
+匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。Yazi 的 `yazi` 与
+`ya` 会一起安装并验证版本一致。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
+bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
 `@openai/codex@latest` 安装。这些用户级工具都位于 `~/.local/bin`。Oh My Zsh
 及第三方插件通过 Git 安装到 `~/.oh-my-zsh`。apt 安装需要 root 或 sudo 权限。
 
 macOS 会先执行 `brew update`，再按 Yazi 官方清单安装 Yazi、预览/搜索依赖、
 Maple Mono NF CN 与 Symbols Nerd Font，并强制链接 `ffmpeg-full` 与
 `imagemagick-full`。如果 Homebrew
-中的 Yazi 与锁定版本不同，bootstrap 会用官方 Release 包把锁定版本安装到
-`~/.local/bin`。
+中的 Yazi、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
+版本安装到 `~/.local/bin`。
 
 zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
 存在的 `~/Documents` 和 `~/.dotfiles` 加入数据库，避免 Yazi 中按大写 `Z` 时
@@ -226,7 +229,7 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- tmux、lazygit、git-delta、Yazi/`ya`、Codex CLI 版本
+- tmux、lazygit、git-delta、fzf、zoxide、Yazi/`ya`、Codex CLI 版本
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
 - 三个 tmux 插件以及 Oh My Zsh、两个 zsh 插件的 commit
