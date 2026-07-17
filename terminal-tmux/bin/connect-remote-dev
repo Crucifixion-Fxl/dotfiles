@@ -22,7 +22,7 @@ run_ssh() {
 }
 
 main() {
-  local host script_dir entry payload remote_command
+  local host script_dir entry payload term_program_payload remote_command
 
   [[ $# -eq 1 ]] || fail "用法：connect-remote-dev <ssh-host>"
   host=$1
@@ -36,6 +36,9 @@ main() {
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
   # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
   payload=$(base64 < "$entry" | tr -d '\r\n')
+  # SSH 默认只传递 TERM，不传递 TERM_PROGRAM。单独编码本机终端身份，让远端
+  # 入口可以继续交给 Docker/tmux，供 Yazi 选择 iTerm2 图像协议。
+  term_program_payload=$(printf '%s' "${TERM_PROGRAM:-}" | base64 | tr -d '\r\n')
   remote_command='set -eu
 command -v base64 >/dev/null 2>&1 || {
   printf "%s\n" "connect-remote-dev：远端未安装 base64" >&2
@@ -44,6 +47,7 @@ command -v base64 >/dev/null 2>&1 || {
 directory="$HOME/.local/bin"
 temporary="$directory/.remote-dev-entry.$$"
 payload='"'$payload'"'
+term_program_payload='"'$term_program_payload'"'
 umask 077
 mkdir -p "$directory"
 trap '\''rm -f "$temporary"'\'' 0 HUP INT TERM
@@ -51,8 +55,9 @@ printf "%s" "$payload" | base64 -d > "$temporary"
 chmod 700 "$temporary"
 mv -f "$temporary" "$directory/remote-dev-entry"
 trap - 0 HUP INT TERM
+TERM_PROGRAM=$(printf "%s" "$term_program_payload" | base64 -d)
 PATH="$directory:$PATH"
-export PATH
+export PATH TERM_PROGRAM
 exec "$directory/remote-dev-entry"'
 
   run_ssh "$host" "$remote_command"

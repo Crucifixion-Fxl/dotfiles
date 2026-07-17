@@ -57,6 +57,8 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
   `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件。
 - 使用 `y` 启动 Yazi；退出时当前 shell 会切换到 Yazi 最后所在目录。
 - Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
+- 通过 SSH 进入 Docker/tmux 时保留底层终端身份，并允许 Yazi 透传图片和
+  视频缩略图；重新连接后生效。
 - macOS 自动加载 `dev` iTerm2 Profile，并用可移植的 `$HOME` 路径启动远端选择器。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
