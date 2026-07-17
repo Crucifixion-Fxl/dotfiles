@@ -116,7 +116,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils ripgrep tar unzip zsh
+      ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -531,6 +531,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
+  backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
   backup_and_link "$DOTFILES_DIR/codex/notify-tmux.sh" "$HOME/.codex/hooks/notify-tmux.sh"
   backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
@@ -579,7 +580,7 @@ ensure_shell_locale() {
 
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
-  local iterm2_profile iterm2_destination yazi_init yazi_destination
+  local iterm2_profile iterm2_destination yazi_config yazi_config_destination yazi_init yazi_init_destination
 
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -592,6 +593,8 @@ validate() {
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
+  command -v vi >/dev/null 2>&1 || fail "vi is required"
+  vi --version 2>/dev/null | grep -Eq '\+mouse([[:space:]]|$)' || fail "vi must support mouse input"
   infocmp tmux-256color >/dev/null 2>&1 || fail "tmux-256color terminfo is missing"
   LC_ALL=zh_CN.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "zh_CN.UTF-8 locale is required"
 
@@ -607,9 +610,14 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
+  yazi_config="$DOTFILES_DIR/yazi/yazi.toml"
+  yazi_config_destination="$HOME/.config/yazi/yazi.toml"
+  [[ -L "$yazi_config_destination" && $(readlink "$yazi_config_destination") == "$yazi_config" ]] || \
+    fail "Yazi main config link is missing"
+
   yazi_init="$DOTFILES_DIR/yazi/init.lua"
-  yazi_destination="$HOME/.config/yazi/init.lua"
-  [[ -L "$yazi_destination" && $(readlink "$yazi_destination") == "$yazi_init" ]] || \
+  yazi_init_destination="$HOME/.config/yazi/init.lua"
+  [[ -L "$yazi_init_destination" && $(readlink "$yazi_init_destination") == "$yazi_init" ]] || \
     fail "Yazi init config link is missing"
 
   if [[ "$PLATFORM_OS" == darwin ]]; then
