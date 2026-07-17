@@ -45,6 +45,8 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 - `Prefix + t`：在当前目录打开 zsh popup。
 - `Prefix + g`：在当前目录打开 lazygit popup。
 - `Prefix + G`：在当前目录创建 lazygit window，退出后自动关闭。
+- `Prefix + <`：将当前 window 在底部状态栏中向左移动，并保持选中。
+- `Prefix + >`：将当前 window 在底部状态栏中向右移动，并保持选中。
 - 启动 lazygit 前自动定位当前 Git 仓库根目录，并将该具体路径加入用户级
   `safe.directory`；不会配置通配符 `*`。
 - `Prefix + s`：显示 session tree，并汇总各 window 的 Codex 状态。
