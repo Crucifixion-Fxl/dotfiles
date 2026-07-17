@@ -27,6 +27,12 @@ plugins=(
 
 source "$ZSH/oh-my-zsh.sh"
 
+# --- Zoxide ------------------------------------------------------------------
+# 记录访问过的目录，供 shell 的 `z` 命令和 Yazi 目录历史使用。
+if command -v zoxide >/dev/null 2>&1; then
+  eval "$(zoxide init zsh)"
+fi
+
 # --- Conda（可选）-----------------------------------------------------------
 # 仅当 ~/miniconda3 存在时初始化；远端机器没有 Conda 时不会报错。
 # 优先使用 Conda 官方 zsh hook，失败时再回退到 conda.sh 或 PATH。
