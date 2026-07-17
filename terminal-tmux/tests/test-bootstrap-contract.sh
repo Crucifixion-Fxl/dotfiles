@@ -64,6 +64,29 @@ HOME=$TEST_HOME install_plugin test-plugin https://example.invalid/test.git "$TE
 HOME=$TEST_HOME install_git_checkout test-checkout https://example.invalid/test.git \
   "$TEST_PLUGIN_COMMIT" "$TEST_HOME/.test-checkout"
 
+# A fresh zoxide database receives useful initial entries exactly once. This
+# prevents Yazi's zoxide picker from starting with an empty-history error while
+# avoiding rank inflation on repeated bootstrap runs.
+ZOXIDE_HISTORY=
+ZOXIDE_ADDS=
+zoxide() {
+  if [[ $1 == query && $2 == --list ]]; then
+    printf '%s' "$ZOXIDE_HISTORY"
+  elif [[ $1 == add ]]; then
+    ZOXIDE_ADDS+="$2"$'\n'
+  fi
+}
+mkdir -p "$TEST_HOME/Documents" "$TEST_HOME/.dotfiles"
+HOME=$TEST_HOME seed_zoxide_history
+[[ $ZOXIDE_ADDS == *"$TEST_HOME/Documents"* ]]
+[[ $ZOXIDE_ADDS == *"$TEST_HOME/.dotfiles"* ]]
+
+ZOXIDE_HISTORY=$TEST_HOME/Documents
+ZOXIDE_ADDS=
+HOME=$TEST_HOME seed_zoxide_history
+[[ -z $ZOXIDE_ADDS ]]
+unset -f zoxide
+
 # iTerm2 profiles are macOS-only dynamic profiles. Linux must skip the link;
 # macOS links the validated repository file into iTerm2's watched directory.
 PLATFORM_OS=linux HOME=$TEST_HOME install_iterm2_profile
@@ -170,6 +193,10 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRA
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"' "$BOOTSTRAP"
+grep -Fq 'update_db = true' "$ROOT/yazi/init.lua"
+grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
+grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
 grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"

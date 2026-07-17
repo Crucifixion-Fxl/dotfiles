@@ -139,6 +139,24 @@ ensure_linux_fd_command() {
   fi
 }
 
+# Yazi's zoxide picker has nothing to display until the database contains at
+# least one directory. Seed a brand-new database with existing common paths;
+# never add them again once the user has started building their own history.
+seed_zoxide_history() {
+  command -v zoxide >/dev/null 2>&1 || return 0
+
+  local directory history
+  history=$(zoxide query --list 2>/dev/null || true)
+  [[ -z "$history" ]] || return 0
+
+  for directory in "$HOME/Documents" "$HOME/.dotfiles"; do
+    if [[ -d "$directory" ]]; then
+      log "Seeding zoxide history with $directory"
+      zoxide add "$directory"
+    fi
+  done
+}
+
 configure_locale() {
   if [[ "$PLATFORM_OS" == linux ]]; then
     log "Generating zh_CN.UTF-8 locale"
@@ -415,6 +433,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
+  backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
   backup_and_link "$DOTFILES_DIR/codex/notify-tmux.sh" "$HOME/.codex/hooks/notify-tmux.sh"
   backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
 
@@ -462,7 +481,7 @@ ensure_shell_locale() {
 
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
-  local iterm2_profile iterm2_destination
+  local iterm2_profile iterm2_destination yazi_init yazi_destination
 
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -487,6 +506,11 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
+
+  yazi_init="$DOTFILES_DIR/yazi/init.lua"
+  yazi_destination="$HOME/.config/yazi/init.lua"
+  [[ -L "$yazi_destination" && $(readlink "$yazi_destination") == "$yazi_init" ]] || \
+    fail "Yazi init config link is missing"
 
   if [[ "$PLATFORM_OS" == darwin ]]; then
     iterm2_profile="$DOTFILES_DIR/iterm2/dev.json"
@@ -541,6 +565,7 @@ main() {
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
 
   install_links
+  seed_zoxide_history
   install_iterm2_profile
   validate
 

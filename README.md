@@ -127,6 +127,11 @@ Maple Mono NF CN 与 Symbols Nerd Font，并强制链接 `ffmpeg-full` 与
 中的 Yazi 与锁定版本不同，bootstrap 会用官方 Release 包把锁定版本安装到
 `~/.local/bin`。
 
+zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
+存在的 `~/Documents` 和 `~/.dotfiles` 加入数据库，避免 Yazi 中按大写 `Z` 时
+提示“未找到目录历史记录”；已有任何历史时不会重复添加或改变目录权重。Yazi
+内部通过小写 `z`（fzf）发生的目录跳转也会实时同步到 zoxide。
+
 远程 Ubuntu 通过 SSH 使用时，图标最终由本机终端字体渲染，因此服务端无需安装
 Nerd Font；本机 macOS 的 Homebrew 步骤会安装 `font-symbols-only-nerd-font`。
 
@@ -157,6 +162,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/bin/remote-dev-entry` | `~/.local/bin/remote-dev-entry` |
 | `terminal-tmux/bin/connect-remote-dev` | `~/.local/bin/connect-remote-dev` |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
+| `terminal-tmux/yazi/init.lua` | `~/.config/yazi/init.lua` |
 | `terminal-tmux/codex/notify-tmux.sh` | `~/.codex/hooks/notify-tmux.sh` |
 | `terminal-tmux/codex/hooks.json` | `~/.codex/hooks.json` |
 | `terminal-tmux/lazygit/config.yml` | `lazygit --print-config-dir` 返回目录中的 `config.yml` |
@@ -172,6 +178,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 想修改的行为 | 主要文件 | 注意事项 |
 | --- | --- | --- |
 | zsh 环境、插件、Yazi `y()` | `shell/zshrc` | 机器专属配置放 `~/.zshrc.local` |
+| Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
 | tmux 按键、状态栏、插件 | `tmux/tmux.conf` | Prefix 仍为 `Ctrl-b`；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
 | tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
 | Codex 的 🔄/❓/✅ 状态 | `codex/hooks.json` + `codex/notify-tmux.sh` | JSON 事件和 shell 状态名必须一致 |
