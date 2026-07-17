@@ -9,7 +9,7 @@ set -euo pipefail
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
 #
 # 可复现策略：
-#   - tmux/lazygit/delta/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - tmux/lazygit/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 按约定始终安装 @openai/codex@latest，不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
@@ -71,6 +71,16 @@ delta_is_locked_version() {
   command -v delta >/dev/null 2>&1 && [[ $(delta --version 2>/dev/null) == "delta $DELTA_VERSION" ]]
 }
 
+fzf_is_locked_version() {
+  command -v fzf >/dev/null 2>&1 &&
+    [[ $(fzf --version 2>/dev/null | awk '{print $1}') == "$FZF_VERSION" ]]
+}
+
+zoxide_is_locked_version() {
+  command -v zoxide >/dev/null 2>&1 &&
+    [[ $(zoxide --version 2>/dev/null | awk '{print $2}') == "$ZOXIDE_VERSION" ]]
+}
+
 yazi_is_locked_version() {
   command -v yazi >/dev/null 2>&1 &&
     command -v ya >/dev/null 2>&1 &&
@@ -105,11 +115,11 @@ install_prerequisites() {
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
     packages=(
-      bash bison ca-certificates curl fd-find ffmpeg file fonts-noto-cjk fzf gcc git imagemagick jq locales make
+      bash bison ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
       ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils ripgrep tar unzip zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
-    for optional_package in resvg zoxide; do
+    for optional_package in resvg; do
       if apt-cache show "$optional_package" >/dev/null 2>&1; then
         packages+=("$optional_package")
       else
@@ -121,7 +131,7 @@ install_prerequisites() {
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
     packages=(
       bash bison curl git libevent ncurses node pkgconf utf8proc zsh
-      yazi ffmpeg-full sevenzip jq poppler fd ripgrep fzf zoxide resvg imagemagick-full
+      yazi ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
     log "Updating Homebrew"
@@ -306,6 +316,94 @@ install_delta() {
   delta_is_locked_version || fail "git-delta $DELTA_VERSION installation verification failed"
 }
 
+fzf_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="fzf-${FZF_VERSION}-darwin_arm64.tar.gz"
+      ASSET_SHA256=$FZF_SHA256_DARWIN_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="fzf-${FZF_VERSION}-darwin_amd64.tar.gz"
+      ASSET_SHA256=$FZF_SHA256_DARWIN_X86_64
+      ;;
+    linux/arm64)
+      ASSET="fzf-${FZF_VERSION}-linux_arm64.tar.gz"
+      ASSET_SHA256=$FZF_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="fzf-${FZF_VERSION}-linux_amd64.tar.gz"
+      ASSET_SHA256=$FZF_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_fzf() {
+  fzf_is_locked_version && return 0
+
+  local work archive binary
+  fzf_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing fzf $FZF_VERSION into $HOME/.local/bin"
+  download "https://github.com/junegunn/fzf/releases/download/v$FZF_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xzf "$archive" -C "$work"
+  binary=$(find "$work" -type f -name fzf -perm -u+x | head -1)
+  [[ -n "$binary" ]] || fail "fzf binary not found in $ASSET"
+  install -m 0755 "$binary" "$HOME/.local/bin/fzf"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  fzf_is_locked_version || fail "fzf $FZF_VERSION installation verification failed"
+}
+
+zoxide_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="zoxide-${ZOXIDE_VERSION}-aarch64-apple-darwin.tar.gz"
+      ASSET_SHA256=$ZOXIDE_SHA256_DARWIN_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="zoxide-${ZOXIDE_VERSION}-x86_64-apple-darwin.tar.gz"
+      ASSET_SHA256=$ZOXIDE_SHA256_DARWIN_X86_64
+      ;;
+    linux/arm64)
+      ASSET="zoxide-${ZOXIDE_VERSION}-aarch64-unknown-linux-musl.tar.gz"
+      ASSET_SHA256=$ZOXIDE_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="zoxide-${ZOXIDE_VERSION}-x86_64-unknown-linux-musl.tar.gz"
+      ASSET_SHA256=$ZOXIDE_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_zoxide() {
+  zoxide_is_locked_version && return 0
+
+  local work archive binary
+  zoxide_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing zoxide $ZOXIDE_VERSION into $HOME/.local/bin"
+  download "https://github.com/ajeetdsouza/zoxide/releases/download/v$ZOXIDE_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xzf "$archive" -C "$work"
+  binary=$(find "$work" -type f -name zoxide -perm -u+x | head -1)
+  [[ -n "$binary" ]] || fail "zoxide binary not found in $ASSET"
+  install -m 0755 "$binary" "$HOME/.local/bin/zoxide"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  zoxide_is_locked_version || fail "zoxide $ZOXIDE_VERSION installation verification failed"
+}
+
 yazi_asset() {
   case "$PLATFORM_OS/$PLATFORM_ARCH" in
     darwin/arm64)
@@ -487,6 +585,8 @@ validate() {
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
   lazygit_is_locked_version || fail "expected lazygit $LAZYGIT_VERSION"
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
+  fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
+  zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   codex_is_installed || fail "Codex CLI is required"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
@@ -556,6 +656,8 @@ main() {
   ensure_tmux_terminfo
   install_lazygit
   install_delta
+  install_fzf
+  install_zoxide
   install_yazi
   install_codex
   install_oh_my_zsh
