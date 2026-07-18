@@ -22,17 +22,6 @@
         ]
       }
     ],
-    "PostToolUse": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "$HOME/.codex/hooks/notify-tmux.sh running",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
     "Stop": [
       {
         "hooks": [

@@ -2,6 +2,10 @@
 
 set -euo pipefail
 
+# Codex 会向每个 command hook 的 stdin 写入一个 JSON 对象。即使这里不使用
+# 事件内容，也要先把它完整读完，避免脚本提前退出导致 Codex 写入 Broken pipe。
+cat >/dev/null
+
 # Codex lifecycle hook 的 tmux 适配器。hooks.json 把 Codex 事件映射为三种状态：
 #   running        -> 🔄 codex
 #   input-required -> ❓ codex
