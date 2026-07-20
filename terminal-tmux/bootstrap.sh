@@ -9,7 +9,7 @@ set -euo pipefail
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
 #
 # 可复现策略：
-#   - tmux/lazygit/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 按约定始终安装 @openai/codex@latest，不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
@@ -92,6 +92,16 @@ codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
 }
 
+pre_commit_is_locked_version() {
+  local launcher="$HOME/.local/bin/pre-commit"
+  local pyz="$HOME/.local/share/pre-commit/pre-commit.pyz"
+  [[ -L "$launcher" && $(readlink "$launcher") == "$DOTFILES_DIR/bin/pre-commit" ]] &&
+  [[ -r "$pyz" ]] &&
+    [[ $(sha256_file "$pyz") == "$PRE_COMMIT_SHA256" ]] &&
+    command -v pre-commit >/dev/null 2>&1 &&
+    [[ $(pre-commit --version 2>/dev/null) == "pre-commit $PRE_COMMIT_VERSION" ]]
+}
+
 # --- 平台检测与系统依赖 -------------------------------------------------
 detect_platform() {
   case "$(uname -s)" in
@@ -116,7 +126,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils ripgrep tar unzip vim zsh
+      ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -130,7 +140,7 @@ install_prerequisites() {
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
     packages=(
-      bash bison curl git libevent ncurses node pkgconf utf8proc zsh
+      bash bison curl git libevent ncurses node pkgconf python utf8proc zsh
       yazi ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
@@ -450,6 +460,30 @@ install_yazi() {
   yazi_is_locked_version || fail "Yazi $YAZI_VERSION installation verification failed"
 }
 
+install_pre_commit() {
+  pre_commit_is_locked_version && return 0
+
+  local work archive destination
+  work=$(mktemp -d)
+  archive="$work/pre-commit-$PRE_COMMIT_VERSION.pyz"
+  destination="$HOME/.local/share/pre-commit/pre-commit.pyz"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing pre-commit $PRE_COMMIT_VERSION into $HOME/.local"
+  download \
+    "https://github.com/pre-commit/pre-commit/releases/download/v$PRE_COMMIT_VERSION/pre-commit-$PRE_COMMIT_VERSION.pyz" \
+    "$archive"
+  verify_sha256 "$archive" "$PRE_COMMIT_SHA256"
+  mkdir -p "$(dirname "$destination")"
+  install -m 0644 "$archive" "$destination"
+  backup_and_link "$DOTFILES_DIR/bin/pre-commit" "$HOME/.local/bin/pre-commit"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  pre_commit_is_locked_version || fail "pre-commit $PRE_COMMIT_VERSION installation verification failed"
+}
+
 install_codex() {
   command -v npm >/dev/null 2>&1 || fail "npm is required to install Codex CLI"
   log "Installing the latest Codex CLI into $HOME/.local/bin"
@@ -580,7 +614,7 @@ ensure_shell_locale() {
 
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
-  local iterm2_profile iterm2_destination yazi_config yazi_config_destination yazi_init yazi_init_destination
+  local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper yazi_config yazi_config_destination yazi_init yazi_init_destination
 
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -589,6 +623,7 @@ validate() {
   fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
   zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
+  pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   codex_is_installed || fail "Codex CLI is required"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
@@ -603,12 +638,18 @@ validate() {
   bash -n "$DOTFILES_DIR/bootstrap.sh"
   bash -n "$DOTFILES_DIR/bin/remote-dev-entry"
   bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
+  bash -n "$DOTFILES_DIR/bin/pre-commit"
   sh -n "$DOTFILES_DIR/bin/lazygit-safe"
   bash -n "$DOTFILES_DIR/tmux/session-status-counts.sh"
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
+
+  pre_commit_wrapper="$DOTFILES_DIR/bin/pre-commit"
+  pre_commit_link="$HOME/.local/bin/pre-commit"
+  [[ -L "$pre_commit_link" && $(readlink "$pre_commit_link") == "$pre_commit_wrapper" ]] || \
+    fail "pre-commit launcher link is missing"
 
   yazi_config="$DOTFILES_DIR/yazi/yazi.toml"
   yazi_config_destination="$HOME/.config/yazi/yazi.toml"
@@ -667,6 +708,7 @@ main() {
   install_fzf
   install_zoxide
   install_yazi
+  install_pre_commit
   install_codex
   install_oh_my_zsh
 

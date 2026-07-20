@@ -15,6 +15,8 @@ grep -q 'ffmpeg' "$BOOTSTRAP"
 grep -q 'poppler-utils' "$BOOTSTRAP"
 grep -q 'resvg' "$BOOTSTRAP"
 grep -q 'unzip' "$BOOTSTRAP"
+grep -q 'python3 ripgrep' "$BOOTSTRAP"
+grep -q 'pkgconf python utf8proc' "$BOOTSTRAP"
 grep -q 'vim zsh' "$BOOTSTRAP"
 grep -q 'font-maple-mono-nf-cn' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
@@ -23,6 +25,7 @@ grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
+grep -q '^install_pre_commit()' "$BOOTSTRAP"
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
@@ -141,6 +144,31 @@ ya() {
 }
 yazi_is_locked_version
 
+# pre-commit uses the same checked zipapp on macOS and Linux. Its launcher
+# selects Python 3.10+ explicitly, which avoids an older /usr/bin/python3 on
+# macOS shadowing Homebrew Python.
+TEST_PRE_COMMIT_SOURCE="$TEST_HOME/pre-commit-test.pyz"
+cat > "$TEST_PRE_COMMIT_SOURCE" <<'PY'
+import sys
+
+if sys.argv[1:] == ['--version']:
+    print('pre-commit test')
+PY
+TEST_PRE_COMMIT_SHA=$(sha256_file "$TEST_PRE_COMMIT_SOURCE")
+ORIGINAL_PRE_COMMIT_VERSION=$PRE_COMMIT_VERSION
+ORIGINAL_PRE_COMMIT_SHA256=$PRE_COMMIT_SHA256
+PRE_COMMIT_VERSION=test
+PRE_COMMIT_SHA256=$TEST_PRE_COMMIT_SHA
+download() {
+  cp "$TEST_PRE_COMMIT_SOURCE" "$2"
+}
+PATH="$TEST_HOME/.local/bin:$PATH" HOME=$TEST_HOME install_pre_commit
+PATH="$TEST_HOME/.local/bin:$PATH" HOME=$TEST_HOME pre_commit_is_locked_version
+[[ -L "$TEST_HOME/.local/bin/pre-commit" ]]
+[[ $(readlink "$TEST_HOME/.local/bin/pre-commit") == "$ROOT/bin/pre-commit" ]]
+PRE_COMMIT_VERSION=$ORIGINAL_PRE_COMMIT_VERSION
+PRE_COMMIT_SHA256=$ORIGINAL_PRE_COMMIT_SHA256
+
 for version_variable in \
   FZF_VERSION \
   FZF_SHA256_DARWIN_ARM64 \
@@ -156,7 +184,9 @@ for version_variable in \
   YAZI_SHA256_DARWIN_ARM64 \
   YAZI_SHA256_DARWIN_X86_64 \
   YAZI_SHA256_LINUX_ARM64 \
-  YAZI_SHA256_LINUX_X86_64; do
+  YAZI_SHA256_LINUX_X86_64 \
+  PRE_COMMIT_VERSION \
+  PRE_COMMIT_SHA256; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
 done
 
@@ -244,6 +274,7 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRA
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/pre-commit" "$HOME/.local/bin/pre-commit"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"' "$BOOTSTRAP"
 grep -Fq 'vim -c '\''set mouse=a autoread'\''' "$ROOT/yazi/yazi.toml"
@@ -256,9 +287,11 @@ grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
+grep -Fq '  install_pre_commit' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
 grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
+bash -n "$ROOT/bin/pre-commit"
 sh -n "$ROOT/bin/lazygit-safe"
