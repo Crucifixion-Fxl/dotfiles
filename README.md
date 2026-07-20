@@ -1,8 +1,8 @@
 # dotfiles
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
-Debian/Ubuntu 远端服务器上严格复现的 tmux、lazygit、git-delta、Yazi、
-Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
+Debian/Ubuntu 远端服务器上严格复现的 pre-commit、tmux、lazygit、git-delta、
+Yazi、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 
 ## 目录结构
 
@@ -15,6 +15,7 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
     ├── bin/
     │   ├── tmux-zsh                 # tmux pane 的统一 zsh 入口
     │   ├── lazygit-safe             # 信任当前仓库后启动 lazygit
+    │   ├── pre-commit               # 为官方 zipapp 选择 Python 3.10+
     │   ├── remote-dev-entry         # SSH 后选择宿主机或容器开发环境
     │   └── connect-remote-dev       # 连接时上传入口并启动交互 SSH
     ├── tmux/
@@ -61,6 +62,9 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
 - `Prefix + S` 手动保存，`Prefix + R` 手动恢复。
+- bootstrap 在本地 macOS 和远端 Debian/Ubuntu 默认安装 `pre-commit` CLI；
+  仓库级 hook 仍由各项目在存在 `.pre-commit-config.yaml` 时执行
+  `pre-commit install` 启用。
 
 ## 锁定版本
 
@@ -72,11 +76,12 @@ Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 - fzf `0.74.0`
 - zoxide `0.10.0`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
+- pre-commit `4.6.0`
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-autosuggestions、zsh-syntax-highlighting 的固定 Git commit
 
-tmux、lazygit、git-delta、fzf、zoxide 和 Yazi 的官方 Release 包均进行 SHA256
+pre-commit、tmux、lazygit、git-delta、fzf、zoxide 和 Yazi 的官方 Release 包均进行 SHA256
 校验。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
 避免覆盖用户改动。Codex CLI 是例外：bootstrap 始终安装
@@ -97,6 +102,7 @@ Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 - `bash`、`zsh`、`git`、`curl`
 - `locales`、`fonts-noto-cjk`（中文 locale 和服务端 CJK 字体）
 - `nodejs`、`npm`（用于安装最新 Codex CLI）
+- Python 3.10+（用于运行官方 pre-commit zipapp）
 - `gcc`、`make`、`pkg-config`、`bison`
 - Yazi 所需的 `file`、`unzip`，以及预览/搜索依赖 `ffmpeg`、`p7zip-full`、
   `jq`、`poppler-utils`、`fd-find`、`ripgrep`、`resvg`、
@@ -124,8 +130,9 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
 `~/.local`。lazygit、git-delta、fzf、zoxide 和 Yazi 使用与操作系统、CPU 架构
-匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。Yazi 的 `yazi` 与
-`ya` 会一起安装并验证版本一致。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
+匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。pre-commit 使用
+macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10+。Yazi 的
+`yazi` 与 `ya` 会一起安装并验证版本一致。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
 bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
 `@openai/codex@latest` 安装。这些用户级工具都位于 `~/.local/bin`。Oh My Zsh
 及第三方插件通过 Git 安装到 `~/.oh-my-zsh`。apt 安装需要 root 或 sudo 权限。
@@ -168,6 +175,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/tmux/session-status-counts.sh` | `~/.tmux/session-status-counts.sh` |
 | `terminal-tmux/bin/tmux-zsh` | `~/.local/bin/tmux-zsh` |
 | `terminal-tmux/bin/lazygit-safe` | `~/.local/bin/lazygit-safe` |
+| `terminal-tmux/bin/pre-commit` | `~/.local/bin/pre-commit` |
 | `terminal-tmux/bin/remote-dev-entry` | `~/.local/bin/remote-dev-entry` |
 | `terminal-tmux/bin/connect-remote-dev` | `~/.local/bin/connect-remote-dev` |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
@@ -237,7 +245,7 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- tmux、lazygit、git-delta、fzf、zoxide、Yazi/`ya`、Codex CLI 版本
+- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Yazi/`ya`、Codex CLI 版本
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
 - 三个 tmux 插件以及 Oh My Zsh、两个 zsh 插件的 commit
