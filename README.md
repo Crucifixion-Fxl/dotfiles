@@ -188,7 +188,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 想修改的行为 | 主要文件 | 注意事项 |
 | --- | --- | --- |
 | zsh 环境、插件、Yazi `y()` | `shell/zshrc` | 机器专属配置放 `~/.zshrc.local` |
-| Yazi 文本编辑与滚轮 | `yazi/yazi.toml` | Enter 用启用了 `mouse=a` 的 Vim |
+| Yazi 文本编辑、滚轮与自动重载 | `yazi/yazi.toml` | Enter 使用 Vim；每秒检查并读取外部文件变更 |
 | Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
 | tmux 按键、状态栏、插件 | `tmux/tmux.conf` | Prefix 仍为 `Ctrl-b`；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
 | tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
