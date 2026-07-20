@@ -1,7 +1,7 @@
-# Yazi 默认在未设置 EDITOR 时用 vi 打开文本文件，但 Vim 的 mouse 选项默认
-# 为空，滚轮事件不会用于滚动文件内容。仅为 Yazi opener 启用全鼠标模式，
-# 保留 Enter 后直接编辑文件的原有行为。
+# Yazi 使用 Vim 打开文本文件，并仅为该 opener 启用全鼠标模式。
+# autoread 允许未修改的缓冲区重新读取外部变更；定时器每秒执行一次
+# checktime，让已打开的文件持续反映磁盘上的最新内容。
 [opener]
 edit = [
-	{ run = 'vi -c "set mouse=a" %s', block = true, desc = "vi with mouse", for = "unix" },
+	{ run = '''vim -c 'set mouse=a autoread' -c 'call timer_start(1000, {-> execute("checktime")}, {"repeat": -1})' %s''', block = true, desc = "Vim with auto-reload", for = "unix" },
 ]
