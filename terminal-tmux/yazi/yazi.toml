@@ -5,3 +5,9 @@
 edit = [
 	{ run = '''vim -c 'set mouse=a autoread' -c 'call timer_start(1000, {-> execute("checktime")}, {"repeat": -1})' %s''', block = true, desc = "Vim with auto-reload", for = "unix" },
 ]
+
+# Piper 是 Yazi 官方的通用命令预览器。这里将 Markdown 交给 Glow 渲染，
+# 并根据预览区域宽度和终端明暗主题生成可滚动的 ANSI 文本预览。
+[[plugin.prepend_previewers]]
+url = "*.md"
+run = 'piper -- CLICOLOR_FORCE=1 glow -w="$w" -s="$t" "$1"'

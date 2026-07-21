@@ -2,7 +2,7 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 pre-commit、tmux、lazygit、git-delta、
-Yazi、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
+Yazi、Glow Markdown 预览、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 
 ## 目录结构
 
@@ -35,8 +35,9 @@ Yazi、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
     ├── lazygit/
     │   └── config.yml               # 使用 git-delta 渲染 diff
     ├── yazi/
-    │   ├── yazi.toml                # 文本编辑 opener 与 Vim 鼠标支持
-    │   └── init.lua                 # zoxide 历史同步
+    │   ├── yazi.toml                # 文本编辑与 Markdown 预览规则
+    │   ├── init.lua                 # zoxide 历史同步
+    │   └── package.toml             # Yazi 插件版本锁
     └── iterm2/
         └── dev.json                 # 可移植的 iTerm2 Dynamic Profile
 ```
@@ -58,6 +59,7 @@ Yazi、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
   `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件。
 - 使用 `y` 启动 Yazi；退出时当前 shell 会切换到 Yazi 最后所在目录。
 - Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
+- Yazi 通过官方 `piper.yazi` 调用 Glow，在预览区渲染可滚动的 Markdown。
 - macOS 自动加载 `dev` iTerm2 Profile，并用可移植的 `$HOME` 路径启动远端选择器。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
@@ -75,14 +77,16 @@ Yazi、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 - git-delta `0.19.2`
 - fzf `0.74.0`
 - zoxide `0.10.0`
+- Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-autosuggestions、zsh-syntax-highlighting 的固定 Git commit
 
-pre-commit、tmux、lazygit、git-delta、fzf、zoxide 和 Yazi 的官方 Release 包均进行 SHA256
-校验。tmux 和 zsh
+pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 的官方
+Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
+`package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
 避免覆盖用户改动。Codex CLI 是例外：bootstrap 始终安装
 `@openai/codex@latest`。
@@ -130,18 +134,19 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 文字最终仍由本机 iTerm2 字体渲染。
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
-`~/.local`。lazygit、git-delta、fzf、zoxide 和 Yazi 使用与操作系统、CPU 架构
+`~/.local`。lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 使用与操作系统、CPU 架构
 匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。pre-commit 使用
 macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10+。Yazi 的
-`yazi` 与 `ya` 会一起安装并验证版本一致。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
+`yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
+`piper.yazi`。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
 bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
 `@openai/codex@latest` 安装。这些用户级工具都位于 `~/.local/bin`。Oh My Zsh
 及第三方插件通过 Git 安装到 `~/.oh-my-zsh`。apt 安装需要 root 或 sudo 权限。
 
-macOS 会先执行 `brew update`，再按 Yazi 官方清单安装 Yazi、预览/搜索依赖、
+macOS 会先执行 `brew update`，再安装 Yazi、Glow、预览/搜索依赖、
 Maple Mono NF CN 与 Symbols Nerd Font，并强制链接 `ffmpeg-full` 与
 `imagemagick-full`。如果 Homebrew
-中的 Yazi、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
+中的 Yazi、Glow、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
 版本安装到 `~/.local/bin`。
 
 zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
@@ -165,6 +170,16 @@ exec zsh -l
 
 如果 Oh My Zsh 或插件目录存在未提交的本地修改，bootstrap 会停止，不会覆盖。
 
+安装收尾时，bootstrap 会检查当前用户的全局 Git `user.name` 和 `user.email`。
+已有配置会原样保留；交互终端中可以选择现在补充缺失字段，也可以直接回车跳过，
+下次运行 bootstrap 时再次设置。容器或 CI 等非交互环境不会等待输入，而是打印
+稍后可执行的 `git config --global` 命令。身份信息属于当前机器或容器，不会写入
+dotfiles 仓库。
+
+最后，bootstrap 会报告已存在的 `~/.ssh/*.pub` 公钥，或给出生成 Ed25519 密钥的
+`ssh-keygen` 命令，并提醒将公钥添加到远程代码托管账号。脚本不会自动上传密钥；
+本仓库使用 GitHub，可以通过 `ssh -T git@github.com` 验证 SSH 权限。
+
 ## 配置链接
 
 bootstrap 将仓库文件链接到程序实际读取的位置：
@@ -182,6 +197,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
 | `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
 | `terminal-tmux/yazi/init.lua` | `~/.config/yazi/init.lua` |
+| `terminal-tmux/yazi/package.toml` | `~/.config/yazi/package.toml` |
 | `terminal-tmux/codex/notify-tmux.sh` | `~/.codex/hooks/notify-tmux.sh` |
 | `terminal-tmux/codex/hooks.json` | `~/.codex/hooks.json` |
 | `terminal-tmux/lazygit/config.yml` | `lazygit --print-config-dir` 返回目录中的 `config.yml` |
@@ -197,8 +213,9 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 想修改的行为 | 主要文件 | 注意事项 |
 | --- | --- | --- |
 | zsh 环境、插件、Yazi `y()` | `shell/zshrc` | 机器专属配置放 `~/.zshrc.local` |
-| Yazi 文本编辑、滚轮与自动重载 | `yazi/yazi.toml` | Enter 使用 Vim；每秒检查并读取外部文件变更 |
+| Yazi 文本编辑与 Markdown 预览 | `yazi/yazi.toml` | Enter 使用 Vim；Piper 调用 Glow 渲染 `.md` |
 | Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
+| Yazi 插件版本 | `yazi/package.toml` | 由 `ya pkg` 维护 Piper 的 revision 和 hash |
 | tmux 按键、状态栏、插件 | `tmux/tmux.conf` | Prefix 仍为 `Ctrl-b`；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
 | tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
 | Codex 的 🔄/❓/✅ 状态 | `codex/hooks.json` + `codex/notify-tmux.sh` | JSON 事件和 shell 状态名必须一致 |
@@ -246,7 +263,8 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Yazi/`ya`、Codex CLI 版本
+- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow、Yazi/`ya`、Codex CLI 版本
+- Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
 - 三个 tmux 插件以及 Oh My Zsh、两个 zsh 插件的 commit

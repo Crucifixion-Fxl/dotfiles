@@ -25,8 +25,14 @@ grep -q '^configure_locale()' "$BOOTSTRAP"
 grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
+grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
+grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
+grep -q '^configure_git_identity()' "$BOOTSTRAP"
+grep -q '^remind_ssh_key()' "$BOOTSTRAP"
+grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
+grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
@@ -133,9 +139,13 @@ fzf() {
 zoxide() {
   printf 'zoxide %s\n' "$ZOXIDE_VERSION"
 }
+glow() {
+  printf 'glow version %s\n' "$GLOW_VERSION"
+}
 fzf_is_locked_version
 zoxide_is_locked_version
-unset -f fzf zoxide
+glow_is_locked_version
+unset -f fzf zoxide glow
 
 yazi() {
   printf 'Yazi %s (test)\n' "$YAZI_VERSION"
@@ -181,6 +191,11 @@ for version_variable in \
   ZOXIDE_SHA256_DARWIN_X86_64 \
   ZOXIDE_SHA256_LINUX_ARM64 \
   ZOXIDE_SHA256_LINUX_X86_64 \
+  GLOW_VERSION \
+  GLOW_SHA256_DARWIN_ARM64 \
+  GLOW_SHA256_DARWIN_X86_64 \
+  GLOW_SHA256_LINUX_ARM64 \
+  GLOW_SHA256_LINUX_X86_64 \
   YAZI_VERSION \
   YAZI_SHA256_DARWIN_ARM64 \
   YAZI_SHA256_DARWIN_X86_64 \
@@ -208,6 +223,15 @@ PLATFORM_OS=linux PLATFORM_ARCH=arm64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-aarch64-unknown-linux-musl.tar.gz" ]]
 PLATFORM_OS=linux PLATFORM_ARCH=x86_64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-x86_64-unknown-linux-musl.tar.gz" ]]
+
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 glow_asset
+[[ $ASSET == "glow_${GLOW_VERSION}_Darwin_arm64.tar.gz" ]]
+PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 glow_asset
+[[ $ASSET == "glow_${GLOW_VERSION}_Darwin_x86_64.tar.gz" ]]
+PLATFORM_OS=linux PLATFORM_ARCH=arm64 glow_asset
+[[ $ASSET == "glow_${GLOW_VERSION}_Linux_arm64.tar.gz" ]]
+PLATFORM_OS=linux PLATFORM_ARCH=x86_64 glow_asset
+[[ $ASSET == "glow_${GLOW_VERSION}_Linux_x86_64.tar.gz" ]]
 
 PLATFORM_OS=darwin PLATFORM_ARCH=arm64 yazi_asset
 [[ $ASSET == yazi-aarch64-apple-darwin.zip ]]
@@ -249,6 +273,9 @@ locale_setup_line=$(grep -n '^  ensure_shell_locale$' "$BOOTSTRAP" | cut -d: -f1
 locale_generation_line=$(grep -n '^  configure_locale$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $locale_setup_line -lt $prerequisite_line ]]
 [[ $prerequisite_line -lt $locale_generation_line ]]
+install_links_line=$(grep -n '^  install_links$' "$BOOTSTRAP" | cut -d: -f1)
+yazi_packages_line=$(grep -n '^  install_yazi_packages$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $install_links_line -lt $yazi_packages_line ]]
 
 # Codex intentionally follows the latest official npm release instead of the
 # versions.lock policy used by the other tools.
@@ -278,8 +305,13 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/laz
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/pre-commit" "$HOME/.local/bin/pre-commit"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/package.toml" "$HOME/.config/yazi/package.toml"' "$BOOTSTRAP"
 grep -Fq 'vim -c '\''set mouse=a autoread'\''' "$ROOT/yazi/yazi.toml"
 grep -Fq 'timer_start(1000' "$ROOT/yazi/yazi.toml"
+grep -Fq 'url = "*.md"' "$ROOT/yazi/yazi.toml"
+grep -Fq 'piper -- CLICOLOR_FORCE=1 glow' "$ROOT/yazi/yazi.toml"
+grep -Fq 'use = "yazi-rs/plugins:piper"' "$ROOT/yazi/package.toml"
+grep -Fq 'rev = "bb758e2"' "$ROOT/yazi/package.toml"
 grep -Fq 'update_db = true' "$ROOT/yazi/init.lua"
 grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
@@ -287,8 +319,12 @@ grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
 grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
+grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
+grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
 grep -Fq '  install_pre_commit' "$BOOTSTRAP"
+grep -Fq '  configure_git_identity' "$BOOTSTRAP"
+grep -Fq '  remind_ssh_key' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
 grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
@@ -296,3 +332,28 @@ bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
 bash -n "$ROOT/bin/pre-commit"
 sh -n "$ROOT/bin/lazygit-safe"
+
+# Git identity setup is machine-local: preserve existing values and never
+# prompt or write placeholders when the bootstrap runs without a terminal.
+unset -f git
+TEST_GIT_CONFIG="$TEST_HOME/gitconfig"
+export GIT_CONFIG_GLOBAL=$TEST_GIT_CONFIG
+git config --global user.name 'Existing User'
+git config --global user.email 'existing@example.com'
+git_identity_output=$(HOME=$TEST_HOME configure_git_identity </dev/null)
+grep -Fq 'Existing User <existing@example.com>' <<< "$git_identity_output"
+[[ $(git config --global --get user.name) == 'Existing User' ]]
+[[ $(git config --global --get user.email) == 'existing@example.com' ]]
+
+rm -f "$TEST_GIT_CONFIG"
+git_identity_output=$(HOME=$TEST_HOME configure_git_identity </dev/null)
+grep -Fq 'git config --global user.name "Your Name"' <<< "$git_identity_output"
+grep -Fq 'git config --global user.email "you@example.com"' <<< "$git_identity_output"
+[[ ! -e "$TEST_GIT_CONFIG" ]]
+
+mkdir -p "$TEST_HOME/.ssh"
+touch "$TEST_HOME/.ssh/id_ed25519.pub"
+ssh_key_output=$(HOME=$TEST_HOME remind_ssh_key)
+grep -Fq "$TEST_HOME/.ssh/id_ed25519.pub" <<< "$ssh_key_output"
+grep -Fq 'ssh -T git@github.com' <<< "$ssh_key_output"
+unset GIT_CONFIG_GLOBAL

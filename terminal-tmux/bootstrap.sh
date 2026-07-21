@@ -81,6 +81,11 @@ zoxide_is_locked_version() {
     [[ $(zoxide --version 2>/dev/null | awk '{print $2}') == "$ZOXIDE_VERSION" ]]
 }
 
+glow_is_locked_version() {
+  command -v glow >/dev/null 2>&1 &&
+    [[ $(glow --version 2>/dev/null | awk '/glow version/{print $3; exit}') == "$GLOW_VERSION" ]]
+}
+
 yazi_is_locked_version() {
   command -v yazi >/dev/null 2>&1 &&
     command -v ya >/dev/null 2>&1 &&
@@ -141,7 +146,7 @@ install_prerequisites() {
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
     packages=(
       bash bison curl git libevent ncurses node pkgconf python utf8proc zsh
-      yazi ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
+      yazi glow ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
     log "Updating Homebrew"
@@ -414,6 +419,50 @@ install_zoxide() {
   zoxide_is_locked_version || fail "zoxide $ZOXIDE_VERSION installation verification failed"
 }
 
+glow_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="glow_${GLOW_VERSION}_Darwin_arm64.tar.gz"
+      ASSET_SHA256=$GLOW_SHA256_DARWIN_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="glow_${GLOW_VERSION}_Darwin_x86_64.tar.gz"
+      ASSET_SHA256=$GLOW_SHA256_DARWIN_X86_64
+      ;;
+    linux/arm64)
+      ASSET="glow_${GLOW_VERSION}_Linux_arm64.tar.gz"
+      ASSET_SHA256=$GLOW_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="glow_${GLOW_VERSION}_Linux_x86_64.tar.gz"
+      ASSET_SHA256=$GLOW_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_glow() {
+  glow_is_locked_version && return 0
+
+  local work archive binary
+  glow_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing Glow $GLOW_VERSION into $HOME/.local/bin"
+  download "https://github.com/charmbracelet/glow/releases/download/v$GLOW_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xzf "$archive" -C "$work"
+  binary=$(find "$work" -type f -name glow -perm -u+x | head -1)
+  [[ -n "$binary" ]] || fail "glow binary not found in $ASSET"
+  install -m 0755 "$binary" "$HOME/.local/bin/glow"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  glow_is_locked_version || fail "Glow $GLOW_VERSION installation verification failed"
+}
+
 yazi_asset() {
   case "$PLATFORM_OS/$PLATFORM_ARCH" in
     darwin/arm64)
@@ -458,6 +507,13 @@ install_yazi() {
   trap - RETURN
   rm -rf "$work"
   yazi_is_locked_version || fail "Yazi $YAZI_VERSION installation verification failed"
+}
+
+install_yazi_packages() {
+  command -v ya >/dev/null 2>&1 || fail "ya is required to install Yazi packages"
+  log "Installing locked Yazi packages"
+  ya pkg install
+  [[ -d "$HOME/.config/yazi/plugins/piper.yazi" ]] || fail "piper.yazi installation failed"
 }
 
 install_pre_commit() {
@@ -567,6 +623,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
+  backup_and_link "$DOTFILES_DIR/yazi/package.toml" "$HOME/.config/yazi/package.toml"
   backup_and_link "$DOTFILES_DIR/codex/notify-tmux.sh" "$HOME/.codex/hooks/notify-tmux.sh"
   backup_and_link "$DOTFILES_DIR/codex/hooks.json" "$HOME/.codex/hooks.json"
 
@@ -612,9 +669,90 @@ ensure_shell_locale() {
   done
 }
 
+# Git identity belongs to the current machine or container, not to the dotfiles
+# repository. Preserve existing values; prompt only for missing fields when the
+# bootstrap owns an interactive terminal, and never block headless installs.
+configure_git_identity() {
+  local git_name git_email input configure_now
+  git_name=$(git config --global --get user.name 2>/dev/null || true)
+  git_email=$(git config --global --get user.email 2>/dev/null || true)
+
+  if [[ -n "$git_name" && -n "$git_email" ]]; then
+    log "Git identity already configured: $git_name <$git_email>"
+    return 0
+  fi
+
+  log "Git global identity is incomplete"
+  if [[ -t 0 ]]; then
+    printf 'Configure the missing Git identity now? [y/N]: '
+    configure_now=
+    IFS= read -r configure_now || true
+    case "$configure_now" in
+      y|Y|yes|YES)
+        if [[ -z "$git_name" ]]; then
+          printf 'Git user.name (leave blank to skip): '
+          input=
+          IFS= read -r input || true
+          [[ -z "$input" ]] || git config --global user.name "$input"
+        fi
+        if [[ -z "$git_email" ]]; then
+          printf 'Git user.email (leave blank to skip): '
+          input=
+          IFS= read -r input || true
+          [[ -z "$input" ]] || git config --global user.email "$input"
+        fi
+        ;;
+      *)
+        printf '%s\n' 'Skipping Git identity setup; bootstrap will ask again next time.'
+        ;;
+    esac
+  fi
+
+  git_name=$(git config --global --get user.name 2>/dev/null || true)
+  git_email=$(git config --global --get user.email 2>/dev/null || true)
+  if [[ -n "$git_name" && -n "$git_email" ]]; then
+    log "Git identity configured: $git_name <$git_email>"
+    return 0
+  fi
+
+  printf '%s\n' 'Complete the missing Git identity fields later with:'
+  [[ -n "$git_name" ]] || printf '%s\n' '  git config --global user.name "Your Name"'
+  [[ -n "$git_email" ]] || printf '%s\n' '  git config --global user.email "you@example.com"'
+}
+
+remind_ssh_key() {
+  local candidate public_key= git_email
+  for candidate in \
+    "$HOME/.ssh/id_ed25519.pub" \
+    "$HOME/.ssh/id_ecdsa.pub" \
+    "$HOME/.ssh/id_rsa.pub"; do
+    if [[ -f "$candidate" ]]; then
+      public_key=$candidate
+      break
+    fi
+  done
+
+  log "SSH key reminder"
+  if [[ -n "$public_key" ]]; then
+    printf 'Existing public key: %s\n' "$public_key"
+    printf 'Display it with: cat "%s"\n' "$public_key"
+  else
+    git_email=$(git config --global --get user.email 2>/dev/null || true)
+    if [[ -n "$git_email" ]]; then
+      printf 'Generate a key with: ssh-keygen -t ed25519 -C "%s"\n' "$git_email"
+    else
+      printf '%s\n' 'Generate a key with: ssh-keygen -t ed25519 -C "you@example.com"'
+    fi
+  fi
+  printf '%s\n' 'Add the public key to the remote repository account before using SSH Git URLs.'
+  printf '%s\n' 'For this GitHub repository, verify access with: ssh -T git@github.com'
+}
+
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
-  local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper yazi_config yazi_config_destination yazi_init yazi_init_destination
+  local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
+  local yazi_config yazi_config_destination yazi_init yazi_init_destination
+  local yazi_package yazi_package_destination yazi_package_list
 
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -622,6 +760,7 @@ validate() {
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
   fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
   zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
+  glow_is_locked_version || fail "expected Glow $GLOW_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   codex_is_installed || fail "Codex CLI is required"
@@ -660,6 +799,14 @@ validate() {
   yazi_init_destination="$HOME/.config/yazi/init.lua"
   [[ -L "$yazi_init_destination" && $(readlink "$yazi_init_destination") == "$yazi_init" ]] || \
     fail "Yazi init config link is missing"
+
+  yazi_package="$DOTFILES_DIR/yazi/package.toml"
+  yazi_package_destination="$HOME/.config/yazi/package.toml"
+  [[ -L "$yazi_package_destination" && $(readlink "$yazi_package_destination") == "$yazi_package" ]] || \
+    fail "Yazi package manifest link is missing"
+  [[ -d "$HOME/.config/yazi/plugins/piper.yazi" ]] || fail "piper.yazi is missing"
+  yazi_package_list=$(ya pkg list 2>/dev/null)
+  grep -Fq 'yazi-rs/plugins:piper (' <<< "$yazi_package_list" || fail "piper.yazi is not managed by ya pkg"
 
   if [[ "$PLATFORM_OS" == darwin ]]; then
     iterm2_profile="$DOTFILES_DIR/iterm2/dev.json"
@@ -707,6 +854,7 @@ main() {
   install_delta
   install_fzf
   install_zoxide
+  install_glow
   install_yazi
   install_pre_commit
   install_codex
@@ -717,6 +865,7 @@ main() {
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
 
   install_links
+  install_yazi_packages
   seed_zoxide_history
   install_iterm2_profile
   validate
@@ -725,10 +874,12 @@ main() {
     tmux source-file "$HOME/.tmux.conf"
   fi
 
+  configure_git_identity
   log "Installation complete"
   printf '%s\n' 'Reload Bash with: source "$HOME/.bashrc"'
   printf '%s\n' 'Reload zsh with: exec zsh -l'
   printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
+  remind_ssh_key
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
