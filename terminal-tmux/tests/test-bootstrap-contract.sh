@@ -8,6 +8,7 @@ ITERM_PROFILE="$ROOT/iterm2/dev.json"
 
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
+grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
 grep -q 'locales' "$BOOTSTRAP"
 grep -q 'fd-find' "$BOOTSTRAP"

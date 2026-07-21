@@ -104,6 +104,7 @@ Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 - `nodejs`、`npm`（用于安装最新 Codex CLI）
 - Python 3.10+（用于运行官方 pre-commit zipapp）
 - `gcc`、`make`、`pkg-config`、`bison`
+- `bubblewrap`（Linux 的非特权进程沙箱工具，提供 `bwrap` 命令）
 - Yazi 所需的 `file`、`unzip`，以及预览/搜索依赖 `ffmpeg`、`p7zip-full`、
   `jq`、`poppler-utils`、`fd-find`、`ripgrep`、`resvg`、
   `imagemagick`
