@@ -125,7 +125,7 @@ install_prerequisites() {
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
     packages=(
-      bash bison ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
+      bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
       ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
