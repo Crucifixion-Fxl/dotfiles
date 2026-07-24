@@ -614,6 +614,7 @@ install_iterm2_profile() {
 
 install_links() {
   backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
+  backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
   backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
   backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
@@ -789,6 +790,13 @@ validate() {
   pre_commit_link="$HOME/.local/bin/pre-commit"
   [[ -L "$pre_commit_link" && $(readlink "$pre_commit_link") == "$pre_commit_wrapper" ]] || \
     fail "pre-commit launcher link is missing"
+
+  vim_config="$DOTFILES_DIR/vim/vimrc"
+  vim_config_destination="$HOME/.vimrc"
+  [[ -L "$vim_config_destination" && $(readlink "$vim_config_destination") == "$vim_config" ]] || \
+    fail "Vim config link is missing"
+  vim -Nu "$vim_config" -n -es -i NONE \
+    -c 'if !&number | cquit | endif' -c 'qa!' || fail "Vim line numbers are not enabled"
 
   yazi_config="$DOTFILES_DIR/yazi/yazi.toml"
   yazi_config_destination="$HOME/.config/yazi/yazi.toml"

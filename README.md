@@ -59,6 +59,7 @@ Yazi、Glow Markdown 预览、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 
   `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件。
 - 使用 `y` 启动 Yazi；退出时当前 shell 会切换到 Yazi 最后所在目录。
 - Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
+- Vim 在本地和远端默认显示绝对行号。
 - Yazi 通过官方 `piper.yazi` 调用 Glow，在预览区渲染可滚动的 Markdown。
 - macOS 自动加载 `dev` iTerm2 Profile，并用可移植的 `$HOME` 路径启动远端选择器。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
@@ -198,6 +199,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
 | `terminal-tmux/yazi/init.lua` | `~/.config/yazi/init.lua` |
 | `terminal-tmux/yazi/package.toml` | `~/.config/yazi/package.toml` |
+| `terminal-tmux/vim/vimrc` | `~/.vimrc` |
 | `terminal-tmux/codex/notify-tmux.sh` | `~/.codex/hooks/notify-tmux.sh` |
 | `terminal-tmux/codex/hooks.json` | `~/.codex/hooks.json` |
 | `terminal-tmux/lazygit/config.yml` | `lazygit --print-config-dir` 返回目录中的 `config.yml` |
@@ -213,6 +215,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 想修改的行为 | 主要文件 | 注意事项 |
 | --- | --- | --- |
 | zsh 环境、插件、Yazi `y()` | `shell/zshrc` | 机器专属配置放 `~/.zshrc.local` |
+| Vim 默认行为 | `vim/vimrc` | 本地和远端共用，默认显示绝对行号 |
 | Yazi 文本编辑与 Markdown 预览 | `yazi/yazi.toml` | Enter 使用 Vim；Piper 调用 Glow 渲染 `.md` |
 | Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
 | Yazi 插件版本 | `yazi/package.toml` | 由 `ya pkg` 维护 Piper 的 revision 和 hash |
