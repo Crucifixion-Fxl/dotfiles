@@ -603,12 +603,22 @@ install_oh_my_zsh() {
 install_iterm2_profile() {
   [[ "$PLATFORM_OS" == darwin ]] || return 0
 
-  local profile destination
+  local profile destination legacy_profile legacy_destination
   profile="$DOTFILES_DIR/iterm2/dev.json"
   destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
+  legacy_profile="$DOTFILES_DIR/iterm2/dev-4090.json"
+  legacy_destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev-4090.json"
 
   command -v plutil >/dev/null 2>&1 || fail "plutil is required to validate the iTerm2 profile"
   plutil -convert xml1 -o /dev/null "$profile" || fail "invalid iTerm2 dynamic profile: $profile"
+
+  # The profile was renamed from dev-4090.json to dev.json. Remove only the
+  # obsolete dotfiles-managed link so iTerm2 does not keep reporting its now
+  # missing target; preserve any independently managed file at the same path.
+  if [[ -L "$legacy_destination" && $(readlink "$legacy_destination") == "$legacy_profile" ]]; then
+    rm "$legacy_destination"
+  fi
+
   backup_and_link "$profile" "$destination"
 }
 
