@@ -313,7 +313,7 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yaz
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/package.toml" "$HOME/.config/yazi/package.toml"' "$BOOTSTRAP"
 grep -Fq 'vim -c '\''set mouse=a autoread'\''' "$ROOT/yazi/yazi.toml"
-grep -Fq 'timer_start(1000' "$ROOT/yazi/yazi.toml"
+grep -Fq 'timer_start(60000' "$ROOT/yazi/yazi.toml"
 grep -Fq 'url = "*.md"' "$ROOT/yazi/yazi.toml"
 grep -Fq 'piper -- CLICOLOR_FORCE=1 glow' "$ROOT/yazi/yazi.toml"
 grep -Fq 'use = "yazi-rs/plugins:piper"' "$ROOT/yazi/package.toml"
