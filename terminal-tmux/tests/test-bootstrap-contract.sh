@@ -112,8 +112,12 @@ unset -f zoxide
 PLATFORM_OS=linux HOME=$TEST_HOME install_iterm2_profile
 [[ ! -e "$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json" ]]
 if command -v plutil >/dev/null 2>&1; then
+  ITERM_DIRECTORY="$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles"
+  mkdir -p "$ITERM_DIRECTORY"
+  ln -s "$ROOT/iterm2/dev-4090.json" "$ITERM_DIRECTORY/dev-4090.json"
   PLATFORM_OS=darwin HOME=$TEST_HOME install_iterm2_profile
   ITERM_DESTINATION="$TEST_HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
+  [[ ! -L "$ITERM_DIRECTORY/dev-4090.json" ]]
   [[ -L "$ITERM_DESTINATION" ]]
   [[ $(readlink "$ITERM_DESTINATION") == "$ITERM_PROFILE" ]]
 fi
