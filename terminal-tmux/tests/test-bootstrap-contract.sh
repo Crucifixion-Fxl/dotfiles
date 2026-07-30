@@ -5,6 +5,10 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 BOOTSTRAP="$ROOT/bootstrap.sh"
 ITERM_PROFILE="$ROOT/iterm2/dev.json"
+GHOSTTY_CONFIG="$ROOT/ghostty/config.ghostty"
+GHOSTTY_LAUNCHER="$ROOT/bin/ghostty-dev"
+GHOSTTY_APPLESCRIPT="$ROOT/ghostty/open-tab.applescript"
+GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
 
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
@@ -31,6 +35,7 @@ grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
 grep -q '^install_druk()' "$BOOTSTRAP"
+grep -q '^install_ghostty()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
@@ -134,6 +139,69 @@ if grep -Fq '9943041F-8D80-4EC9-B604-20F6DAFFD4ED' "$ITERM_PROFILE"; then
 fi
 if grep -Fq '/Users/a4x' "$ITERM_PROFILE"; then
   printf '%s\n' 'iTerm2 profile must not contain a machine-specific home path' >&2
+  exit 1
+fi
+
+# Ghostty uses its own text config and a separate launcher, while sharing the
+# same connect-remote-dev and remote-dev-entry implementation with iTerm2.
+(
+  BREW_ARGS=
+  GHOSTTY_PRESENT=0
+  ghostty_binary() {
+    ((GHOSTTY_PRESENT)) && printf '%s\n' "$TEST_HOME/fake-ghostty"
+  }
+  brew() {
+    BREW_ARGS="$*"
+    GHOSTTY_PRESENT=1
+  }
+
+  PLATFORM_OS=linux
+  install_ghostty
+  [[ -z $BREW_ARGS ]]
+  PLATFORM_OS=darwin
+  install_ghostty
+  [[ $BREW_ARGS == 'install --cask ghostty' ]]
+  BREW_ARGS=
+  install_ghostty
+  [[ -z $BREW_ARGS ]]
+)
+(
+  # Contract tests validate managed paths without launching the real macOS app
+  # binary, which may initialize GUI/crash-reporting services in a sandbox.
+  ghostty_binary() {
+    return 1
+  }
+
+  PLATFORM_OS=linux HOME=$TEST_HOME install_ghostty_config
+  [[ ! -e "$TEST_HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty" ]]
+  [[ ! -e "$TEST_HOME/.local/bin/ghostty-dev" ]]
+  PLATFORM_OS=darwin HOME=$TEST_HOME install_ghostty_config
+)
+GHOSTTY_DESTINATION="$TEST_HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+GHOSTTY_LAUNCHER_DESTINATION="$TEST_HOME/.local/bin/ghostty-dev"
+[[ -L "$GHOSTTY_DESTINATION" ]]
+[[ $(readlink "$GHOSTTY_DESTINATION") == "$GHOSTTY_CONFIG" ]]
+[[ -L "$GHOSTTY_LAUNCHER_DESTINATION" ]]
+[[ $(readlink "$GHOSTTY_LAUNCHER_DESTINATION") == "$GHOSTTY_LAUNCHER" ]]
+grep -Fq 'font-family = "Maple Mono NF CN"' "$GHOSTTY_CONFIG"
+grep -Fq 'font-size = 16' "$GHOSTTY_CONFIG"
+grep -Fq 'theme = "light:Catppuccin Latte,dark:Catppuccin Mocha"' "$GHOSTTY_CONFIG"
+grep -Fq 'background-opacity = 0.80' "$GHOSTTY_CONFIG"
+grep -Fq 'background-blur-radius = 30' "$GHOSTTY_CONFIG"
+grep -Fq 'macos-titlebar-style = tabs' "$GHOSTTY_CONFIG"
+grep -Fq 'window-new-tab-position = current' "$GHOSTTY_CONFIG"
+grep -Fq 'wait-after-command = false' "$GHOSTTY_CONFIG"
+grep -Fq 'shell-integration = zsh' "$GHOSTTY_CONFIG"
+grep -Fq 'keybind = super+shift+r=prompt_tab_title' "$GHOSTTY_CONFIG"
+grep -Fq 'keybind = super+shift+alt+left=move_tab:-1' "$GHOSTTY_CONFIG"
+grep -Fq 'keybind = super+shift+comma=reload_config' "$GHOSTTY_CONFIG"
+grep -Fq 'new tab in targetWindow with configuration surfaceConfig' "$GHOSTTY_APPLESCRIPT"
+grep -Fq 'if (count of windows) is 0' "$GHOSTTY_APPLESCRIPT"
+grep -Fq 'set wait after command of surfaceConfig to false' "$GHOSTTY_APPLESCRIPT"
+grep -Fq 'set targetTabID to id of targetTab as text' "$GHOSTTY_APPLESCRIPT"
+grep -Fq 'close tab candidateTab' "$GHOSTTY_CLOSE_APPLESCRIPT"
+if grep -Fq '/Users/a4x' "$GHOSTTY_CONFIG"; then
+  printf '%s\n' 'Ghostty config must not contain a machine-specific home path' >&2
   exit 1
 fi
 
@@ -300,6 +368,9 @@ locale_generation_line=$(grep -n '^  configure_locale$' "$BOOTSTRAP" | cut -d: -
 install_links_line=$(grep -n '^  install_links$' "$BOOTSTRAP" | cut -d: -f1)
 yazi_packages_line=$(grep -n '^  install_yazi_packages$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $install_links_line -lt $yazi_packages_line ]]
+ghostty_install_line=$(grep -n '^  install_ghostty$' "$BOOTSTRAP" | cut -d: -f1)
+ghostty_config_line=$(grep -n '^  install_ghostty_config$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $ghostty_install_line -lt $ghostty_config_line ]]
 
 # Codex and Druk intentionally follow the latest official npm releases instead
 # of the versions.lock policy used by the other tools.
@@ -361,6 +432,8 @@ grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
 grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
+grep -Fq '  install_ghostty' "$BOOTSTRAP"
+grep -Fq '  install_ghostty_config' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
 grep -Fq '  install_iris' "$BOOTSTRAP"
@@ -376,8 +449,11 @@ grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
+bash -n "$ROOT/bin/ghostty-dev"
+bash -n "$ROOT/bin/ghostty-tab-command"
 bash -n "$ROOT/bin/pre-commit"
 sh -n "$ROOT/bin/lazygit-safe"
+bash "$ROOT/tests/test-ghostty-dev.sh"
 
 # Git identity setup is machine-local: preserve existing values and never
 # prompt or write placeholders when the bootstrap runs without a terminal.
