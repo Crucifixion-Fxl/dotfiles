@@ -2,7 +2,8 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 pre-commit、tmux、lazygit、git-delta、
-Yazi、Glow Markdown 预览、Iris、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
+Yazi、Glow Markdown 预览、Iris、Codex CLI、Druk、Oh My Zsh、Codex 状态通知和
+zsh 交互环境。
 
 ## 目录结构
 
@@ -84,6 +85,7 @@ Yazi、Glow Markdown 预览、Iris、Codex CLI、Oh My Zsh、Codex 状态通知�
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
+- Druk：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
 
@@ -91,8 +93,8 @@ pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi �
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
-避免覆盖用户改动。Codex CLI 是例外：bootstrap 始终安装
-`@openai/codex@latest`。
+避免覆盖用户改动。Codex CLI 和 Druk 是例外：bootstrap 始终安装
+`@openai/codex@latest` 和 `druk@latest`。
 
 ## 安装
 
@@ -142,9 +144,10 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10+。Yazi 的
 `yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
 `piper.yazi`。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
-bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
-`@openai/codex@latest` 安装。这些用户级工具都位于 `~/.local/bin`。Oh My Zsh
-及第三方插件通过 Git 安装到 `~/.oh-my-zsh`。apt 安装需要 root 或 sudo 权限。
+bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 和 Druk 分别通过官方
+npm 包 `@openai/codex@latest` 与 `druk@latest` 安装。这些用户级工具都位于
+`~/.local/bin`。每次运行 bootstrap 都会重新解析并安装两个包的最新版本。Oh My
+Zsh 及第三方插件通过 Git 安装到 `~/.oh-my-zsh`。apt 安装需要 root 或 sudo 权限。
 
 macOS 会先执行 `brew update`，再安装 Yazi、Glow、预览/搜索依赖、
 Maple Mono NF CN 与 Symbols Nerd Font，并强制链接 `ffmpeg-full` 与
@@ -272,7 +275,7 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、Codex CLI 版本
+- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、Codex CLI、Druk 版本
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法

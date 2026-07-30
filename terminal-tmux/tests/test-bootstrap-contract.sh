@@ -30,6 +30,7 @@ grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
+grep -q '^install_druk()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
@@ -300,8 +301,8 @@ install_links_line=$(grep -n '^  install_links$' "$BOOTSTRAP" | cut -d: -f1)
 yazi_packages_line=$(grep -n '^  install_yazi_packages$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $install_links_line -lt $yazi_packages_line ]]
 
-# Codex intentionally follows the latest official npm release instead of the
-# versions.lock policy used by the other tools.
+# Codex and Druk intentionally follow the latest official npm releases instead
+# of the versions.lock policy used by the other tools.
 NPM_ARGS=
 npm() {
   NPM_ARGS="$*"
@@ -314,6 +315,17 @@ HOME=$TEST_HOME install_codex
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @openai/codex@latest" ]]
 if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   printf '%s\n' 'Codex must track latest and must not be pinned in versions.lock' >&2
+  exit 1
+fi
+
+druk() {
+  printf '%s\n' '999.0.0'
+}
+
+HOME=$TEST_HOME install_druk
+[[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local druk@latest" ]]
+if grep -q '^DRUK_VERSION=' "$ROOT/versions.lock"; then
+  printf '%s\n' 'Druk must track latest and must not be pinned in versions.lock' >&2
   exit 1
 fi
 
@@ -356,6 +368,7 @@ grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
 grep -Fq '  install_pre_commit' "$BOOTSTRAP"
+grep -Fq '  install_druk' "$BOOTSTRAP"
 grep -Fq '  configure_git_identity' "$BOOTSTRAP"
 grep -Fq '  remind_ssh_key' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
