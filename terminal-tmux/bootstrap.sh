@@ -684,6 +684,87 @@ install_iterm2_profile() {
   backup_and_link "$profile" "$destination"
 }
 
+ghostty_binary() {
+  local candidate
+
+  if command -v ghostty >/dev/null 2>&1; then
+    command -v ghostty
+    return 0
+  fi
+
+  for candidate in \
+    /Applications/Ghostty.app/Contents/MacOS/ghostty \
+    "$HOME/Applications/Ghostty.app/Contents/MacOS/ghostty"; do
+    if [[ -x "$candidate" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+install_ghostty() {
+  [[ "$PLATFORM_OS" == darwin ]] || return 0
+
+  if ghostty_binary >/dev/null 2>&1; then
+    log "Ghostty is already installed"
+    return 0
+  fi
+
+  command -v brew >/dev/null 2>&1 || fail "Homebrew is required to install Ghostty"
+  log "Installing the current stable Ghostty with Homebrew"
+  brew install --cask ghostty
+  ghostty_binary >/dev/null 2>&1 || fail "Ghostty installation verification failed"
+}
+
+validate_ghostty_config_file() {
+  local config=$1 binary
+  [[ -r "$config" ]] || fail "Ghostty config is missing: $config"
+
+  # 没有安装 Ghostty 的 macOS 机器仍可先同步配置；安装后下一次 bootstrap 会
+  # 使用官方解析器验证。stderr 包含与配置无关的 crash reporter 初始化提示。
+  if binary=$(ghostty_binary); then
+    "$binary" +validate-config --config-file="$config" >/dev/null 2>&1 || \
+      fail "invalid Ghostty config: $config"
+  fi
+}
+
+validate_ghostty_applescript() {
+  local script=$1 work
+  [[ -r "$script" ]] || fail "Ghostty AppleScript is missing: $script"
+
+  # osacompile 需要已安装 Ghostty 才能解析它的 scripting dictionary。
+  if command -v osacompile >/dev/null 2>&1 && ghostty_binary >/dev/null; then
+    work=$(mktemp -d)
+    if ! osacompile -o "$work/ghostty-script.scpt" "$script" >/dev/null 2>&1; then
+      rm -rf "$work"
+      fail "invalid Ghostty AppleScript: $script"
+    fi
+    rm -rf "$work"
+  fi
+}
+
+install_ghostty_config() {
+  [[ "$PLATFORM_OS" == darwin ]] || return 0
+
+  local applescript close_applescript config destination launcher launcher_destination wrapper
+  applescript="$DOTFILES_DIR/ghostty/open-tab.applescript"
+  close_applescript="$DOTFILES_DIR/ghostty/close-tab.applescript"
+  config="$DOTFILES_DIR/ghostty/config.ghostty"
+  destination="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+  launcher="$DOTFILES_DIR/bin/ghostty-dev"
+  launcher_destination="$HOME/.local/bin/ghostty-dev"
+  wrapper="$DOTFILES_DIR/bin/ghostty-tab-command"
+
+  validate_ghostty_config_file "$config"
+  validate_ghostty_applescript "$applescript"
+  validate_ghostty_applescript "$close_applescript"
+  bash -n "$wrapper"
+  backup_and_link "$config" "$destination"
+  backup_and_link "$launcher" "$launcher_destination"
+}
+
 install_links() {
   backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
   backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
@@ -823,6 +904,7 @@ remind_ssh_key() {
 
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
+  local ghostty_config ghostty_destination ghostty_launcher ghostty_launcher_destination
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination yazi_package_list
@@ -852,12 +934,15 @@ validate() {
   bash -n "$DOTFILES_DIR/bootstrap.sh"
   bash -n "$DOTFILES_DIR/bin/remote-dev-entry"
   bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
+  bash -n "$DOTFILES_DIR/bin/ghostty-dev"
+  bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
   sh -n "$DOTFILES_DIR/bin/lazygit-safe"
   bash -n "$DOTFILES_DIR/tmux/session-status-counts.sh"
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
+  bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
   pre_commit_wrapper="$DOTFILES_DIR/bin/pre-commit"
@@ -896,6 +981,20 @@ validate() {
     plutil -convert xml1 -o /dev/null "$iterm2_profile" || fail "invalid iTerm2 dynamic profile"
     [[ -L "$iterm2_destination" && $(readlink "$iterm2_destination") == "$iterm2_profile" ]] || \
       fail "iTerm2 dev profile link is missing"
+
+    ghostty_binary >/dev/null 2>&1 || fail "Ghostty is required on macOS"
+    ghostty_config="$DOTFILES_DIR/ghostty/config.ghostty"
+    ghostty_destination="$HOME/Library/Application Support/com.mitchellh.ghostty/config.ghostty"
+    ghostty_launcher="$DOTFILES_DIR/bin/ghostty-dev"
+    ghostty_launcher_destination="$HOME/.local/bin/ghostty-dev"
+    validate_ghostty_config_file "$ghostty_config"
+    validate_ghostty_applescript "$DOTFILES_DIR/ghostty/open-tab.applescript"
+    validate_ghostty_applescript "$DOTFILES_DIR/ghostty/close-tab.applescript"
+    [[ -L "$ghostty_destination" && $(readlink "$ghostty_destination") == "$ghostty_config" ]] || \
+      fail "Ghostty config link is missing"
+    [[ -L "$ghostty_launcher_destination" &&
+      $(readlink "$ghostty_launcher_destination") == "$ghostty_launcher" ]] || \
+      fail "Ghostty dev launcher link is missing"
   fi
 
   [[ $(git -C "$HOME/.tmux/plugins/tpm" rev-parse HEAD) == "$TPM_COMMIT" ]] || fail "TPM commit mismatch"
@@ -927,6 +1026,7 @@ main() {
   ensure_shell_path
   ensure_shell_locale
   install_prerequisites
+  install_ghostty
   ensure_linux_fd_command
   configure_locale
   install_tmux
@@ -951,6 +1051,7 @@ main() {
   install_yazi_packages
   seed_zoxide_history
   install_iterm2_profile
+  install_ghostty_config
   validate
 
   if tmux list-sessions >/dev/null 2>&1; then
@@ -962,6 +1063,8 @@ main() {
   printf '%s\n' 'Reload Bash with: source "$HOME/.bashrc"'
   printf '%s\n' 'Reload zsh with: exec zsh -l'
   printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
+  printf '%s\n' 'Ghostty stable app and managed config are ready on macOS'
+  printf '%s\n' 'Choose an SSH host and open the remote menu in Ghostty: ghostty-dev'
   remind_ssh_key
 }
 

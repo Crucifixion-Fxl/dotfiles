@@ -8,6 +8,22 @@ ENTRY="$ROOT/bin/remote-dev-entry"
 # shellcheck source=../bin/remote-dev-entry
 source "$ENTRY"
 
+# xterm-ghostty 只在远端缺少对应 terminfo 时降级；iTerm2 等已有 TERM 不变。
+infocmp() {
+  [[ ${TERMINFO_TEST_MODE:-missing} == present ]]
+}
+TERM=xterm-ghostty
+TERMINFO_TEST_MODE=missing fallback_ghostty_term
+[[ $TERM == xterm-256color ]]
+TERM=xterm-ghostty
+TERMINFO_TEST_MODE=present fallback_ghostty_term
+[[ $TERM == xterm-ghostty ]]
+TERM=xterm-256color
+TERMINFO_TEST_MODE=missing fallback_ghostty_term
+[[ $TERM == xterm-256color ]]
+unset -f infocmp
+TERM=xterm-256color
+
 docker() {
   if [[ $1 == ps ]]; then
     case "${DOCKER_TEST_MODE:-running}" in
@@ -85,6 +101,9 @@ if printf '\n' | DOCKER_TEST_MODE=denied main >/dev/null 2>&1; then
 fi
 
 grep -Fq 'exec docker exec -it' "$ENTRY"
+grep -Fq 'fallback_ghostty_term' "$ENTRY"
+grep -Fq 'infocmp xterm-ghostty' "$ENTRY"
+grep -Fq 'export TERM=xterm-256color' "$ENTRY"
 grep -Fq 'grep -Eim1 "^zh_CN\\.utf-?8$"' "$ENTRY"
 grep -Fq 'grep -Eim1 "^C\\.utf-?8$"' "$ENTRY"
 grep -Fq 'tmux set-environment -g LANG "$LANG"' "$ENTRY"
@@ -93,13 +112,16 @@ grep -Fq 'tmux source-file "$HOME/.tmux.conf"' "$ENTRY"
 grep -Fq 'tmux has-session -t "=$tmux_session"' "$ENTRY"
 grep -Fq '#{pane_current_command}' "$ENTRY"
 grep -Fq 'tmux list-panes -s -t "=$tmux_session"' "$ENTRY"
-grep -Fq 'if [ "$pane_command" = zsh ]' "$ENTRY"
+grep -Fq 'zsh|iris)' "$ENTRY"
 grep -Fq 'attempt=$((attempt + 1))' "$ENTRY"
 grep -Fq 'tmux new-window -d -P -F "#{pane_id}"' "$ENTRY"
 grep -Fq 'tmux select-window -t "$zsh_window"' "$ENTRY"
 grep -Fq 'tmux select-pane -t "$zsh_pane"' "$ENTRY"
-grep -Fq 'exec zsh -lic' "$ENTRY"
-grep -Fq 'tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"' "$ENTRY"
+grep -Fq 'exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$tmux_session"' "$ENTRY"
+if grep -Fq 'exec zsh -lic' "$ENTRY"; then
+  printf '%s\n' 'container entry must not start interactive zsh outside tmux' >&2
+  exit 1
+fi
 grep -Fq 'size=$(stty size 2>/dev/null || true)' "$ENTRY"
 grep -Fq "trap 'prompt_resized=1' WINCH" "$ENTRY"
 grep -Fq "trap 'menu_resized=1' WINCH" "$ENTRY"

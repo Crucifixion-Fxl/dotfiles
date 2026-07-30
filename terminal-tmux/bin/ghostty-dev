@@ -1,0 +1,263 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 在新的 Ghostty 实例中选择 SSH host，再启动与 iTerm2 `dev` Profile 相同的
+# 远端选择器。用法：ghostty-dev [ssh-host]；显式传 host 时跳过选择菜单。
+
+fail() {
+  printf 'ghostty-dev：%s\n' "$*" >&2
+  exit 1
+}
+
+resolve_script_dir() {
+  local source_path=$1 source_dir link_target
+
+  # bootstrap 把本脚本链接到 ~/.local/bin；沿链接回到仓库 bin/，确保同目录的
+  # connect-remote-dev 总能找到，即使旧机器尚未创建它的 ~/.local/bin 链接。
+  while [[ -L "$source_path" ]]; do
+    source_dir=$(CDPATH= cd -P -- "$(dirname -- "$source_path")" && pwd)
+    link_target=$(readlink "$source_path")
+    if [[ "$link_target" == /* ]]; then
+      source_path=$link_target
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+
+  CDPATH= cd -P -- "$(dirname -- "$source_path")" && pwd
+}
+
+list_ssh_hosts() {
+  local config=${GHOSTTY_DEV_SSH_CONFIG:-"$HOME/.ssh/config"}
+  [[ -r "$config" ]] || fail "找不到 SSH 配置 $config；也可以直接运行 ghostty-dev HOST"
+
+  # 每个具体 Host alias 只显示一次；忽略通配、否定规则和行尾注释。
+  awk '
+    tolower($1) == "host" {
+      for (field_no = 2; field_no <= NF; field_no++) {
+        host = $field_no
+        if (substr(host, 1, 1) == "#") {
+          break
+        }
+        if (host !~ /[*?!]/ && !seen[host]++) {
+          print host
+        }
+      }
+    }
+  ' "$config"
+}
+
+terminal_size() {
+  local rows=${LINES:-} columns=${COLUMNS:-} size
+
+  # LINES/COLUMNS 便于非交互环境覆盖；正常 Ghostty tab 直接读取当前 TTY，
+  # 因而每次重绘都能取得窗口缩放后的最新尺寸。
+  if [[ $rows =~ ^[1-9][0-9]*$ && $columns =~ ^[1-9][0-9]*$ ]]; then
+    printf '%s %s\n' "$rows" "$columns"
+    return
+  fi
+
+  if size=$(stty size 2>/dev/null < /dev/tty); then
+    read -r rows columns <<< "$size"
+    if [[ $rows =~ ^[1-9][0-9]*$ && $columns =~ ^[1-9][0-9]*$ ]]; then
+      printf '%s %s\n' "$rows" "$columns"
+      return
+    fi
+  fi
+
+  printf '24 80\n'
+}
+
+render_ssh_host_menu() {
+  local selected_index=$1
+  shift
+  local hosts=("$@")
+  local title='请选择 Ghostty 要连接的 SSH 服务器：'
+  local help='↑/↓ 选择  Enter 确认  q/Esc 取消'
+  local terminal_rows terminal_columns menu_height menu_width
+  local start_row start_column menu_index host host_width
+
+  read -r terminal_rows terminal_columns < <(terminal_size)
+
+  # title/help 的显示宽度分别为 36/32 列；SSH Host alias 按 ASCII 计算。
+  # 菜单包含标题、两个空行、Host 列表和帮助行。
+  menu_height=$((${#hosts[@]} + 4))
+  menu_width=36
+  for host in "${hosts[@]}"; do
+    host_width=$((${#host} + 6))
+    ((host_width <= menu_width)) || menu_width=$host_width
+  done
+
+  if ((terminal_rows > menu_height)); then
+    start_row=$(((terminal_rows - menu_height) / 2 + 1))
+  else
+    start_row=1
+  fi
+  if ((terminal_columns > menu_width)); then
+    start_column=$(((terminal_columns - menu_width) / 2 + 1))
+  else
+    start_column=1
+  fi
+
+  printf '\033[2J\033[%d;%dH%s' "$start_row" "$start_column" "$title" >&2
+  for menu_index in "${!hosts[@]}"; do
+    printf '\033[%d;%dH' "$((start_row + menu_index + 2))" "$start_column" >&2
+    if ((menu_index == selected_index)); then
+      printf '\033[7m  > %s  \033[0m' "${hosts[$menu_index]}" >&2
+    else
+      printf '    %s' "${hosts[$menu_index]}" >&2
+    fi
+  done
+  printf '\033[%d;%dH%s' \
+    "$((start_row + ${#hosts[@]} + 3))" "$start_column" "$help" >&2
+}
+
+choose_ssh_host() {
+  local host key sequence selected_index menu_index read_status
+  local menu_resized=0 previous_winch_trap
+  local hosts=()
+
+  while IFS= read -r host; do
+    [[ -n "$host" ]] && hosts[${#hosts[@]}]=$host
+  done < <(list_ssh_hosts)
+
+  ((${#hosts[@]} > 0)) || fail "SSH 配置中没有可选择的具体 Host alias"
+
+  selected_index=0
+  for menu_index in "${!hosts[@]}"; do
+    if [[ ${hosts[$menu_index]} == dev-4090 ]]; then
+      selected_index=$menu_index
+      break
+    fi
+  done
+
+  previous_winch_trap=$(trap -p WINCH || true)
+  trap 'menu_resized=1' WINCH
+
+  while true; do
+    menu_resized=0
+    render_ssh_host_menu "$selected_index" "${hosts[@]}"
+    ((menu_resized == 0)) || continue
+
+    key=
+    read_status=0
+    IFS= read -rsn1 key || read_status=$?
+    if ((menu_resized)); then
+      continue
+    fi
+    ((read_status == 0)) || key=
+
+    case "$key" in
+      '')
+        if [[ -n $previous_winch_trap ]]; then
+          eval "$previous_winch_trap"
+        else
+          trap - WINCH
+        fi
+        printf '\033[2J\033[H正在连接 %s...\n' "${hosts[$selected_index]}" >&2
+        printf '%s\n' "${hosts[$selected_index]}"
+        return 0
+        ;;
+      q|Q)
+        if [[ -n $previous_winch_trap ]]; then
+          eval "$previous_winch_trap"
+        else
+          trap - WINCH
+        fi
+        printf '\033[2J\033[H已取消。\n' >&2
+        return 130
+        ;;
+      $'\033')
+        sequence=
+        IFS= read -rsn2 -t 1 sequence || true
+        if ((menu_resized)); then
+          continue
+        fi
+        case "$sequence" in
+          '[A')
+            selected_index=$((selected_index - 1))
+            ((selected_index >= 0)) || selected_index=$((${#hosts[@]} - 1))
+            ;;
+          '[B')
+            selected_index=$((selected_index + 1))
+            ((selected_index < ${#hosts[@]})) || selected_index=0
+            ;;
+          '')
+            if [[ -n $previous_winch_trap ]]; then
+              eval "$previous_winch_trap"
+            else
+              trap - WINCH
+            fi
+            printf '\033[2J\033[H已取消。\n' >&2
+            return 130
+            ;;
+        esac
+        ;;
+    esac
+  done
+}
+
+launch_connector() {
+  local connector=$1 host=$2
+  exec "$connector" "$host"
+}
+
+run_server_selector() {
+  local script_dir connector host
+  script_dir=$(resolve_script_dir "${BASH_SOURCE[0]}")
+  connector="$script_dir/connect-remote-dev"
+  [[ -x "$connector" ]] || fail "找不到可执行入口 $connector"
+
+  host=$(choose_ssh_host)
+  launch_connector "$connector" "$host"
+}
+
+main() {
+  local host script_dir connector applescript close_script wrapper state_directory
+  local initial_command initial_argument
+
+  [[ $# -le 1 ]] || fail "用法：ghostty-dev [ssh-host]"
+  if [[ ${1:-} == --select-host ]]; then
+    run_server_selector
+    return
+  fi
+
+  host=${1:-}
+  script_dir=$(resolve_script_dir "${BASH_SOURCE[0]}")
+  connector="$script_dir/connect-remote-dev"
+  applescript="$(CDPATH= cd -- "$script_dir/../ghostty" && pwd)/open-tab.applescript"
+  close_script="$(CDPATH= cd -- "$script_dir/../ghostty" && pwd)/close-tab.applescript"
+  wrapper="$script_dir/ghostty-tab-command"
+
+  [[ -x "$connector" ]] || fail "找不到可执行入口 $connector"
+  [[ -r "$applescript" ]] || fail "找不到 Ghostty tab 启动脚本 $applescript"
+  [[ -r "$close_script" ]] || fail "找不到 Ghostty tab 关闭脚本 $close_script"
+  [[ -x "$wrapper" ]] || fail "找不到 Ghostty tab 命令 wrapper $wrapper"
+  command -v osascript >/dev/null 2>&1 || fail "只支持通过 macOS AppleScript 控制 Ghostty"
+  if [[ ! -d /Applications/Ghostty.app && ! -d "$HOME/Applications/Ghostty.app" ]]; then
+    fail "找不到 Ghostty.app"
+  fi
+
+  if [[ -n "$host" ]]; then
+    initial_command=$connector
+    initial_argument=$host
+  else
+    initial_command="$script_dir/ghostty-dev"
+    initial_argument=--select-host
+  fi
+
+  # Ghostty 1.3+ 的 AppleScript API 可以为现有 front window 创建带独立 command
+  # 的 tab；仅在当前没有任何 Ghostty window 时创建首个 window。状态目录用于把
+  # 新 tab 的稳定 ID 交给 wrapper，远端命令结束后即可精确关闭该 tab。
+  state_directory=$(mktemp -d "${TMPDIR:-/tmp}/ghostty-dev.XXXXXX")
+  if ! osascript "$applescript" "$wrapper" "$state_directory" "$close_script" \
+    "$initial_command" "$initial_argument"; then
+    rmdir "$state_directory" 2>/dev/null || true
+    fail "无法在 Ghostty 中创建开发 tab；请检查 macOS Automation 权限"
+  fi
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

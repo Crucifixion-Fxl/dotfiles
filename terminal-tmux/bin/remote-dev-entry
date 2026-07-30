@@ -19,8 +19,18 @@ fail() {
   exit 1
 }
 
+fallback_ghostty_term() {
+  # Ghostty 使用 xterm-ghostty 描述完整终端能力。较旧的远端系统尚未内置
+  # 该 terminfo 时再回退到普遍可用的 xterm-256color；已有条目时不降级。
+  if [[ ${TERM:-} == xterm-ghostty ]] &&
+    { ! command -v infocmp >/dev/null 2>&1 || ! infocmp xterm-ghostty >/dev/null 2>&1; }; then
+    export TERM=xterm-256color
+  fi
+}
+
 enter_host_tmux() {
   # exec 会让 tmux 取代入口脚本，SSH 退出时不留额外进程。
+  fallback_ghostty_term
   command -v tmux >/dev/null 2>&1 || fail "宿主机未安装 tmux"
   exec tmux new-session -A -s "$HOST_TMUX_SESSION"
 }
@@ -36,6 +46,13 @@ enter_container_tmux() {
   exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
+
+    # 宿主机可能已经安装 xterm-ghostty，而所选容器尚未安装。必须在容器内
+    # 再检查一次，否则 tmux/Yazi 会因未知 TERM 无法启动。
+    if [ "${TERM:-}" = xterm-ghostty ] &&
+      { ! command -v infocmp >/dev/null 2>&1 || ! infocmp xterm-ghostty >/dev/null 2>&1; }; then
+      export TERM=xterm-256color
+    fi
 
     utf8_locale=
     if command -v locale >/dev/null 2>&1; then
@@ -81,8 +98,9 @@ enter_container_tmux() {
       }
     fi
 
-    # 持久 session 可能正指向一个运行 bash/其他前台命令的 pane。新客户端优先选择
-    # 空闲 zsh pane；只在没有空闲 zsh 时新建 window，永不终止已有进程。
+    # 持久 session 可能正指向一个运行其他前台命令的 pane。新客户端优先选择
+    # 空闲的受管 shell pane；Iris 会成为 zsh 的外层进程，因此 pane_current_command
+    # 在 prompt 处可能是 zsh，也可能是 iris。
     if tmux has-session -t "=$tmux_session" 2>/dev/null; then
       zsh_pane=
       attempt=0
@@ -93,10 +111,12 @@ enter_container_tmux() {
           pane_id=$1
           pane_command=$2
           shift 2
-          if [ "$pane_command" = zsh ]; then
-            zsh_pane=$pane_id
-            break
-          fi
+          case "$pane_command" in
+            zsh|iris)
+              zsh_pane=$pane_id
+              break
+              ;;
+          esac
         done
         attempt=$((attempt + 1))
         [ -n "$zsh_pane" ] || sleep 0.05
@@ -110,9 +130,10 @@ enter_container_tmux() {
       tmux select-pane -t "$zsh_pane"
     fi
 
-    # 与手动进入流程保持一致：先加载 interactive login zsh，再显式使用
-    # ~/.tmux.conf 创建/附加 session。
-    exec zsh -lic '\''exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$1"'\'' zsh "$tmux_session"
+    # tmux 必须直接取代容器入口。不能先启动 interactive zsh：Iris 会包装
+    # 该 zsh，使外层命令停在 Iris 而未执行 tmux。tmux pane 自身仍会通过
+    # ~/.tmux.conf 的 default-command 启动受管 login zsh。
+    exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$tmux_session"
   ' sh "$CONTAINER_TMUX_SESSION"
 }
 

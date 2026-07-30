@@ -1,9 +1,9 @@
 # dotfiles
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
-Debian/Ubuntu 远端服务器上严格复现的 pre-commit、tmux、lazygit、git-delta、
-Yazi、Glow Markdown 预览、Iris、Codex CLI、Druk、Oh My Zsh、Codex 状态通知和
-zsh 交互环境。
+Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
+git-delta、Yazi、Glow Markdown 预览、Iris、Codex CLI、Druk、Oh My Zsh、
+Codex 状态通知和 zsh 交互环境。
 
 ## 目录结构
 
@@ -17,6 +17,8 @@ zsh 交互环境。
     │   ├── tmux-zsh                 # tmux pane 的统一 zsh 入口
     │   ├── lazygit-safe             # 信任当前仓库后启动 lazygit
     │   ├── pre-commit               # 为官方 zipapp 选择 Python 3.10+
+    │   ├── ghostty-dev              # 新 Ghostty tab 中的远端开发入口
+    │   ├── ghostty-tab-command      # 远端入口结束后精确关闭对应 tab
     │   ├── remote-dev-entry         # SSH 后选择宿主机或容器开发环境
     │   └── connect-remote-dev       # 连接时上传入口并启动交互 SSH
     ├── tmux/
@@ -29,6 +31,7 @@ zsh 交互环境。
     │   ├── test-bootstrap-contract.sh # bootstrap 回归检查
     │   ├── test-remote-dev-entry.sh   # 宿主机/容器入口路由检查
     │   ├── test-connect-remote-dev.sh # SSH 自举上传检查
+    │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
     │   └── test-lazygit-safe.sh       # Git safe.directory 回归检查
     ├── codex/
     │   ├── hooks.json               # Codex 生命周期 hook 注册
@@ -39,6 +42,10 @@ zsh 交互环境。
     │   ├── yazi.toml                # 文本编辑与 Markdown 预览规则
     │   ├── init.lua                 # zoxide 历史同步
     │   └── package.toml             # Yazi 插件版本锁
+    ├── ghostty/
+    │   ├── config.ghostty           # 本地 zsh、字体及 SSH shell integration
+    │   ├── close-tab.applescript    # 按稳定 ID 关闭已结束的开发 tab
+    │   └── open-tab.applescript     # 在现有 Ghostty 窗口创建开发 tab
     └── iterm2/
         └── dev.json                 # 可移植的 iTerm2 Dynamic Profile
 ```
@@ -63,7 +70,10 @@ zsh 交互环境。
 - Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
 - Vim 在本地和远端默认显示绝对行号。
 - Yazi 通过官方 `piper.yazi` 调用 Glow，在预览区渲染可滚动的 Markdown。
-- macOS 自动加载 `dev` iTerm2 Profile，并用可移植的 `$HOME` 路径启动远端选择器。
+- macOS 同时管理 iTerm2 `dev` Profile 和 Ghostty 配置；`ghostty-dev` 与
+  iTerm2 Profile 共用同一个远端选择器。
+- macOS bootstrap 会通过 Homebrew cask 安装 Ghostty 稳定版，并恢复当前使用的
+  Maple Mono NF CN、Catppuccin、透明度、窗口、tab、分屏和快捷键配置。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
 - `Prefix + S` 手动保存，`Prefix + R` 手动恢复。
@@ -84,6 +94,7 @@ zsh 交互环境。
 - Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
+- Ghostty：macOS 通过 Homebrew cask 安装当前稳定版（不锁版本）
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - Druk：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
@@ -93,8 +104,8 @@ pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi �
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
-避免覆盖用户改动。Codex CLI 和 Druk 是例外：bootstrap 始终安装
-`@openai/codex@latest` 和 `druk@latest`。
+避免覆盖用户改动。Ghostty、Codex CLI 和 Druk 是例外：Ghostty 跟随 Homebrew
+cask 的稳定版，另外两者始终安装 `@openai/codex@latest` 和 `druk@latest`。
 
 ## 安装
 
@@ -105,6 +116,10 @@ Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 git clone https://github.com/Crucifixion-Fxl/dotfiles ~/.dotfiles
 ~/.dotfiles/terminal-tmux/bootstrap.sh
 ```
+
+在一台新 Mac 上，先准备 Homebrew 和该私有仓库的读取权限，然后只需运行上面的
+bootstrap 一次。脚本会安装 Ghostty 稳定版与 Maple Mono NF CN 字体、链接托管
+配置并用 Ghostty 自带解析器验证；无需再手动复制 Ghostty 设置。
 
 Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 
@@ -136,7 +151,7 @@ export LC_ALL=zh_CN.UTF-8
 
 安装完成后，新 shell 会自动生效；当前 Bash 可以执行 `source ~/.bashrc`，当前
 zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲染；SSH 终端
-文字最终仍由本机 iTerm2 字体渲染。
+文字最终仍由本机 iTerm2 或 Ghostty 字体渲染。
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
 `~/.local`。lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi 使用与操作系统、CPU 架构
@@ -150,8 +165,9 @@ npm 包 `@openai/codex@latest` 与 `druk@latest` 安装。这些用户级工具�
 Zsh 及第三方插件通过 Git 安装到 `~/.oh-my-zsh`。apt 安装需要 root 或 sudo 权限。
 
 macOS 会先执行 `brew update`，再安装 Yazi、Glow、预览/搜索依赖、
-Maple Mono NF CN 与 Symbols Nerd Font，并强制链接 `ffmpeg-full` 与
-`imagemagick-full`。如果 Homebrew
+Maple Mono NF CN 与 Symbols Nerd Font，并通过官方文档列出的
+`brew install --cask ghostty` 安装 Ghostty 稳定版，最后强制链接
+`ffmpeg-full` 与 `imagemagick-full`。如果 Homebrew
 中的 Yazi、Glow、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
 版本安装到 `~/.local/bin`。
 
@@ -204,6 +220,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/bin/pre-commit` | `~/.local/bin/pre-commit` |
 | `terminal-tmux/bin/remote-dev-entry` | `~/.local/bin/remote-dev-entry` |
 | `terminal-tmux/bin/connect-remote-dev` | `~/.local/bin/connect-remote-dev` |
+| `terminal-tmux/bin/ghostty-dev` | `~/.local/bin/ghostty-dev`（仅 macOS） |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
 | `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
 | `terminal-tmux/yazi/init.lua` | `~/.config/yazi/init.lua` |
@@ -213,6 +230,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/codex/hooks.json` | `~/.codex/hooks.json` |
 | `terminal-tmux/lazygit/config.yml` | `lazygit --print-config-dir` 返回目录中的 `config.yml` |
 | `terminal-tmux/iterm2/dev.json` | `~/Library/Application Support/iTerm2/DynamicProfiles/dev.json`（仅 macOS） |
+| `terminal-tmux/ghostty/config.ghostty` | `~/Library/Application Support/com.mitchellh.ghostty/config.ghostty`（仅 macOS） |
 
 修改配置时应编辑仓库内的源文件，不要直接改上表右侧的链接目标。
 
@@ -234,6 +252,8 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | lazygit diff 渲染 | `lazygit/config.yml` | lazygit 负责滚动，delta 不再开二级 pager |
 | Docker 询问和容器列表 | `bin/remote-dev-entry` | 容器分支必须直接 `exec docker exec`，不嵌套宿主机 tmux |
 | 连接并更新远程入口 | `bin/connect-remote-dev` | 保持单条 SSH 连接和原子替换 |
+| Ghostty 字体、shell integration | `ghostty/config.ghostty` | 默认窗口保持本地 zsh，远端入口不要写入 `command` |
+| Ghostty 远端启动 | `bin/ghostty-dev` | 在现有窗口创建 tab，并用方向键选择 `~/.ssh/config` Host |
 | 工具版本 | `versions.lock` | 升级 Release 时同时更新版本和各平台 SHA256 |
 
 JSON 标准不允许写注释，因此不要在下面两个文件中加 `//` 或 `#`：
@@ -245,6 +265,10 @@ JSON 标准不允许写注释，因此不要在下面两个文件中加 `//` 或
   `Name`、`Guid`、`Command` 和 `Normal Font`。`Guid` 必须全局唯一，不能复用
   普通 Profile 的 GUID；颜色字段数量较多，建议在 iTerm2 中调整后重新导出，
   不要手工逐项修改。
+
+`ghostty/config.ghostty` 使用 Ghostty 原生文本格式，可以写 `#` 注释。默认窗口
+进入本地 zsh；不要把远端命令写成全局 `command`，否则新窗口和标签页都会自动
+连接远端。
 
 已有目标文件会先重命名为带时间戳的 `.backup.*` 文件。`~/.zshrc` 由仓库完整
 托管，包含中文 locale、Oh My Zsh、主题、插件、Conda 条件加载和 tmux 窗口命名配置。
@@ -279,6 +303,7 @@ hook 在所有机器上的行为一致。
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
+- Ghostty 应用、iTerm2 Dynamic Profile、Ghostty 配置和 `ghostty-dev` 启动参数
 - 三个 tmux 插件以及 Oh My Zsh、zsh-syntax-highlighting 的 commit
 - SSH 入口的宿主机/容器分支不会互相嵌套 tmux
 - 使用隔离 socket 启动 tmux 并加载完整配置
@@ -306,6 +331,11 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 `~/.local/bin/remote-dev-entry`、设置仅当前用户可执行，然后立即启动菜单。SSH 的
 stdin 始终保留给交互菜单，因此不会额外建立上传连接。
 
+Ghostty 默认使用 `TERM=xterm-ghostty`。远端入口会分别在宿主机和最终选中的容器
+中用 `infocmp` 检查该 terminfo：存在时保留 Ghostty 的完整能力，缺失或没有
+`infocmp` 时只对当前远端环境回退为 `TERM=xterm-256color`。iTerm2 原有的
+`xterm-256color` 路径不受影响。
+
 入口先在终端中央询问是否进入 Docker，并在终端尺寸变化时重新居中。按 `Enter`
 列出正在运行的容器，按 `Esc` 则直接进入宿主机的 `dev` tmux。容器列表也会在
 窗口缩放后重新计算起始行列，让整个选择器保持居中；可用高度不足时会自动减少
@@ -316,10 +346,13 @@ stdin 始终保留给交互菜单，因此不会额外建立上传连接。
 tmux。容器路径不会创建或附加宿主机 tmux，因此不存在宿主机 tmux 嵌套容器
 tmux 的情况。进入容器时会优先使用 `zh_CN.UTF-8`，不可用时回退到
 `C.UTF-8`，并同步已有 tmux server 的 `LANG` 和 `LC_ALL`，避免重新连接后
-中文显示异常。Profile 入口会先加载交互式 login zsh；如果容器内已经存在 tmux
-server，还会重新加载 `~/.tmux.conf`，确保它与手动进入容器后启动 tmux 的配置
-一致。附加已有 session 前会优先选择空闲的 zsh pane；如果所有 pane 都在运行
-bash 或其他前台命令，则新建一个 zsh window，不会终止现有 pane 中的进程。
+中文显示异常。容器入口会直接 `exec tmux`，tmux 再通过 `default-command`
+启动受管的 login zsh，避免 Iris 在 tmux 外包装 zsh 后阻断 attach。如果容器内
+已经存在 tmux server，还会重新加载 `~/.tmux.conf`，确保它与手动进入容器后
+启动 tmux 的配置一致。附加已有 session 前会优先选择空闲的受管 shell pane；
+启用 Iris 时该 pane 的前台进程可能显示为 `iris` 而不是 `zsh`，两者都会被正确
+识别。如果所有 pane 都在运行其他前台命令，则新建一个 zsh window，不会终止
+现有 pane 中的进程。
 
 容器内必须为 `docker exec` 使用的用户预先安装 tmux。推荐在容器镜像构建阶段运行
 bootstrap，或者为该用户持久化 HOME 后在容器内执行：
@@ -342,6 +375,23 @@ iTerm2 会监视 DynamicProfiles 目录并自动加载变更。Dynamic Profile �
 独立 GUID，避免与 `New Bookmarks` 中的普通 Profile 冲突。如果某台旧机器已有同名
 的普通 `dev` Profile，只需在 iTerm2 Settings 中删除旧项一次；之后由
 dotfiles 中的 Dynamic Profile 统一管理。
+
+Ghostty 的默认窗口继续打开本地 zsh。要在当前 Ghostty 窗口的新 tab 中选择 SSH 服务器，
+再启动与 iTerm2 `dev` Profile 相同的远端菜单，运行：
+
+```bash
+ghostty-dev
+ghostty-dev OTHER_SSH_HOST
+```
+
+无参数时，启动器从 `~/.ssh/config` 读取不含 `*`、`?`、`!` 的具体 `Host`
+alias，并在新 tab 中用 `↑/↓` 移动高亮、`Enter` 确认、`q` 或 `Esc` 取消；
+如果列表中存在 `dev-4090`，它会成为初始选中项。传入参数则跳过服务器菜单，
+直接连接指定 SSH host。启动器通过 Ghostty 1.3+ AppleScript API 向当前 front
+window 添加 tab；只有 Ghostty 没有任何窗口时才创建首个窗口。Ghostty 配置同时
+启用 `ssh-env` 和 `ssh-terminfo`，因此在普通 Ghostty zsh 中直接输入 `ssh` 时也会
+自动处理远端环境。容器内执行 tmux detach 后，启动 wrapper 会按稳定 tab ID 关闭
+刚结束的开发 tab，不会停在 `Process exited. Press any key to close the terminal.`。
 
 ## 不同步的内容
 
