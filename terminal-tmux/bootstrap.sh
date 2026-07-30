@@ -9,7 +9,7 @@ set -euo pipefail
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
 #
 # 可复现策略：
-#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 按约定始终安装 @openai/codex@latest，不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
@@ -79,6 +79,11 @@ fzf_is_locked_version() {
 zoxide_is_locked_version() {
   command -v zoxide >/dev/null 2>&1 &&
     [[ $(zoxide --version 2>/dev/null | awk '{print $2}') == "$ZOXIDE_VERSION" ]]
+}
+
+iris_is_locked_version() {
+  command -v iris >/dev/null 2>&1 &&
+    [[ $(iris version 2>/dev/null | awk '{print $2}') == "v$IRIS_VERSION" ]]
 }
 
 glow_is_locked_version() {
@@ -419,6 +424,50 @@ install_zoxide() {
   zoxide_is_locked_version || fail "zoxide $ZOXIDE_VERSION installation verification failed"
 }
 
+iris_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="iris_darwin_arm64.tar.gz"
+      ASSET_SHA256=$IRIS_SHA256_DARWIN_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="iris_darwin_amd64.tar.gz"
+      ASSET_SHA256=$IRIS_SHA256_DARWIN_X86_64
+      ;;
+    linux/arm64)
+      ASSET="iris_linux_arm64.tar.gz"
+      ASSET_SHA256=$IRIS_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="iris_linux_amd64.tar.gz"
+      ASSET_SHA256=$IRIS_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_iris() {
+  iris_is_locked_version && return 0
+
+  local work archive binary
+  iris_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing Iris $IRIS_VERSION into $HOME/.local/bin"
+  download "https://github.com/versenilvis/iris/releases/download/v$IRIS_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xzf "$archive" -C "$work"
+  binary=$(find "$work" -type f -name iris -perm -u+x | head -1)
+  [[ -n "$binary" ]] || fail "Iris binary not found in $ASSET"
+  install -m 0755 "$binary" "$HOME/.local/bin/iris"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  iris_is_locked_version || fail "Iris $IRIS_VERSION installation verification failed"
+}
+
 glow_asset() {
   case "$PLATFORM_OS/$PLATFORM_ARCH" in
     darwin/arm64)
@@ -594,8 +643,6 @@ install_plugin() {
 install_oh_my_zsh() {
   install_git_checkout oh-my-zsh https://github.com/ohmyzsh/ohmyzsh.git \
     "$OH_MY_ZSH_COMMIT" "$HOME/.oh-my-zsh"
-  install_git_checkout zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git \
-    "$ZSH_AUTOSUGGESTIONS_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
   install_git_checkout zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting.git \
     "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
 }
@@ -771,6 +818,7 @@ validate() {
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
   fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
   zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
+  iris_is_locked_version || fail "expected Iris $IRIS_VERSION"
   glow_is_locked_version || fail "expected Glow $GLOW_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
@@ -838,7 +886,6 @@ validate() {
   [[ $(git -C "$HOME/.tmux/plugins/tmux-resurrect" rev-parse HEAD) == "$RESURRECT_COMMIT" ]] || fail "tmux-resurrect commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-continuum" rev-parse HEAD) == "$CONTINUUM_COMMIT" ]] || fail "tmux-continuum commit mismatch"
   [[ $(git -C "$HOME/.oh-my-zsh" rev-parse HEAD) == "$OH_MY_ZSH_COMMIT" ]] || fail "Oh My Zsh commit mismatch"
-  [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions" rev-parse HEAD) == "$ZSH_AUTOSUGGESTIONS_COMMIT" ]] || fail "zsh-autosuggestions commit mismatch"
   [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" rev-parse HEAD) == "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" ]] || fail "zsh-syntax-highlighting commit mismatch"
 
   tmux -L terminal-tmux-check kill-server >/dev/null 2>&1 || true
@@ -872,6 +919,7 @@ main() {
   install_delta
   install_fzf
   install_zoxide
+  install_iris
   install_glow
   install_yazi
   install_pre_commit
