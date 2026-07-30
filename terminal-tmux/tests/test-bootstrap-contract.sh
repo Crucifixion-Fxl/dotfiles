@@ -25,6 +25,7 @@ grep -q '^configure_locale()' "$BOOTSTRAP"
 grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
+grep -q '^install_iris()' "$BOOTSTRAP"
 grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
@@ -146,10 +147,14 @@ zoxide() {
 glow() {
   printf 'glow version %s\n' "$GLOW_VERSION"
 }
+iris() {
+  printf 'iris v%s\n' "$IRIS_VERSION"
+}
 fzf_is_locked_version
 zoxide_is_locked_version
+iris_is_locked_version
 glow_is_locked_version
-unset -f fzf zoxide glow
+unset -f fzf zoxide iris glow
 
 yazi() {
   printf 'Yazi %s (test)\n' "$YAZI_VERSION"
@@ -195,6 +200,11 @@ for version_variable in \
   ZOXIDE_SHA256_DARWIN_X86_64 \
   ZOXIDE_SHA256_LINUX_ARM64 \
   ZOXIDE_SHA256_LINUX_X86_64 \
+  IRIS_VERSION \
+  IRIS_SHA256_DARWIN_ARM64 \
+  IRIS_SHA256_DARWIN_X86_64 \
+  IRIS_SHA256_LINUX_ARM64 \
+  IRIS_SHA256_LINUX_X86_64 \
   GLOW_VERSION \
   GLOW_SHA256_DARWIN_ARM64 \
   GLOW_SHA256_DARWIN_X86_64 \
@@ -227,6 +237,15 @@ PLATFORM_OS=linux PLATFORM_ARCH=arm64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-aarch64-unknown-linux-musl.tar.gz" ]]
 PLATFORM_OS=linux PLATFORM_ARCH=x86_64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-x86_64-unknown-linux-musl.tar.gz" ]]
+
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 iris_asset
+[[ $ASSET == iris_darwin_arm64.tar.gz ]]
+PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 iris_asset
+[[ $ASSET == iris_darwin_amd64.tar.gz ]]
+PLATFORM_OS=linux PLATFORM_ARCH=arm64 iris_asset
+[[ $ASSET == iris_linux_arm64.tar.gz ]]
+PLATFORM_OS=linux PLATFORM_ARCH=x86_64 iris_asset
+[[ $ASSET == iris_linux_amd64.tar.gz ]]
 
 PLATFORM_OS=darwin PLATFORM_ARCH=arm64 glow_asset
 [[ $ASSET == "glow_${GLOW_VERSION}_Darwin_arm64.tar.gz" ]]
@@ -298,9 +317,15 @@ if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   exit 1
 fi
 
-for version_variable in OH_MY_ZSH_COMMIT ZSH_AUTOSUGGESTIONS_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
+for version_variable in OH_MY_ZSH_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
 done
+plugins_block=$(sed -n '/^plugins=(/,/^)/p' "$ROOT/shell/zshrc")
+if grep -Fq 'zsh-autosuggestions' <<< "$plugins_block" ||
+  grep -Eq 'zsh-autosuggestions|ZSH_AUTOSUGGESTIONS' "$BOOTSTRAP" "$ROOT/versions.lock"; then
+  printf '%s\n' 'zsh-autosuggestions must stay disabled and unmanaged when Iris is enabled' >&2
+  exit 1
+fi
 
 grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"' "$BOOTSTRAP"
@@ -319,12 +344,14 @@ grep -Fq 'piper -- CLICOLOR_FORCE=1 glow' "$ROOT/yazi/yazi.toml"
 grep -Fq 'use = "yazi-rs/plugins:piper"' "$ROOT/yazi/package.toml"
 grep -Fq 'rev = "bb758e2"' "$ROOT/yazi/package.toml"
 grep -Fq 'update_db = true' "$ROOT/yazi/init.lua"
+grep -Fq 'eval "$(iris init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
 grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
+grep -Fq '  install_iris' "$BOOTSTRAP"
 grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"

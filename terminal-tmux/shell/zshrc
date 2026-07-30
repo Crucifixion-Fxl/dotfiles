@@ -9,6 +9,14 @@
 # --- 通用环境 ---------------------------------------------------------------
 # bootstrap 安装的 tmux/Yazi/lazygit/Codex 等用户级工具位于 ~/.local/bin。
 export PATH="$HOME/.local/bin:$PATH"
+
+# --- Iris --------------------------------------------------------------------
+# Iris 取代 zsh-autosuggestions，提供本地、SSH 和 tmux 共用的补全界面。
+# bootstrap 会安装锁定版本；条件判断让配置在安装尚未完成时仍可正常加载。
+if command -v iris >/dev/null 2>&1; then
+  eval "$(iris init zsh)"
+fi
+
 # 统一中文 UTF-8 locale，避免 SSH、tmux 和容器中的中文显示异常。
 export LANG=zh_CN.UTF-8
 export LC_ALL=zh_CN.UTF-8
@@ -18,10 +26,9 @@ export LC_ALL=zh_CN.UTF-8
 export ZSH="$HOME/.oh-my-zsh"
 ZSH_THEME="robbyrussell"
 
-# 插件顺序保持简单：git 别名、历史建议、实时语法高亮。
+# Iris 已负责命令建议；Oh My Zsh 这里只保留 git 别名和实时语法高亮。
 plugins=(
   git
-  zsh-autosuggestions
   zsh-syntax-highlighting
 )
 

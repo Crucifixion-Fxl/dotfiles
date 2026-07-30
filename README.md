@@ -2,7 +2,7 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 pre-commit、tmux、lazygit、git-delta、
-Yazi、Glow Markdown 预览、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
+Yazi、Glow Markdown 预览、Iris、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 交互环境。
 
 ## 目录结构
 
@@ -55,8 +55,9 @@ Yazi、Glow Markdown 预览、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 
 - 普通命令运行时，window 名显示命令名；Python/Node 脚本优先显示脚本名。
 - 回到 zsh prompt 后，window 名恢复为当前目录名。
 - Codex 运行、等待输入、完成时分别显示 `🔄 codex`、`❓ codex`、`✅ codex`。
-- zsh 使用 Oh My Zsh 的 `robbyrussell` 主题，并启用 `git`、
-  `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件。
+- zsh 使用 Oh My Zsh 的 `robbyrussell` 主题，并启用 `git` 和
+  `zsh-syntax-highlighting` 插件；本地、SSH 和 tmux 中的命令建议统一由 Iris 提供，
+  不再加载 `zsh-autosuggestions`。
 - 使用 `y` 启动 Yazi；退出时当前 shell 会切换到 Yazi 最后所在目录。
 - Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
 - Vim 在本地和远端默认显示绝对行号。
@@ -78,14 +79,15 @@ Yazi、Glow Markdown 预览、Codex CLI、Oh My Zsh、Codex 状态通知和 zsh 
 - git-delta `0.19.2`
 - fzf `0.74.0`
 - zoxide `0.10.0`
+- Iris `0.4.8`
 - Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
-- Oh My Zsh、zsh-autosuggestions、zsh-syntax-highlighting 的固定 Git commit
+- Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
 
-pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 的官方
+pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi 的官方
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
@@ -135,7 +137,7 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 文字最终仍由本机 iTerm2 字体渲染。
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
-`~/.local`。lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 使用与操作系统、CPU 架构
+`~/.local`。lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi 使用与操作系统、CPU 架构
 匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。pre-commit 使用
 macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10+。Yazi 的
 `yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
@@ -149,6 +151,10 @@ Maple Mono NF CN 与 Symbols Nerd Font，并强制链接 `ffmpeg-full` 与
 `imagemagick-full`。如果 Homebrew
 中的 Yazi、Glow、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
 版本安装到 `~/.local/bin`。
+
+Iris 使用同一份托管 `zshrc` 在本地、SSH 和 tmux 中初始化。bootstrap 会安装
+锁定的 Iris 官方 Release 到 `~/.local/bin`；不会执行会自行改写 shell 配置的
+`iris setup`。旧的 `zsh-autosuggestions` 目录即使还留在某台机器上也不会被加载。
 
 zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
 存在的 `~/Documents` 和 `~/.dotfiles` 加入数据库，避免 Yazi 中按大写 `Z` 时
@@ -266,11 +272,11 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow、Yazi/`ya`、Codex CLI 版本
+- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、Codex CLI 版本
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
-- 三个 tmux 插件以及 Oh My Zsh、两个 zsh 插件的 commit
+- 三个 tmux 插件以及 Oh My Zsh、zsh-syntax-highlighting 的 commit
 - SSH 入口的宿主机/容器分支不会互相嵌套 tmux
 - 使用隔离 socket 启动 tmux 并加载完整配置
 - tmux 与 lazygit 配置文件 SHA256
