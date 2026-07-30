@@ -11,7 +11,7 @@ set -euo pipefail
 # 可复现策略：
 #   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 按约定始终安装 @openai/codex@latest，不锁版本。
+#   - Codex CLI 和 Druk 按约定始终安装 npm 官方 latest，不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
@@ -100,6 +100,11 @@ yazi_is_locked_version() {
 
 codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
+}
+
+druk_is_installed() {
+  command -v druk >/dev/null 2>&1 &&
+    druk --version 2>/dev/null | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 }
 
 pre_commit_is_locked_version() {
@@ -593,8 +598,18 @@ install_codex() {
   command -v npm >/dev/null 2>&1 || fail "npm is required to install Codex CLI"
   log "Installing the latest Codex CLI into $HOME/.local/bin"
   npm install --global --prefix "$HOME/.local" '@openai/codex@latest'
+  hash -r
   codex_is_installed || fail "latest Codex CLI installation verification failed"
   log "Installed $(codex --version)"
+}
+
+install_druk() {
+  command -v npm >/dev/null 2>&1 || fail "npm is required to install Druk"
+  log "Installing the latest Druk into $HOME/.local/bin"
+  npm install --global --prefix "$HOME/.local" 'druk@latest'
+  hash -r
+  druk_is_installed || fail "latest Druk installation verification failed"
+  log "Installed Druk $(druk --version)"
 }
 
 # --- 配置备份、插件和符号链接 -----------------------------------------------
@@ -823,6 +838,7 @@ validate() {
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   codex_is_installed || fail "Codex CLI is required"
+  druk_is_installed || fail "Druk is required"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
@@ -924,6 +940,7 @@ main() {
   install_yazi
   install_pre_commit
   install_codex
+  install_druk
   install_oh_my_zsh
 
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
