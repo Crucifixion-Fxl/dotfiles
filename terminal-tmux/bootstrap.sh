@@ -11,11 +11,12 @@ set -euo pipefail
 # 可复现策略：
 #   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 和 Druk 按约定始终安装 npm 官方 latest，不锁版本。
+#   - Codex CLI 始终安装 npm 官方 latest；Fresh 使用官方通用安装脚本，不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
 DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
 
@@ -102,9 +103,18 @@ codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
 }
 
-druk_is_installed() {
-  command -v druk >/dev/null 2>&1 &&
-    druk --version 2>/dev/null | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+fresh_is_installed() {
+  command -v fresh >/dev/null 2>&1 &&
+    fresh --version 2>/dev/null | grep -Eq '^fresh [0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+}
+
+druk_is_absent() {
+  ! command -v druk >/dev/null 2>&1 &&
+    [[ ! -e "$HOME/.druk/bin/druk" ]] &&
+    [[ ! -e "$HOME/.local/bin/druk" ]] &&
+    [[ ! -d "$HOME/.local/lib/node_modules/druk" ]] &&
+    [[ ! -e "$HOME/.config/druk" ]] &&
+    [[ ! -e "$HOME/.cache/druk" ]]
 }
 
 pre_commit_is_locked_version() {
@@ -603,13 +613,33 @@ install_codex() {
   log "Installed $(codex --version)"
 }
 
-install_druk() {
-  command -v npm >/dev/null 2>&1 || fail "npm is required to install Druk"
-  log "Installing the latest Druk into $HOME/.local/bin"
-  npm install --global --prefix "$HOME/.local" 'druk@latest'
+uninstall_druk() {
+  if [[ -e "$HOME/.local/bin/druk" || -d "$HOME/.local/lib/node_modules/druk" ]]; then
+    command -v npm >/dev/null 2>&1 || fail "npm is required to uninstall the old Druk package"
+    log "Uninstalling the old Druk npm package"
+    npm uninstall --global --prefix "$HOME/.local" druk
+  fi
+
+  if [[ -x "$HOME/.druk/bin/druk" ]]; then
+    log "Removing the old Druk standalone installation from $HOME/.druk"
+    rm -rf "$HOME/.druk"
+  fi
+
+  if [[ -e "$HOME/.config/druk" || -e "$HOME/.cache/druk" ]]; then
+    log "Removing the old Druk configuration and cache"
+    rm -rf "$HOME/.config/druk" "$HOME/.cache/druk"
+  fi
+
   hash -r
-  druk_is_installed || fail "latest Druk installation verification failed"
-  log "Installed Druk $(druk --version)"
+  druk_is_absent || fail "Druk is still installed at $(command -v druk 2>/dev/null || printf 'an unmanaged location')"
+}
+
+install_fresh() {
+  log "Installing Fresh with its official universal installer"
+  curl -fsSL --retry 3 --connect-timeout 15 "$FRESH_INSTALL_URL" | sh
+  hash -r
+  fresh_is_installed || fail "Fresh installation verification failed"
+  log "Installed $(fresh --version)"
 }
 
 # --- 配置备份、插件和符号链接 -----------------------------------------------
@@ -920,7 +950,8 @@ validate() {
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   codex_is_installed || fail "Codex CLI is required"
-  druk_is_installed || fail "Druk is required"
+  fresh_is_installed || fail "Fresh is required"
+  druk_is_absent || fail "Druk must be uninstalled after migration to Fresh"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
@@ -1040,7 +1071,8 @@ main() {
   install_yazi
   install_pre_commit
   install_codex
-  install_druk
+  uninstall_druk
+  install_fresh
   install_oh_my_zsh
 
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
