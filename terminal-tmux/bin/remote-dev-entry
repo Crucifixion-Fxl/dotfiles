@@ -61,9 +61,10 @@ authorize_termscp_container_key() {
     return 1
   }
 
-  # 只从最终选择的容器导出公钥。私钥文件始终留在容器文件系统中；
-  # ssh-keygen -y 只输出与它对应的公钥。
-  public_key=$(docker exec "$container_id" sh -lc '
+  # 只从最终选择的容器导出公钥。这里不能使用登录 shell：部分容器的
+  # /etc/profile 会向 stdout 输出提示或 ANSI 控制码，混入 ssh-keygen 的结果后
+  # 会被 Mac 误判成公钥类型。私钥文件始终留在容器文件系统中。
+  public_key=$(docker exec "$container_id" sh -c '
     key_path=${TERMSCP_MAC_KEY_PATH:-"$HOME/.ssh/id_ed25519"}
     command -v ssh-keygen >/dev/null 2>&1 || {
       printf "%s\n" "容器内未安装 ssh-keygen" >&2
