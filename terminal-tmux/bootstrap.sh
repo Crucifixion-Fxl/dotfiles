@@ -158,7 +158,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
+      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full passwd pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -220,6 +220,34 @@ configure_locale() {
 
   export LANG=zh_CN.UTF-8
   export LC_ALL=zh_CN.UTF-8
+}
+
+current_login_shell() {
+  local user=$1
+
+  if [[ "$PLATFORM_OS" == darwin ]]; then
+    command -v dscl >/dev/null 2>&1 || fail "dscl is required to inspect the macOS login shell"
+    dscl . -read "/Users/$user" UserShell | awk '{print $2}'
+  else
+    command -v getent >/dev/null 2>&1 || fail "getent is required to inspect the Linux login shell"
+    getent passwd "$user" | awk -F: '{print $7}'
+  fi
+}
+
+configure_login_shell() {
+  local user zsh_path login_shell
+  user=$(id -un)
+  zsh_path=$(command -v zsh)
+  [[ -n "$zsh_path" ]] || fail "zsh is required"
+  login_shell=$(current_login_shell "$user")
+  [[ -n "$login_shell" ]] || fail "unable to determine the login shell for $user"
+  [[ "$login_shell" == "$zsh_path" ]] && return 0
+
+  command -v chsh >/dev/null 2>&1 || fail "chsh is required to set zsh as the login shell"
+  grep -Fxq "$zsh_path" /etc/shells || \
+    fail "$zsh_path must be listed in /etc/shells before it can become the login shell"
+  log "Setting the login shell for $user to $zsh_path"
+  run_as_root chsh -s "$zsh_path" "$user"
 }
 
 # --- 锁定版本的用户级 CLI -------------------------------------------------
@@ -991,6 +1019,7 @@ validate() {
   local prefix_bindings
   local ghostty_config ghostty_destination ghostty_launcher ghostty_launcher_destination
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
+  local login_shell login_user zsh_path
   local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination yazi_package_list
@@ -1017,6 +1046,11 @@ validate() {
   vi --version 2>/dev/null | grep -Eq '\+mouse([[:space:]]|$)' || fail "vi must support mouse input"
   infocmp tmux-256color >/dev/null 2>&1 || fail "tmux-256color terminfo is missing"
   LC_ALL=zh_CN.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "zh_CN.UTF-8 locale is required"
+  login_user=$(id -un)
+  zsh_path=$(command -v zsh)
+  login_shell=$(current_login_shell "$login_user")
+  [[ "$login_shell" == "$zsh_path" ]] || \
+    fail "login shell for $login_user must be $zsh_path, got $login_shell"
 
   zsh -n "$DOTFILES_DIR/shell/tmux-window-name.zsh"
   zsh -n "$DOTFILES_DIR/shell/zshrc"
@@ -1156,6 +1190,7 @@ main() {
   ensure_shell_path
   ensure_shell_locale
   install_prerequisites
+  configure_login_shell
   install_ghostty
   ensure_linux_fd_command
   configure_locale
@@ -1192,8 +1227,7 @@ main() {
 
   configure_git_identity
   log "Installation complete"
-  printf '%s\n' 'Reload Bash with: source "$HOME/.bashrc"'
-  printf '%s\n' 'Reload zsh with: exec zsh -l'
+  printf '%s\n' 'Start the managed login shell now with: exec zsh -l'
   printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
   printf '%s\n' 'Transfer between the SSH server and this Mac: termscp-mac'
   printf '%s\n' 'Ghostty stable app and managed config are ready on macOS'

@@ -318,8 +318,9 @@ export PATH="$HOME/.local/bin:$PATH"
 hash -r
 ```
 
-远端登录 shell 可以继续使用 bash；tmux 新 pane 统一进入 zsh，以保证窗口命名
-hook 在所有机器上的行为一致。
+bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 登录和 tmux
+新 pane 都会进入受管的 login zsh，以保证 PATH、Iris 和窗口命名 hook 行为一致。
+修改登录 shell 后，已打开的连接不变，下一次 SSH 登录开始生效。
 
 ## 验证
 
@@ -463,7 +464,10 @@ Ghostty 默认使用 `TERM=xterm-ghostty`。远端入口会分别在宿主机和
 列表默认每页显示 12 个并随高亮自动翻页，`r` 刷新列表、`h` 返回宿主机、`q`
 退出。选中后直接执行 `docker exec`，并在容器内部附加或创建名为 `dev` 的
 tmux。容器路径不会创建或附加宿主机 tmux，因此不存在宿主机 tmux 嵌套容器
-tmux 的情况。进入容器时会优先使用 `zh_CN.UTF-8`，不可用时回退到
+tmux 的情况。进入宿主机已有 `dev` session 时会优先选择 zsh/Iris pane；如果
+历史 session 只有 Bash pane，则保留旧 pane 并新建一个 zsh window。宿主机尚未
+安装完整 dotfiles 时，入口也会直接使用系统 zsh，不会退回 Bash。进入容器时会
+优先使用 `zh_CN.UTF-8`，不可用时回退到
 `C.UTF-8`，并同步已有 tmux server 的 `LANG` 和 `LC_ALL`，避免重新连接后
 中文显示异常。容器入口会直接 `exec tmux`，tmux 再通过 `default-command`
 启动受管的 login zsh，避免 Iris 在 tmux 外包装 zsh 后阻断 attach。如果容器内
