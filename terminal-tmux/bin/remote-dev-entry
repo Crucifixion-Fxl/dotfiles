@@ -175,12 +175,48 @@ start_todo_container_relay() {
 
 enter_host_tmux() {
   # exec 会让 tmux 取代入口脚本，SSH 退出时不留额外进程。
+  local zsh_path shell_command zsh_pane zsh_window pane_id pane_command
   fallback_ghostty_term
   command -v tmux >/dev/null 2>&1 || fail "宿主机未安装 tmux"
+  command -v zsh >/dev/null 2>&1 || fail "宿主机未安装 zsh"
+  zsh_path=$(command -v zsh)
+  if [[ -x "$HOME/.local/bin/tmux-zsh" ]]; then
+    shell_command="$HOME/.local/bin/tmux-zsh"
+  else
+    shell_command="$zsh_path -l"
+  fi
   if tmux list-sessions >/dev/null 2>&1; then
     sync_bridge_tmux_environment
+    if [[ -r "$HOME/.tmux.conf" ]]; then
+      tmux source-file "$HOME/.tmux.conf" || fail "无法重新加载 $HOME/.tmux.conf"
+    fi
   fi
-  exec tmux new-session -A -s "$HOST_TMUX_SESSION"
+
+  # 已有 dev session 可能仍停在历史 Bash pane。优先选择受管的 zsh/Iris pane；
+  # 如果不存在则新建 zsh window，但不终止或改写原有 pane。
+  if tmux has-session -t "=$HOST_TMUX_SESSION" 2>/dev/null; then
+    zsh_pane=
+    while read -r pane_id pane_command; do
+      case "$pane_command" in
+        zsh|iris)
+          zsh_pane=$pane_id
+          break
+          ;;
+      esac
+    done < <(tmux list-panes -s -t "=$HOST_TMUX_SESSION" \
+      -F "#{pane_id} #{pane_current_command}")
+    if [[ -z "$zsh_pane" ]]; then
+      zsh_pane=$(tmux new-window -d -P -F "#{pane_id}" -t "$HOST_TMUX_SESSION:" \
+        -n shell "$shell_command")
+    fi
+    zsh_window=$(tmux display-message -p -t "$zsh_pane" "#{window_id}")
+    tmux select-window -t "$zsh_window"
+    tmux select-pane -t "$zsh_pane"
+  fi
+  if [[ -r "$HOME/.tmux.conf" ]]; then
+    exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$HOST_TMUX_SESSION" "$shell_command"
+  fi
+  exec tmux new-session -A -s "$HOST_TMUX_SESSION" "$shell_command"
 }
 
 enter_container_tmux() {

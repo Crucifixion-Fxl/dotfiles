@@ -29,12 +29,15 @@ grep -q 'resvg' "$BOOTSTRAP"
 grep -q 'unzip' "$BOOTSTRAP"
 grep -q 'python3 ripgrep' "$BOOTSTRAP"
 grep -q 'openssh-client' "$BOOTSTRAP"
+grep -q 'passwd' "$BOOTSTRAP"
 grep -q 'command -v ssh-keygen' "$BOOTSTRAP"
 grep -q 'pkgconf python utf8proc' "$BOOTSTRAP"
 grep -q 'vim zsh' "$BOOTSTRAP"
 grep -q 'font-maple-mono-nf-cn' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
 grep -q '^configure_locale()' "$BOOTSTRAP"
+grep -q '^current_login_shell()' "$BOOTSTRAP"
+grep -q '^configure_login_shell()' "$BOOTSTRAP"
 grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
@@ -113,6 +116,29 @@ git() {
 HOME=$TEST_HOME install_plugin test-plugin https://example.invalid/test.git "$TEST_PLUGIN_COMMIT"
 HOME=$TEST_HOME install_git_checkout test-checkout https://example.invalid/test.git \
   "$TEST_PLUGIN_COMMIT" "$TEST_HOME/.test-checkout"
+
+# A fresh bootstrap changes an existing Bash login shell to zsh, while an
+# account that already uses zsh remains untouched.
+login_shell_change=$(
+  (
+    PLATFORM_OS=linux
+    current_login_shell() { printf '%s\n' /bin/bash; }
+    run_as_root() { printf 'run-as-root:%s\n' "$*"; }
+    configure_login_shell
+  )
+)
+grep -Fq "Setting the login shell for $(id -un) to $(command -v zsh)" <<< "$login_shell_change"
+grep -Fq "run-as-root:chsh -s $(command -v zsh) $(id -un)" <<< "$login_shell_change"
+
+login_shell_noop=$(
+  (
+    PLATFORM_OS=linux
+    current_login_shell() { command -v zsh; }
+    run_as_root() { printf '%s\n' 'unexpected root call'; return 1; }
+    configure_login_shell
+  )
+)
+[[ -z "$login_shell_noop" ]]
 
 # A fresh zoxide database receives useful initial entries exactly once. This
 # prevents Yazi's zoxide picker from starting with an empty-history error while
@@ -388,6 +414,8 @@ grep -Fqx "run '~/.tmux/plugins/tpm/tpm'" "$TMUX_CONFIG"
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $path_setup_line -lt $prerequisite_line ]]
+login_shell_line=$(grep -n '^  configure_login_shell$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $prerequisite_line -lt $login_shell_line ]]
 locale_setup_line=$(grep -n '^  ensure_shell_locale$' "$BOOTSTRAP" | cut -d: -f1)
 locale_generation_line=$(grep -n '^  configure_locale$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $locale_setup_line -lt $prerequisite_line ]]
