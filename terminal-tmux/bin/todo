@@ -23,6 +23,7 @@ SELECTED = 3
 SUCCESS = 4
 ERROR = 5
 TEXT = 6
+BORDER = 7
 
 
 def display_width(value: str) -> int:
@@ -226,6 +227,7 @@ class TodoApp:
             curses.init_pair(SUCCESS, curses.COLOR_GREEN, -1)
             curses.init_pair(ERROR, curses.COLOR_RED, -1)
             curses.init_pair(TEXT, curses.COLOR_WHITE, -1)
+            curses.init_pair(BORDER, curses.COLOR_GREEN, -1)
         try:
             curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
             curses.mouseinterval(0)
@@ -311,8 +313,8 @@ class TodoApp:
 
     def border_attr(self, active: bool) -> int:
         if active:
-            return curses.color_pair(PURPLE) | curses.A_BOLD
-        return curses.color_pair(PURPLE_DIM)
+            return curses.color_pair(BORDER) | curses.A_BOLD
+        return curses.color_pair(BORDER)
 
     def draw_box(self, y: int, x: int, height: int, width: int, title: str, active: bool) -> None:
         if height < 2 or width < 2:
