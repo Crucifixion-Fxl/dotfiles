@@ -22,7 +22,7 @@ adjust-cell-height = 2
 theme = "light:Catppuccin Latte,dark:Catppuccin Mocha"
 
 # --- Window and Appearance ---
-background-opacity = 0.80
+background-opacity = 0.75
 background-blur-radius = 30
 macos-titlebar-style = tabs
 window-title-font-family = "Maple Mono NF CN"
