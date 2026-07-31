@@ -397,6 +397,7 @@ grep -Fqx 'bind-key < swap-window -d -t -1 #!important' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'bind-key > swap-window -d -t +1 #!important' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'tmux_conf_theme_status_left="  #S "' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'tmux_conf_theme_window_status_current_bg="#5e81ac"' "$TMUX_LOCAL_CONFIG"
+grep -Fqx 'tmux_conf_theme_terminal_title="#h | #S | #I #W"' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'tmux_conf_theme_window_status_last_format="#I #W-"' "$TMUX_LOCAL_CONFIG"
 grep -Fq '#($HOME/.tmux/system-meter.sh)' "$TMUX_LOCAL_CONFIG"
 if grep -Eq '#\{\?battery_(bar|percentage|status)' "$TMUX_LOCAL_CONFIG"; then
