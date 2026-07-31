@@ -34,7 +34,8 @@ grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
-grep -q '^install_druk()' "$BOOTSTRAP"
+grep -q '^uninstall_druk()' "$BOOTSTRAP"
+grep -q '^install_fresh()' "$BOOTSTRAP"
 grep -q '^install_ghostty()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
@@ -372,11 +373,15 @@ ghostty_install_line=$(grep -n '^  install_ghostty$' "$BOOTSTRAP" | cut -d: -f1)
 ghostty_config_line=$(grep -n '^  install_ghostty_config$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_install_line -lt $ghostty_config_line ]]
 
-# Codex and Druk intentionally follow the latest official npm releases instead
-# of the versions.lock policy used by the other tools.
+# Codex intentionally follows the latest official npm release instead of the
+# versions.lock policy used by the other tools.
 NPM_ARGS=
 npm() {
   NPM_ARGS="$*"
+  if [[ $1 == uninstall ]]; then
+    rm -rf "$HOME/.local/lib/node_modules/druk"
+    rm -f "$HOME/.local/bin/druk"
+  fi
 }
 codex() {
   printf '%s\n' 'codex-cli 999.0.0'
@@ -389,16 +394,34 @@ if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   exit 1
 fi
 
-druk() {
-  printf '%s\n' '999.0.0'
-}
+mkdir -p \
+  "$TEST_HOME/.druk/bin" \
+  "$TEST_HOME/.local/lib/node_modules/druk" \
+  "$TEST_HOME/.config/druk" \
+  "$TEST_HOME/.cache/druk"
+touch "$TEST_HOME/.druk/bin/druk" "$TEST_HOME/.local/bin/druk"
+chmod +x "$TEST_HOME/.druk/bin/druk"
+HOME=$TEST_HOME uninstall_druk
+[[ $NPM_ARGS == "uninstall --global --prefix $TEST_HOME/.local druk" ]]
+[[ ! -e "$TEST_HOME/.druk" ]]
+[[ ! -e "$TEST_HOME/.local/bin/druk" ]]
+[[ ! -e "$TEST_HOME/.local/lib/node_modules/druk" ]]
+[[ ! -e "$TEST_HOME/.config/druk" ]]
+[[ ! -e "$TEST_HOME/.cache/druk" ]]
 
-HOME=$TEST_HOME install_druk
-[[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local druk@latest" ]]
-if grep -q '^DRUK_VERSION=' "$ROOT/versions.lock"; then
-  printf '%s\n' 'Druk must track latest and must not be pinned in versions.lock' >&2
-  exit 1
-fi
+FRESH_CURL_ARGS_FILE="$TEST_HOME/fresh-curl-args"
+curl() {
+  printf '%s\n' "$*" > "$FRESH_CURL_ARGS_FILE"
+  printf '%s\n' ':'
+}
+fresh() {
+  printf '%s\n' 'fresh 999.0.0'
+}
+HOME=$TEST_HOME install_fresh
+grep -Fq -- '-fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh' \
+  "$FRESH_CURL_ARGS_FILE"
+fresh_is_installed
+unset -f curl fresh
 
 for version_variable in OH_MY_ZSH_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
@@ -441,7 +464,8 @@ grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
 grep -Fq '  install_pre_commit' "$BOOTSTRAP"
-grep -Fq '  install_druk' "$BOOTSTRAP"
+grep -Fq '  uninstall_druk' "$BOOTSTRAP"
+grep -Fq '  install_fresh' "$BOOTSTRAP"
 grep -Fq '  configure_git_identity' "$BOOTSTRAP"
 grep -Fq '  remind_ssh_key' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
