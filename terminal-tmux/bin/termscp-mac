@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 在 SSH 服务器宿主机上启动 termscp：本地面板是服务器，SFTP 面板通过
+# connect-remote-dev 建立的反向端口回到 Mac。
+
+fail() {
+  printf 'termscp-mac：%s\n' "$*" >&2
+  exit 1
+}
+
+tmux_environment() {
+  local variable=$1 line
+  command -v tmux >/dev/null 2>&1 || return 1
+  line=$(tmux show-environment -g "$variable" 2>/dev/null || true)
+  case "$line" in
+    "$variable="*) printf '%s\n' "${line#*=}" ;;
+    *) return 1 ;;
+  esac
+}
+
+valid_port() {
+  local port=$1
+  [[ "$port" =~ ^[0-9]{1,5}$ ]] || return 1
+  (( 10#$port >= 1 && 10#$port <= 65535 ))
+}
+
+main() {
+  local mac_user reverse_port server_directory
+
+  [[ $# -le 1 ]] || fail "用法：termscp-mac [服务器起始目录]"
+  command -v termscp >/dev/null 2>&1 || \
+    fail "服务器未安装 termscp；请先运行 ~/.dotfiles/terminal-tmux/bootstrap.sh"
+
+  mac_user=${TERMSCP_MAC_USER:-}
+  [[ -n "$mac_user" ]] || mac_user=$(tmux_environment TERMSCP_MAC_USER || true)
+  reverse_port=${TERMSCP_REVERSE_PORT:-}
+  [[ -n "$reverse_port" ]] || reverse_port=$(tmux_environment TERMSCP_REVERSE_PORT || true)
+  reverse_port=${reverse_port:-6022}
+  server_directory=${1:-$PWD}
+
+  [[ -n "$mac_user" ]] || \
+    fail "找不到 Mac 用户名；请通过 connect-remote-dev 重新连接并在服务器宿主机运行"
+  [[ "$mac_user" =~ ^[A-Za-z0-9._-]+$ ]] || fail "无效的 Mac 用户名：$mac_user"
+  valid_port "$reverse_port" || fail "无效的反向端口：$reverse_port"
+  [[ -d "$server_directory" ]] || fail "服务器目录不存在：$server_directory"
+
+  exec termscp "sftp://${mac_user}@127.0.0.1:${reverse_port}" "$server_directory"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

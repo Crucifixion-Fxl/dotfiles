@@ -11,12 +11,14 @@ set -euo pipefail
 # 可复现策略：
 #   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 始终安装 npm 官方 latest；Fresh 使用官方通用安装脚本，不锁版本。
+#   - Codex CLI 始终安装 npm 官方 latest；termscp 和 Fresh 使用各自官方通用
+#     安装脚本，不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
 DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
+TERMSCP_INSTALL_URL=https://termscp.rs/install.sh
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
 
@@ -101,6 +103,11 @@ yazi_is_locked_version() {
 
 codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
+}
+
+termscp_is_installed() {
+  command -v termscp >/dev/null 2>&1 &&
+    termscp -v 2>/dev/null | grep -Eq '^termscp v?[0-9]+\.[0-9]+\.[0-9]+'
 }
 
 fresh_is_installed() {
@@ -613,6 +620,15 @@ install_codex() {
   log "Installed $(codex --version)"
 }
 
+install_termscp() {
+  log "Installing termscp with its official universal installer"
+  curl --proto '=https' --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 \
+    "$TERMSCP_INSTALL_URL" | sh -s -- --yes
+  hash -r
+  termscp_is_installed || fail "termscp installation verification failed"
+  log "Installed $(termscp -v)"
+}
+
 uninstall_druk() {
   if [[ -e "$HOME/.local/bin/druk" || -d "$HOME/.local/lib/node_modules/druk" ]]; then
     command -v npm >/dev/null 2>&1 || fail "npm is required to uninstall the old Druk package"
@@ -804,6 +820,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
+  backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
@@ -950,6 +967,7 @@ validate() {
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   codex_is_installed || fail "Codex CLI is required"
+  termscp_is_installed || fail "termscp is required"
   fresh_is_installed || fail "Fresh is required"
   druk_is_absent || fail "Druk must be uninstalled after migration to Fresh"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
@@ -965,6 +983,7 @@ validate() {
   bash -n "$DOTFILES_DIR/bootstrap.sh"
   bash -n "$DOTFILES_DIR/bin/remote-dev-entry"
   bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
+  bash -n "$DOTFILES_DIR/bin/termscp-mac"
   bash -n "$DOTFILES_DIR/bin/ghostty-dev"
   bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
@@ -973,6 +992,7 @@ validate() {
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
+  bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
@@ -1071,6 +1091,7 @@ main() {
   install_yazi
   install_pre_commit
   install_codex
+  install_termscp
   uninstall_druk
   install_fresh
   install_oh_my_zsh
@@ -1095,6 +1116,7 @@ main() {
   printf '%s\n' 'Reload Bash with: source "$HOME/.bashrc"'
   printf '%s\n' 'Reload zsh with: exec zsh -l'
   printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
+  printf '%s\n' 'Transfer between the SSH server and this Mac: termscp-mac'
   printf '%s\n' 'Ghostty stable app and managed config are ready on macOS'
   printf '%s\n' 'Choose an SSH host and open the remote menu in Ghostty: ghostty-dev'
   remind_ssh_key

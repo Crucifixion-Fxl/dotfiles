@@ -2,7 +2,7 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
-git-delta、Yazi、Glow Markdown 预览、Iris、Codex CLI、Fresh、Oh My Zsh、
+git-delta、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
 Codex 状态通知和 zsh 交互环境。
 
 ## 目录结构
@@ -20,7 +20,8 @@ Codex 状态通知和 zsh 交互环境。
     │   ├── ghostty-dev              # 新 Ghostty tab 中的远端开发入口
     │   ├── ghostty-tab-command      # 远端入口结束后精确关闭对应 tab
     │   ├── remote-dev-entry         # SSH 后选择宿主机或容器开发环境
-    │   └── connect-remote-dev       # 连接时上传入口并启动交互 SSH
+    │   ├── connect-remote-dev       # 启动交互 SSH 和 Mac SFTP 反向转发
+    │   └── termscp-mac              # 在服务器浏览并传输 Mac 文件
     ├── tmux/
     │   ├── tmux.conf                # tmux 主配置
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
@@ -30,7 +31,8 @@ Codex 状态通知和 zsh 交互环境。
     ├── tests/
     │   ├── test-bootstrap-contract.sh # bootstrap 回归检查
     │   ├── test-remote-dev-entry.sh   # 宿主机/容器入口路由检查
-    │   ├── test-connect-remote-dev.sh # SSH 自举上传检查
+    │   ├── test-connect-remote-dev.sh # SSH 自举上传和反向转发检查
+    │   ├── test-termscp-mac.sh        # Mac SFTP 入口参数检查
     │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
     │   └── test-lazygit-safe.sh       # Git safe.directory 回归检查
     ├── codex/
@@ -96,6 +98,7 @@ Codex 状态通知和 zsh 交互环境。
 - pre-commit `4.6.0`
 - Ghostty：macOS 通过 Homebrew cask 安装当前稳定版（不锁版本）
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
+- termscp：通过官方通用安装脚本获取当前版本（不锁版本）
 - Fresh：通过官方通用安装脚本安装（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
@@ -104,9 +107,9 @@ pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi �
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
-避免覆盖用户改动。Ghostty、Codex CLI 和 Fresh 是例外：Ghostty 跟随 Homebrew
-cask 的稳定版，Codex 始终安装 `@openai/codex@latest`，Fresh 则使用
-`sinelaw/fresh` 官方通用安装脚本。
+避免覆盖用户改动。Ghostty、Codex CLI、termscp 和 Fresh 是例外：Ghostty 跟随
+Homebrew cask 的稳定版，Codex 始终安装 `@openai/codex@latest`，termscp 与
+Fresh 分别使用各自的官方通用安装脚本。
 
 ## 安装
 
@@ -161,7 +164,10 @@ macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10
 `yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
 `piper.yazi`。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
 bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
-`@openai/codex@latest` 安装到 `~/.local/bin`。Fresh 通过
+`@openai/codex@latest` 安装到 `~/.local/bin`。termscp 使用官方
+`https://termscp.rs/install.sh`：macOS 走官方 Homebrew tap，Debian/Ubuntu 下载
+官方 `.deb`。安装器使用非交互 `--yes`，因此在服务器或容器中运行 bootstrap
+不会等待确认。Fresh 通过
 `sinelaw/fresh` 官方通用安装脚本安装：macOS 使用 Homebrew 的 `fresh-editor`，
 Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk npm 包并
 删除旧的 `~/.druk` standalone 安装、`~/.config/druk` 用户配置和 `~/.cache/druk`
@@ -224,6 +230,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/bin/pre-commit` | `~/.local/bin/pre-commit` |
 | `terminal-tmux/bin/remote-dev-entry` | `~/.local/bin/remote-dev-entry` |
 | `terminal-tmux/bin/connect-remote-dev` | `~/.local/bin/connect-remote-dev` |
+| `terminal-tmux/bin/termscp-mac` | `~/.local/bin/termscp-mac` |
 | `terminal-tmux/bin/ghostty-dev` | `~/.local/bin/ghostty-dev`（仅 macOS） |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
 | `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
@@ -303,7 +310,7 @@ hook 在所有机器上的行为一致。
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、Codex CLI、Fresh 版本
+- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、termscp、Codex CLI、Fresh 版本
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
@@ -333,7 +340,50 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 `connect-remote-dev` 不要求远端运行 bootstrap，也不需要远端 root 权限。它把本机
 仓库里的最新版 `remote-dev-entry` 编码进 SSH 命令，在同一次连接中原子写入远端
 `~/.local/bin/remote-dev-entry`、设置仅当前用户可执行，然后立即启动菜单。SSH 的
-stdin 始终保留给交互菜单，因此不会额外建立上传连接。
+stdin 始终保留给交互菜单，因此不会额外建立上传连接。同时它建立
+`127.0.0.1:6022`（服务器）到 `127.0.0.1:22`（Mac）的 SSH 反向转发；服务器端
+端口只监听回环地址，不会暴露给服务器所在局域网。`ExitOnForwardFailure` 会在
+端口被占用或服务器禁用 TCP forwarding 时直接终止连接并显示错误。
+
+### 在 SSH 服务器中打开 Mac ↔ 服务器文件传输
+
+先在 Mac 的“系统设置 → 通用 → 共享”中打开“远程登录”，并只允许需要使用的
+Mac 用户。Ghostty 中继续使用原来的受管入口：
+
+```bash
+ghostty-dev
+ghostty-dev HOST
+```
+
+`ghostty-dev` 会在新 tab 中调用 `connect-remote-dev`，因此反向转发会自动建立，
+不需要再手动执行第二条 SSH 命令。只有不通过 Ghostty 启动时，才直接运行
+`connect-remote-dev HOST`。
+
+在入口界面按 `Esc` 进入服务器宿主机 tmux，再运行：
+
+```bash
+termscp-mac
+```
+
+termscp 左侧的本地文件系统是服务器，右侧 SFTP 文件系统是 Mac；按 `Tab` 切换
+面板，选中文件后按 `Space` 加入传输队列。`termscp-mac [服务器目录]` 可以指定
+左侧起始目录，默认使用当前目录。
+
+反向转发只复用网络通道，不会复用当前 SSH 登录的身份。termscp 首次连接 Mac 时
+仍需使用 Mac 密码或在服务器上为 termscp 配置一个已获 Mac 授权的 SSH key；密码
+和私钥属于机器凭据，不写入 dotfiles。连接变量由 `connect-remote-dev` 自动传入：
+Mac 用户名默认为本机 `id -un`，端口可按需覆盖：
+
+```bash
+TERMSCP_MAC_USER=a4x \
+TERMSCP_REVERSE_PORT=16022 \
+TERMSCP_MAC_SSH_PORT=22 \
+ghostty-dev HOST
+```
+
+当前反向端口刻意只绑定服务器宿主机的 `127.0.0.1`，因此请在宿主机 tmux 中运行
+`termscp-mac`。进入 Docker 后容器自己的 `127.0.0.1` 不等于服务器宿主机；不会
+为了让容器访问而把 SFTP 端口暴露到 Docker bridge 或局域网。
 
 Ghostty 默认使用 `TERM=xterm-ghostty`。远端入口会分别在宿主机和最终选中的容器
 中用 `infocmp` 检查该 terminfo：存在时保留 Ghostty 的完整能力，缺失或没有

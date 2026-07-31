@@ -8,6 +8,8 @@ set -euo pipefail
 #   1. 每次连接都使用本机 dotfiles 中最新的 remote-dev-entry。
 #   2. 在同一条 SSH 连接内原子写入远程 ~/.local/bin，不需要额外 scp。
 #   3. stdin 始终留给交互式菜单，因此脚本内容通过 Base64 嵌入远程命令。
+#   4. 把服务器回环端口反向转发到本机 SSH/SFTP，使服务器上的 termscp
+#      可以显示“服务器本地文件 ↔ Mac 文件”。
 #
 # 此脚本不安装远程 tmux/zsh；要复现完整环境，仍应在远程运行 bootstrap。
 
@@ -17,15 +19,36 @@ fail() {
 }
 
 run_ssh() {
-  local host=$1 remote_command=$2
-  exec ssh -t "$host" "$remote_command"
+  local host=$1 remote_command=$2 reverse_port=$3 mac_ssh_port=$4 reverse_forward
+  reverse_forward="127.0.0.1:${reverse_port}:127.0.0.1:${mac_ssh_port}"
+
+  exec ssh \
+    -o ExitOnForwardFailure=yes \
+    -R "$reverse_forward" \
+    -t "$host" "$remote_command"
+}
+
+valid_port() {
+  local port=$1
+  [[ "$port" =~ ^[0-9]{1,5}$ ]] || return 1
+  (( 10#$port >= 1 && 10#$port <= 65535 ))
 }
 
 main() {
   local host script_dir entry payload remote_command
+  local mac_user reverse_port mac_ssh_port
+  local mac_user_quoted reverse_port_quoted
 
   [[ $# -eq 1 ]] || fail "用法：connect-remote-dev <ssh-host>"
   host=$1
+  mac_user=${TERMSCP_MAC_USER:-$(id -un)}
+  reverse_port=${TERMSCP_REVERSE_PORT:-6022}
+  mac_ssh_port=${TERMSCP_MAC_SSH_PORT:-22}
+
+  [[ "$mac_user" =~ ^[A-Za-z0-9._-]+$ ]] || fail "无效的 Mac 用户名：$mac_user"
+  valid_port "$reverse_port" || fail "无效的服务器反向端口：$reverse_port"
+  valid_port "$mac_ssh_port" || fail "无效的 Mac SSH 端口：$mac_ssh_port"
+
   script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   entry="$script_dir/remote-dev-entry"
 
@@ -36,6 +59,8 @@ main() {
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
   # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
   payload=$(base64 < "$entry" | tr -d '\r\n')
+  printf -v mac_user_quoted '%q' "$mac_user"
+  printf -v reverse_port_quoted '%q' "$reverse_port"
   remote_command='set -eu
 command -v base64 >/dev/null 2>&1 || {
   printf "%s\n" "connect-remote-dev：远端未安装 base64" >&2
@@ -53,9 +78,12 @@ mv -f "$temporary" "$directory/remote-dev-entry"
 trap - 0 HUP INT TERM
 PATH="$directory:$PATH"
 export PATH
+TERMSCP_MAC_USER='"$mac_user_quoted"'
+TERMSCP_REVERSE_PORT='"$reverse_port_quoted"'
+export TERMSCP_MAC_USER TERMSCP_REVERSE_PORT
 exec "$directory/remote-dev-entry"'
 
-  run_ssh "$host" "$remote_command"
+  run_ssh "$host" "$remote_command" "$reverse_port" "$mac_ssh_port"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
