@@ -21,7 +21,8 @@ Codex 状态通知和 zsh 交互环境。
     │   ├── ghostty-tab-command      # 远端入口结束后精确关闭对应 tab
     │   ├── remote-dev-entry         # SSH 后选择宿主机或容器开发环境
     │   ├── connect-remote-dev       # 启动交互 SSH 和 Mac SFTP 反向转发
-    │   └── termscp-mac              # 在服务器浏览并传输 Mac 文件
+    │   ├── termscp-mac              # 在服务器/容器浏览并传输 Mac 文件
+    │   └── termscp-bridge-relay     # Docker bridge 到宿主机隧道的临时中继
     ├── tmux/
     │   ├── tmux.conf                # tmux 主配置
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
@@ -33,6 +34,7 @@ Codex 状态通知和 zsh 交互环境。
     │   ├── test-remote-dev-entry.sh   # 宿主机/容器入口路由检查
     │   ├── test-connect-remote-dev.sh # SSH 自举上传和反向转发检查
     │   ├── test-termscp-mac.sh        # Mac SFTP 入口参数检查
+    │   ├── test-termscp-bridge-relay.sh # Docker bridge 中继检查
     │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
     │   └── test-lazygit-safe.sh       # Git safe.directory 回归检查
     ├── codex/
@@ -231,6 +233,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/bin/remote-dev-entry` | `~/.local/bin/remote-dev-entry` |
 | `terminal-tmux/bin/connect-remote-dev` | `~/.local/bin/connect-remote-dev` |
 | `terminal-tmux/bin/termscp-mac` | `~/.local/bin/termscp-mac` |
+| `terminal-tmux/bin/termscp-bridge-relay` | `~/.local/bin/termscp-bridge-relay` |
 | `terminal-tmux/bin/ghostty-dev` | `~/.local/bin/ghostty-dev`（仅 macOS） |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
 | `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
@@ -263,6 +266,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | lazygit diff 渲染 | `lazygit/config.yml` | lazygit 负责滚动，delta 不再开二级 pager |
 | Docker 询问和容器列表 | `bin/remote-dev-entry` | 容器分支必须直接 `exec docker exec`，不嵌套宿主机 tmux |
 | 连接并更新远程入口 | `bin/connect-remote-dev` | 保持单条 SSH 连接和原子替换 |
+| 容器访问 Mac SFTP | `bin/termscp-bridge-relay` + `bin/termscp-mac` | 中继只绑定所选 Docker 网关，并随 SSH 容器入口退出 |
 | Ghostty 字体、shell integration | `ghostty/config.ghostty` | 默认窗口保持本地 zsh，远端入口不要写入 `command` |
 | Ghostty 远端启动 | `bin/ghostty-dev` | 在现有窗口创建 tab，并用方向键选择 `~/.ssh/config` Host |
 | 工具版本 | `versions.lock` | 升级 Release 时同时更新版本和各平台 SHA256 |
@@ -338,9 +342,9 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 ```
 
 `connect-remote-dev` 不要求远端运行 bootstrap，也不需要远端 root 权限。它把本机
-仓库里的最新版 `remote-dev-entry` 编码进 SSH 命令，在同一次连接中原子写入远端
-`~/.local/bin/remote-dev-entry`、设置仅当前用户可执行，然后立即启动菜单。SSH 的
-stdin 始终保留给交互菜单，因此不会额外建立上传连接。同时它建立
+仓库里的最新版 `remote-dev-entry` 和 `termscp-bridge-relay` 编码进 SSH 命令，
+在同一次连接中分别原子写入远端 `~/.local/bin`、设置仅当前用户可执行，然后立即
+启动菜单。SSH 的 stdin 始终保留给交互菜单，因此不会额外建立上传连接。同时它建立
 `127.0.0.1:6022`（服务器）到 `127.0.0.1:22`（Mac）的 SSH 反向转发；服务器端
 端口只监听回环地址，不会暴露给服务器所在局域网。`ExitOnForwardFailure` 会在
 端口被占用或服务器禁用 TCP forwarding 时直接终止连接并显示错误。
@@ -359,15 +363,15 @@ ghostty-dev HOST
 不需要再手动执行第二条 SSH 命令。只有不通过 Ghostty 启动时，才直接运行
 `connect-remote-dev HOST`。
 
-在入口界面按 `Esc` 进入服务器宿主机 tmux，再运行：
+在入口界面进入服务器宿主机或已经运行过本仓库 bootstrap 的 Docker 容器，然后运行：
 
 ```bash
 termscp-mac
 ```
 
-termscp 左侧的本地文件系统是服务器，右侧 SFTP 文件系统是 Mac；按 `Tab` 切换
-面板，选中文件后按 `Space` 加入传输队列。`termscp-mac [服务器目录]` 可以指定
-左侧起始目录，默认使用当前目录。
+termscp 左侧的本地文件系统是当前服务器宿主机或容器，右侧 SFTP 文件系统是 Mac；
+按 `Tab` 切换面板，选中文件后按 `Space` 加入传输队列。
+`termscp-mac [服务器或容器目录]` 可以指定左侧起始目录，默认使用当前目录。
 
 反向转发只复用网络通道，不会复用当前 SSH 登录的身份。termscp 首次连接 Mac 时
 仍需使用 Mac 密码或在服务器上为 termscp 配置一个已获 Mac 授权的 SSH key；密码
@@ -381,9 +385,11 @@ TERMSCP_MAC_SSH_PORT=22 \
 ghostty-dev HOST
 ```
 
-当前反向端口刻意只绑定服务器宿主机的 `127.0.0.1`，因此请在宿主机 tmux 中运行
-`termscp-mac`。进入 Docker 后容器自己的 `127.0.0.1` 不等于服务器宿主机；不会
-为了让容器访问而把 SFTP 端口暴露到 Docker bridge 或局域网。
+SSH 反向端口始终只绑定服务器宿主机的 `127.0.0.1`。选中 host 网络容器时直接复用
+这个回环地址；选中 bridge/custom-network 容器时，入口只在该容器网络的 Docker
+网关地址启动一个临时 TCP 中继，并把网关、Mac 用户名和端口同步到容器 tmux。
+中继不会监听服务器物理网卡，会随当前 SSH/`docker exec` 入口退出；同一 bridge
+中的其他容器在这段连接期间能到达该端口，但仍必须通过 Mac 的 SSH 身份验证。
 
 Ghostty 默认使用 `TERM=xterm-ghostty`。远端入口会分别在宿主机和最终选中的容器
 中用 `infocmp` 检查该 terminfo：存在时保留 Ghostty 的完整能力，缺失或没有

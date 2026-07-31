@@ -821,6 +821,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"
+  backup_and_link "$DOTFILES_DIR/bin/termscp-bridge-relay" "$HOME/.local/bin/termscp-bridge-relay"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
@@ -984,6 +985,7 @@ validate() {
   bash -n "$DOTFILES_DIR/bin/remote-dev-entry"
   bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
   bash -n "$DOTFILES_DIR/bin/termscp-mac"
+  python3 "$DOTFILES_DIR/bin/termscp-bridge-relay" --help >/dev/null
   bash -n "$DOTFILES_DIR/bin/ghostty-dev"
   bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
@@ -993,6 +995,7 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
+  bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
