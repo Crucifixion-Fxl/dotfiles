@@ -135,14 +135,19 @@ grep -Fq 'size=$(stty size 2>/dev/null || true)' "$ENTRY"
 grep -Fq "trap 'prompt_resized=1' WINCH" "$ENTRY"
 grep -Fq "trap 'menu_resized=1' WINCH" "$ENTRY"
 grep -Fq "\$'\\033')" "$ENTRY"
-grep -Fq 'Enter：进入    Esc：进入宿主机' "$ENTRY"
-grep -Fq 'menu_width=88' "$ENTRY"
-grep -Fq 'menu_width=$terminal_columns' "$ENTRY"
-grep -Fq 'field_width=$((menu_width - 8))' "$ENTRY"
-grep -Fq 'available_rows=$((terminal_lines - 3))' "$ENTRY"
-grep -Fq 'menu_row=$(((terminal_lines - menu_height) / 2 + 1))' "$ENTRY"
-grep -Fq 'menu_column=$(((terminal_columns - menu_width) / 2 + 1))' "$ENTRY"
-grep -Fq "printf '\\033[%d;%dH%s\\033[K'" "$ENTRY"
+grep -Fq "local hint='Enter  进入容器    Esc  进入宿主机'" "$ENTRY"
+grep -Fq 'panel_width=92' "$ENTRY"
+grep -Fq 'panel_width=$terminal_columns' "$ENTRY"
+grep -Fq 'content_width=$((panel_width - 4))' "$ENTRY"
+grep -Fq 'field_width=$((content_width - 8))' "$ENTRY"
+grep -Fq 'available_rows=$((terminal_lines - 5))' "$ENTRY"
+grep -Fq 'panel_row=$(((terminal_lines - panel_height) / 2 + 1))' "$ENTRY"
+grep -Fq 'panel_column=$(((terminal_columns - panel_width) / 2 + 1))' "$ENTRY"
+grep -Fq "local purple=\$'\\033[38;5;141m'" "$ENTRY"
+grep -Fq "local selected_style=\$'\\033[1;38;5;231;48;5;55m'" "$ENTRY"
+grep -Fq "panel_title=' DOCKER CONTAINERS '" "$ENTRY"
+grep -Fq 'top_border="╭─${panel_title}' "$ENTRY"
+grep -Fq 'bottom_border="╰$(repeat_panel_character' "$ENTRY"
 grep -Fq '↑/↓ Enter进入 h宿主机 q退出' "$ENTRY"
 if grep -Fq 'rendered_lines' "$ENTRY"; then
   printf '%s\n' 'container menu must not clear by counting wrapped lines' >&2
@@ -156,5 +161,8 @@ stty() {
 }
 [[ $(terminal_size) == '30 100' ]]
 prompt_output=$(render_docker_prompt)
-grep -Fq $'\033[15;40H是否进入 Docker 容器？' <<< "$prompt_output"
-grep -Fq $'\033[17;36HEnter：进入    Esc：进入宿主机' <<< "$prompt_output"
+grep -Fq $'\033[13;24H\033[38;5;141m╭─ REMOTE TARGET ' <<< "$prompt_output"
+grep -Fq $'\033[14;40H\033[38;5;141m是否进入 Docker 容器？' <<< "$prompt_output"
+grep -Fq $'\033[16;34H\033[38;5;245mEnter  进入容器    Esc  进入宿主机' \
+  <<< "$prompt_output"
+grep -Fq $'\033[17;24H\033[38;5;141m╰' <<< "$prompt_output"

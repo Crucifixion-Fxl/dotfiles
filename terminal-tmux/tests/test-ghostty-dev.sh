@@ -93,17 +93,28 @@ grep -Fq 'host=dev-data' <<< "$down_output"
 grep -Fq 'dev-2080Ti' "$TEST_HOME/menu.log"
 grep -Fq 'dev-4090' "$TEST_HOME/menu.log"
 grep -Fq 'dev-data' "$TEST_HOME/menu.log"
-grep -Fq '↑/↓ 选择  Enter 确认  q/Esc 取消' "$TEST_HOME/menu.log"
+grep -Fq '↑/↓ 选择  Enter 连接  q/Esc 取消' "$TEST_HOME/menu.log"
+grep -Fq $'\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu.log"
+grep -Fq $'\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu.log"
+grep -Fq '╰────────────────────────────────────────────────────╯' "$TEST_HOME/menu.log"
 
 printf '\n' | HOME=$TEST_HOME LINES=20 COLUMNS=100 \
   run_server_selector 2>"$TEST_HOME/menu-large.log" >/dev/null
-grep -Fq $'\033[7;33H请选择 Ghostty 要连接的 SSH 服务器：' "$TEST_HOME/menu-large.log"
-grep -Fq $'\033[13;33H↑/↓ 选择  Enter 确认  q/Esc 取消' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[7;24H\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[8;42H\033[38;5;141m选择要连接的服务器' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[11;26H\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[13;35H\033[38;5;245m↑/↓ 选择  Enter 连接  q/Esc 取消' \
+  "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[14;24H\033[38;5;141m╰' "$TEST_HOME/menu-large.log"
 
 printf '\n' | HOME=$TEST_HOME LINES=11 COLUMNS=60 \
   run_server_selector 2>"$TEST_HOME/menu-small.log" >/dev/null
-grep -Fq $'\033[3;13H请选择 Ghostty 要连接的 SSH 服务器：' "$TEST_HOME/menu-small.log"
-grep -Fq $'\033[9;13H↑/↓ 选择  Enter 确认  q/Esc 取消' "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[2;4H\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[3;22H\033[38;5;141m选择要连接的服务器' "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[6;6H\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[8;15H\033[38;5;245m↑/↓ 选择  Enter 连接  q/Esc 取消' \
+  "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[9;4H\033[38;5;141m╰' "$TEST_HOME/menu-small.log"
 
 if (HOME=$TEST_HOME TMPDIR=$TEST_HOME/tmp main one two) >/dev/null 2>&1; then
   printf '%s\n' 'ghostty-dev must accept at most one SSH host' >&2
