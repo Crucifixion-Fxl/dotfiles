@@ -234,27 +234,6 @@ enter_container_tmux() {
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
 
-    reload_oh_my_tmux() (
-      # Oh My Tmux 的本地文件先由 tmux 解析为 tmux_conf_* 环境变量；再用
-      # show-environment -s 的 shell-safe 输出导入当前净化后的子 shell。
-      tmux source-file "$HOME/.tmux.conf.local" >/dev/null 2>&1 || true
-      tmux_theme_environment=$(tmux show-environment -gs 2>/dev/null |
-        grep "^tmux_conf_" || true)
-      [ -n "$tmux_theme_environment" ] || return 1
-      eval "$tmux_theme_environment"
-
-      # 配置器要求标准 TMUX 上下文。全部变量仅存在于本 subshell，不能泄漏
-      # 给最终 attach，否则 tmux 会把它误判为嵌套会话。
-      TMUX_PROGRAM=$(command -v tmux)
-      TMUX_SOCKET=$(tmux display-message -p "#{socket_path}")
-      TMUX="$TMUX_SOCKET,$(tmux display-message -p "#{pid}"),0"
-      TMUX_CONF="$HOME/.tmux.conf"
-      TMUX_CONF_LOCAL="$HOME/.tmux.conf.local"
-      export TMUX_PROGRAM TMUX_SOCKET TMUX TMUX_CONF TMUX_CONF_LOCAL
-
-      cut -c3- "$TMUX_CONF" | sh -s _apply_configuration
-    )
-
     # 宿主机可能已经安装 xterm-ghostty，而所选容器尚未安装。必须在容器内
     # 再检查一次，否则 tmux/Yazi 会因未知 TERM 无法启动。
     if [ "${TERM:-}" = xterm-ghostty ] &&
@@ -292,12 +271,6 @@ enter_container_tmux() {
       printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
       exit 127
     fi
-    if [ ! -r "$HOME/.tmux.conf.local" ]; then
-      printf "%s\n" "remote-dev-entry：找不到 $HOME/.tmux.conf.local" >&2
-      printf "%s\n" "请先在容器内运行 dotfiles bootstrap。" >&2
-      exit 127
-    fi
-
     # 已运行的 tmux server 会保留启动时的环境，因此附加前需要同步
     # locale，并重新加载受管配置。
     if [ -n "$utf8_locale" ]; then
@@ -306,7 +279,7 @@ enter_container_tmux() {
     fi
     if tmux list-sessions >/dev/null 2>&1; then
       # 已有 server 的进程环境无法原地修改；用全局值覆盖镜像注入的 shell
-      # 初始化脚本，再从当前净化后的外部 subshell 重载 Oh My Tmux。
+      # 初始化脚本，再重载受管 tmux 配置。
       tmux set-environment -g BASH_ENV /dev/null 2>/dev/null || true
       tmux set-environment -g ENV /dev/null 2>/dev/null || true
       for variable in \
@@ -316,7 +289,7 @@ enter_container_tmux() {
         [ -n "$value" ] || continue
         tmux set-environment -g "$variable" "$value" 2>/dev/null || true
       done
-      reload_oh_my_tmux || {
+      tmux source-file "$HOME/.tmux.conf" || {
         printf "%s\n" "remote-dev-entry：无法重新加载 $HOME/.tmux.conf" >&2
         exit 1
       }

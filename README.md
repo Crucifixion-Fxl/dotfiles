@@ -1,7 +1,7 @@
 # dotfiles
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
-Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、Oh My Tmux、lazygit、
+Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
 git-delta、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
 Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
 
@@ -30,9 +30,7 @@ Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
     │   ├── TodoReminders.swift      # 只操作 iCloud 列表的 EventKit 后端
     │   └── Info.plist               # macOS 提醒事项权限说明
     ├── tmux/
-    │   ├── tmux.conf.local          # Oh My Tmux 的 Nord 主题与现有行为覆盖
-    │   ├── tmux.conf                # 切换前配置，仅作为旧机器回退
-    │   ├── system-meter.sh          # Mac 电量 / Linux 负载进度条
+    │   ├── tmux.conf                # 本地与远端共用的 tmux 主配置
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
     ├── shell/
     │   ├── zshrc                    # Oh My Zsh、主题、插件和 Yazi y() 包装函数
@@ -89,13 +87,8 @@ Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
   iTerm2 Profile 共用同一个远端选择器。
 - macOS bootstrap 会通过 Homebrew cask 安装 Ghostty 稳定版，并恢复当前使用的
   Maple Mono NF CN、Catppuccin、透明度、窗口、tab、分屏和快捷键配置。
-- Oh My Tmux 使用锁定的官方 commit，主配置安装在
-  `~/.local/share/oh-my-tmux`；运行时覆盖由仓库内的 `tmux.conf.local` 维护。受控
-  覆盖会关闭额外的 `Ctrl-a` Prefix、保留原生绑定和 0 起始编号，并继续提供现有
-  popup、Lazygit、Codex session tree 与容器内 tmux 行为。
-- 状态栏的第一个 Nord 色块使用固定宽度的 ASCII 进度条：MacBook 显示
-  `BAT`电量，Linux 服务器和容器显示按在线 CPU 核数归一化的 `LOAD`
-  一分钟负载。远程不再因没有电池设备而留下空色块。
+- tmux 直接加载仓库内的 `tmux.conf`，保持 `Ctrl-b` Prefix、原始状态栏、popup、
+  Lazygit、Codex session tree 与容器内 tmux 行为。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
 - `Prefix + S` 手动保存，`Prefix + R` 手动恢复。
@@ -120,7 +113,6 @@ Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - termscp：通过官方通用安装脚本获取当前版本（不锁版本）
 - Fresh：通过官方通用安装脚本安装（不锁版本）
-- Oh My Tmux 的固定 Git commit
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
 
@@ -154,7 +146,6 @@ Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 - Python 3.10+（用于运行官方 pre-commit zipapp）
 - `gcc`、`make`、`pkg-config`、`bison`
 - `bubblewrap`（Linux 的非特权进程沙箱工具，提供 `bwrap` 命令）
-- `perl`（Oh My Tmux 应用本地配置时使用）
 - Yazi 所需的 `file`、`unzip`，以及预览/搜索依赖 `ffmpeg`、`p7zip-full`、
   `jq`、`poppler-utils`、`fd-find`、`ripgrep`、`resvg`、
   `imagemagick`
@@ -193,7 +184,7 @@ bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 
 `sinelaw/fresh` 官方通用安装脚本安装：macOS 使用 Homebrew 的 `fresh-editor`，
 Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk npm 包并
 删除旧的 `~/.druk` standalone 安装、`~/.config/druk` 用户配置和 `~/.cache/druk`
-缓存，再安装和验证 `fresh` 命令。Oh My Tmux、Oh My Zsh 及第三方插件通过 Git
+缓存，再安装和验证 `fresh` 命令。Oh My Zsh 及第三方插件通过 Git
 安装到用户目录。apt 安装需要 root 或 sudo 权限。
 
 macOS 会先执行 `brew update`，再安装 Yazi、Glow、预览/搜索依赖、
@@ -226,7 +217,7 @@ bash ~/.dotfiles/terminal-tmux/bootstrap.sh
 exec zsh -l
 ```
 
-如果 Oh My Tmux、Oh My Zsh 或插件目录存在未提交的本地修改，bootstrap 会停止，
+如果 Oh My Zsh 或插件目录存在未提交的本地修改，bootstrap 会停止，
 不会覆盖。
 
 安装收尾时，bootstrap 会检查当前用户的全局 Git `user.name` 和 `user.email`。
@@ -246,9 +237,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 托管来源 | 目标路径 |
 | --- | --- |
 | `terminal-tmux/shell/zshrc` | `~/.zshrc` |
-| `~/.local/share/oh-my-tmux/.tmux.conf`（锁定的官方 checkout） | `~/.tmux.conf` |
-| `terminal-tmux/tmux/tmux.conf.local` | `~/.tmux.conf.local` |
-| `terminal-tmux/tmux/system-meter.sh` | `~/.tmux/system-meter.sh` |
+| `terminal-tmux/tmux/tmux.conf` | `~/.tmux.conf` |
 | `terminal-tmux/tmux/session-status-counts.sh` | `~/.tmux/session-status-counts.sh` |
 | `terminal-tmux/bin/tmux-zsh` | `~/.local/bin/tmux-zsh` |
 | `terminal-tmux/bin/lazygit-safe` | `~/.local/bin/lazygit-safe` |
@@ -286,8 +275,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | Yazi 文本编辑与 Markdown 预览 | `yazi/yazi.toml` | Enter 使用 Vim；Piper 调用 Glow 渲染 `.md` |
 | Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
 | Yazi 插件版本 | `yazi/package.toml` | 由 `ya pkg` 维护 Piper 的 revision 和 hash |
-| tmux 按键、Nord 状态栏、插件 | `tmux/tmux.conf.local` | Prefix 仍为 `Ctrl-b`；`#!important` 行保护现有行为；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
-| tmux 跨平台系统进度条 | `tmux/system-meter.sh` | macOS 读取 `pmset`；Linux 使用 `/proc/loadavg` 和在线 CPU 数 |
+| tmux 按键、状态栏、插件 | `tmux/tmux.conf` | Prefix 仍为 `Ctrl-b`；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
 | tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
 | Codex 的 🔄/❓/✅ 状态 | `codex/hooks.json` + `codex/notify-tmux.sh` | JSON 事件和 shell 状态名必须一致 |
 | lazygit diff 渲染 | `lazygit/config.yml` | lazygit 负责滚动，delta 不再开二级 pager |
@@ -348,10 +336,9 @@ hook 在所有机器上的行为一致。
 - bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
 - Ghostty 应用、iTerm2 Dynamic Profile、Ghostty 配置和 `ghostty-dev` 启动参数
-- Oh My Tmux、三个 tmux 插件以及 Oh My Zsh、zsh-syntax-highlighting 的 commit
+- 三个 tmux 插件以及 Oh My Zsh、zsh-syntax-highlighting 的 commit
 - SSH 入口的宿主机/容器分支不会互相嵌套 tmux
 - 使用隔离 socket 启动 tmux 并加载完整配置
-- Mac 电量 / Linux 负载进度条的输出格式与受管链接
 - tmux 与 lazygit 配置文件 SHA256
 
 ## 连接远端
