@@ -47,6 +47,48 @@ assert TodoApp.SMART_VIEWS == (
     ("all", "全部"),
     ("completed", "已完成"),
 )
+
+# The bridge snapshot is already in Reminders order. Filtering a list must not
+# apply a second due-date/title sort that changes the order seen on the Mac.
+app = TodoApp.__new__(TodoApp)
+app.lists = [{"id": "work", "name": "工作"}]
+app.tasks = [
+    {
+        "id": "last-due",
+        "list_id": "work",
+        "title": "Z task",
+        "due": "2026-08-02T09:00:00+08:00",
+        "completed": False,
+    },
+    {
+        "id": "first-due",
+        "list_id": "work",
+        "title": "A task",
+        "due": "2026-08-01T09:00:00+08:00",
+        "completed": False,
+    },
+    {
+        "id": "no-due",
+        "list_id": "work",
+        "title": "Middle task",
+        "due": None,
+        "completed": False,
+    },
+]
+app.selected_view = len(TodoApp.SMART_VIEWS)
+app.filter_text = ""
+assert [task["id"] for task in app.current_tasks()] == [
+    "last-due",
+    "first-due",
+    "no-due",
+]
+app.filter_text = "task"
+assert [task["id"] for task in app.current_tasks()] == [
+    "last-due",
+    "first-due",
+    "no-due",
+]
+
 text = source.read_text(encoding="utf-8")
 for glyph in "╭╮╰╯│─":
     assert glyph in text
