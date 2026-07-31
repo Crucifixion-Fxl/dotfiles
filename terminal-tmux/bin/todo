@@ -1,0 +1,992 @@
+#!/usr/bin/env python3
+
+"""Interactive iCloud Reminders TUI for the managed remote container."""
+
+from __future__ import annotations
+
+import argparse
+import curses
+import datetime as dt
+import json
+import locale
+import os
+import time
+import unicodedata
+import urllib.error
+import urllib.request
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+
+PURPLE = 1
+PURPLE_DIM = 2
+SELECTED = 3
+SUCCESS = 4
+ERROR = 5
+TEXT = 6
+
+
+def display_width(value: str) -> int:
+    width = 0
+    for char in value:
+        if unicodedata.combining(char):
+            continue
+        width += 2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+    return width
+
+
+def truncate(value: str, width: int, suffix: str = "…") -> str:
+    if width <= 0:
+        return ""
+    if display_width(value) <= width:
+        return value
+    target = max(0, width - display_width(suffix))
+    result = ""
+    used = 0
+    for char in value:
+        char_width = 0 if unicodedata.combining(char) else (
+            2 if unicodedata.east_asian_width(char) in ("W", "F") else 1
+        )
+        if used + char_width > target:
+            break
+        result += char
+        used += char_width
+    return result + suffix
+
+
+def pad(value: str, width: int) -> str:
+    clipped = truncate(value, width)
+    return clipped + " " * max(0, width - display_width(clipped))
+
+
+def safe_addstr(
+    window: "curses._CursesWindow", y: int, x: int, value: str, attr: int = 0
+) -> None:
+    height, width = window.getmaxyx()
+    if y < 0 or x < 0 or y >= height or x >= width:
+        return
+    try:
+        window.addstr(y, x, truncate(value, max(0, width - x)), attr)
+    except curses.error:
+        pass
+
+
+class BridgeError(RuntimeError):
+    pass
+
+
+class BridgeClient:
+    def __init__(self, host: str, port: int, token: str):
+        self.url = f"http://{host}:{port}/api"
+        self.token = token
+
+    def request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request = urllib.request.Request(
+            self.url,
+            data=encoded,
+            headers={
+                "Authorization": f"Bearer {self.token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=12) as response:
+                result = json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as error:
+            try:
+                detail = json.loads(error.read().decode("utf-8")).get("error")
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                detail = None
+            raise BridgeError(detail or str(error)) from error
+        except (OSError, urllib.error.URLError, json.JSONDecodeError) as error:
+            raise BridgeError(str(error)) from error
+        if not result.get("ok"):
+            raise BridgeError(result.get("error") or "Mac bridge returned an error")
+        return result
+
+    def snapshot(self) -> Dict[str, Any]:
+        return self.request({"action": "snapshot"})
+
+
+class DemoClient:
+    """Local in-memory backend for layout and interaction validation."""
+
+    def __init__(self) -> None:
+        today = dt.date.today()
+        self.lists = [
+            {"id": "work", "name": "工作"},
+            {"id": "personal", "name": "个人"},
+            {"id": "shopping", "name": "购物"},
+        ]
+        self.tasks = [
+            {
+                "id": "1",
+                "list_id": "work",
+                "title": "Review PR",
+                "notes": "检查边界条件和测试结果",
+                "due": f"{today.isoformat()}T18:00:00+08:00",
+                "all_day": False,
+                "priority": 1,
+                "completed": False,
+            },
+            {
+                "id": "2",
+                "list_id": "work",
+                "title": "更新项目 README",
+                "notes": "",
+                "due": None,
+                "all_day": False,
+                "priority": 0,
+                "completed": True,
+            },
+            {
+                "id": "3",
+                "list_id": "shopping",
+                "title": "买咖啡豆",
+                "notes": "中度烘焙",
+                "due": None,
+                "all_day": False,
+                "priority": 5,
+                "completed": False,
+            },
+        ]
+
+    def request(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        action = payload["action"]
+        if action == "snapshot":
+            return {"ok": True, "lists": self.lists, "tasks": self.tasks}
+        if action == "create":
+            task = {
+                "id": str(time.time_ns()),
+                "list_id": payload["list_id"],
+                "title": payload["title"],
+                "notes": payload.get("notes", ""),
+                "due": payload.get("due"),
+                "all_day": payload.get("all_day", False),
+                "priority": payload.get("priority", 0),
+                "completed": False,
+            }
+            self.tasks.append(task)
+        elif action == "update":
+            task = self._task(payload["id"])
+            for key in ("list_id", "title", "notes", "due", "all_day", "priority"):
+                if key in payload:
+                    task[key] = payload[key]
+        elif action == "complete":
+            self._task(payload["id"])["completed"] = payload["completed"]
+        elif action == "delete":
+            self.tasks = [task for task in self.tasks if task["id"] != payload["id"]]
+        else:
+            return {"ok": False, "error": f"unknown demo action: {action}"}
+        return {"ok": True}
+
+    def snapshot(self) -> Dict[str, Any]:
+        return self.request({"action": "snapshot"})
+
+    def _task(self, task_id: str) -> Dict[str, Any]:
+        return next(task for task in self.tasks if task["id"] == task_id)
+
+
+class TodoApp:
+    SMART_VIEWS = (
+        ("today", "今天"),
+        ("scheduled", "已计划"),
+        ("all", "全部"),
+        ("completed", "已完成"),
+    )
+
+    def __init__(self, screen: "curses._CursesWindow", client: Any):
+        self.screen = screen
+        self.client = client
+        self.lists: List[Dict[str, Any]] = []
+        self.tasks: List[Dict[str, Any]] = []
+        self.selected_view = 0
+        self.selected_task = 0
+        self.focus = 0
+        self.status = "正在连接 Mac…"
+        self.status_kind = "normal"
+        self.filter_text = ""
+        self.last_refresh = 0.0
+        self.hotspots: List[Tuple[int, int, int, int, str, Any]] = []
+        self.running = True
+        self.setup_curses()
+
+    def setup_curses(self) -> None:
+        curses.curs_set(0)
+        self.screen.keypad(True)
+        self.screen.timeout(250)
+        if curses.has_colors():
+            curses.start_color()
+            curses.use_default_colors()
+            bright_purple = 13 if curses.COLORS >= 16 else curses.COLOR_MAGENTA
+            curses.init_pair(PURPLE, bright_purple, -1)
+            curses.init_pair(PURPLE_DIM, curses.COLOR_MAGENTA, -1)
+            curses.init_pair(SELECTED, -1, curses.COLOR_MAGENTA)
+            curses.init_pair(SUCCESS, curses.COLOR_GREEN, -1)
+            curses.init_pair(ERROR, curses.COLOR_RED, -1)
+            curses.init_pair(TEXT, curses.COLOR_WHITE, -1)
+        try:
+            curses.mousemask(curses.ALL_MOUSE_EVENTS | curses.REPORT_MOUSE_POSITION)
+            curses.mouseinterval(0)
+        except curses.error:
+            pass
+
+    @property
+    def views(self) -> List[Tuple[str, str, str]]:
+        result = [("smart", identifier, title) for identifier, title in self.SMART_VIEWS]
+        result.extend(("list", item["id"], item["name"]) for item in self.lists)
+        return result
+
+    def current_tasks(self) -> List[Dict[str, Any]]:
+        if not self.views:
+            return []
+        kind, identifier, _ = self.views[min(self.selected_view, len(self.views) - 1)]
+        today = dt.date.today()
+
+        def due_date(task: Dict[str, Any]) -> Optional[dt.date]:
+            value = task.get("due")
+            if not value:
+                return None
+            try:
+                return dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone().date()
+            except ValueError:
+                try:
+                    return dt.date.fromisoformat(value[:10])
+                except ValueError:
+                    return None
+
+        if kind == "list":
+            filtered = [
+                task
+                for task in self.tasks
+                if task["list_id"] == identifier and not task.get("completed")
+            ]
+        elif identifier == "completed":
+            filtered = [task for task in self.tasks if task.get("completed")]
+        elif identifier == "scheduled":
+            filtered = [
+                task for task in self.tasks if not task.get("completed") and task.get("due")
+            ]
+        elif identifier == "today":
+            filtered = [
+                task
+                for task in self.tasks
+                if not task.get("completed")
+                and due_date(task) is not None
+                and due_date(task) <= today
+            ]
+        else:
+            filtered = [task for task in self.tasks if not task.get("completed")]
+        if self.filter_text:
+            needle = self.filter_text.casefold()
+            filtered = [
+                task
+                for task in filtered
+                if needle in task.get("title", "").casefold()
+                or needle in task.get("notes", "").casefold()
+            ]
+        return sorted(
+            filtered,
+            key=lambda task: (
+                task.get("due") is None,
+                task.get("due") or "",
+                task.get("title", "").casefold(),
+            ),
+        )
+
+    def refresh(self, quiet: bool = False) -> None:
+        try:
+            snapshot = self.client.snapshot()
+            self.lists = snapshot.get("lists", [])
+            self.tasks = snapshot.get("tasks", [])
+            self.selected_view = min(self.selected_view, max(0, len(self.views) - 1))
+            current = self.current_tasks()
+            self.selected_task = min(self.selected_task, max(0, len(current) - 1))
+            self.last_refresh = time.monotonic()
+            if not quiet:
+                self.set_status("已连接 Mac，内容已刷新", "success")
+        except BridgeError as error:
+            self.set_status(f"Mac 离线：{error}", "error")
+
+    def set_status(self, message: str, kind: str = "normal") -> None:
+        self.status = message
+        self.status_kind = kind
+
+    def border_attr(self, active: bool) -> int:
+        if active:
+            return curses.color_pair(PURPLE) | curses.A_BOLD
+        return curses.color_pair(PURPLE_DIM)
+
+    def draw_box(self, y: int, x: int, height: int, width: int, title: str, active: bool) -> None:
+        if height < 2 or width < 2:
+            return
+        attr = self.border_attr(active)
+        safe_addstr(self.screen, y, x, "╭" + "─" * (width - 2) + "╮", attr)
+        for row in range(y + 1, y + height - 1):
+            safe_addstr(self.screen, row, x + 1, " " * (width - 2))
+            safe_addstr(self.screen, row, x, "│", attr)
+            safe_addstr(self.screen, row, x + width - 1, "│", attr)
+        safe_addstr(self.screen, y + height - 1, x, "╰" + "─" * (width - 2) + "╯", attr)
+        if title:
+            label = f" {title} "
+            safe_addstr(self.screen, y, x + 2, truncate(label, width - 4), attr | curses.A_BOLD)
+
+    def add_hotspot(
+        self, y: int, x: int, height: int, width: int, action: str, value: Any = None
+    ) -> None:
+        self.hotspots.append((y, x, y + height - 1, x + width - 1, action, value))
+
+    def render(self) -> None:
+        self.screen.erase()
+        self.hotspots = []
+        height, width = self.screen.getmaxyx()
+        if height < 15 or width < 64:
+            self.draw_box(0, 0, height, width, "iCloud Todo", True)
+            safe_addstr(
+                self.screen,
+                height // 2,
+                max(2, (width - 34) // 2),
+                "终端至少需要 64 列 × 15 行",
+                curses.color_pair(ERROR) | curses.A_BOLD,
+            )
+            self.screen.refresh()
+            return
+
+        footer_height = 3
+        content_height = height - footer_height
+        left_width = max(20, min(28, width // 4))
+        show_details = width >= 105
+        if show_details:
+            detail_width = max(30, width // 3)
+            task_width = width - left_width - detail_width
+        else:
+            detail_width = 0
+            task_width = width - left_width
+
+        self.render_lists(0, 0, content_height, left_width)
+        self.render_tasks(0, left_width, content_height, task_width)
+        if show_details:
+            self.render_details(0, left_width + task_width, content_height, detail_width)
+        self.render_footer(content_height, 0, footer_height, width)
+        self.screen.refresh()
+
+    def render_lists(self, y: int, x: int, height: int, width: int) -> None:
+        self.draw_box(y, x, height, width, "iCloud 列表", self.focus == 0)
+        row = y + 2
+        for index, (kind, identifier, title) in enumerate(self.views):
+            if row >= y + height - 1:
+                break
+            if index == len(self.SMART_VIEWS):
+                safe_addstr(self.screen, row, x + 1, "─" * (width - 2), self.border_attr(False))
+                row += 1
+            count = self.count_for_view(kind, identifier)
+            label = pad(f"  {title}", max(0, width - 7)) + f" {count:>3} "
+            attr = curses.color_pair(SELECTED) | curses.A_BOLD if index == self.selected_view else 0
+            safe_addstr(self.screen, row, x + 1, pad(label, width - 2), attr)
+            self.add_hotspot(row, x + 1, 1, width - 2, "view", index)
+            row += 1
+
+    def count_for_view(self, kind: str, identifier: str) -> int:
+        if kind == "list":
+            return sum(
+                1
+                for task in self.tasks
+                if task["list_id"] == identifier and not task.get("completed")
+            )
+        if identifier == "completed":
+            return sum(1 for task in self.tasks if task.get("completed"))
+        if identifier == "all":
+            return sum(1 for task in self.tasks if not task.get("completed"))
+        if identifier == "scheduled":
+            return sum(
+                1 for task in self.tasks if task.get("due") and not task.get("completed")
+            )
+        today = dt.date.today()
+        count = 0
+        for task in self.tasks:
+            if task.get("completed") or not task.get("due"):
+                continue
+            try:
+                due = dt.datetime.fromisoformat(task["due"].replace("Z", "+00:00")).astimezone().date()
+                count += int(due <= today)
+            except ValueError:
+                pass
+        return count
+
+    def render_tasks(self, y: int, x: int, height: int, width: int) -> None:
+        title = self.views[self.selected_view][2] if self.views else "任务"
+        if self.filter_text:
+            title = f"{title} · 搜索：{self.filter_text}"
+        self.draw_box(y, x, height, width, title, self.focus == 1)
+        tasks = self.current_tasks()
+        if not tasks:
+            safe_addstr(self.screen, y + 3, x + 3, "这个列表还没有任务", curses.A_DIM)
+            return
+        visible_height = height - 3
+        start = max(0, self.selected_task - visible_height + 1)
+        for visual_index, task in enumerate(tasks[start : start + visible_height]):
+            index = start + visual_index
+            row = y + 2 + visual_index
+            checkbox = "✓" if task.get("completed") else " "
+            priority = "!!! " if task.get("priority", 0) in range(1, 5) else ""
+            due = self.format_due(task.get("due"), task.get("all_day", False))
+            available = max(1, width - 8 - display_width(due))
+            label = f"[{checkbox}] {priority}{truncate(task.get('title', ''), available)}"
+            line = pad(label, max(1, width - 3 - display_width(due))) + due
+            attr = curses.color_pair(SELECTED) | curses.A_BOLD if index == self.selected_task else 0
+            safe_addstr(self.screen, row, x + 1, pad(line, width - 2), attr)
+            self.add_hotspot(row, x + 1, 1, 3, "toggle", task["id"])
+            self.add_hotspot(row, x + 4, 1, width - 5, "task", index)
+
+    def render_details(self, y: int, x: int, height: int, width: int) -> None:
+        self.draw_box(y, x, height, width, "任务详情", self.focus == 2)
+        tasks = self.current_tasks()
+        if not tasks:
+            safe_addstr(self.screen, y + 3, x + 3, "选择一项任务查看详情", curses.A_DIM)
+            return
+        task = tasks[self.selected_task]
+        list_name = next(
+            (item["name"] for item in self.lists if item["id"] == task["list_id"]), ""
+        )
+        fields = [
+            ("标题", task.get("title", "")),
+            ("列表", list_name),
+            ("日期", self.format_due(task.get("due"), task.get("all_day", False)) or "无"),
+            ("优先级", self.priority_name(task.get("priority", 0))),
+            ("备注", task.get("notes", "") or "无"),
+        ]
+        row = y + 2
+        for label, value in fields:
+            safe_addstr(self.screen, row, x + 2, f"{label}", curses.color_pair(PURPLE) | curses.A_BOLD)
+            row += 1
+            for line in self.wrap(value, width - 6):
+                safe_addstr(self.screen, row, x + 3, line)
+                row += 1
+                if row >= y + height - 4:
+                    break
+            row += 1
+            if row >= y + height - 4:
+                break
+        buttons = " [编辑]   [完成/恢复]   [删除] "
+        safe_addstr(self.screen, y + height - 2, x + 2, truncate(buttons, width - 4), self.border_attr(True))
+        self.add_hotspot(y + height - 2, x + 2, 1, 8, "edit")
+        self.add_hotspot(y + height - 2, x + 12, 1, 13, "toggle", task["id"])
+        self.add_hotspot(y + height - 2, x + 27, 1, 8, "delete")
+
+    def render_footer(self, y: int, x: int, height: int, width: int) -> None:
+        self.draw_box(y, x, height, width, "", False)
+        status_attr = curses.color_pair(TEXT)
+        if self.status_kind == "success":
+            status_attr = curses.color_pair(SUCCESS)
+        elif self.status_kind == "error":
+            status_attr = curses.color_pair(ERROR) | curses.A_BOLD
+        status = truncate(self.status, max(10, width // 3))
+        status_x = max(x + 2, x + width - display_width(status) - 2)
+        actions = "[+ 新任务]  [编辑]  [完成/恢复]  [删除]  [搜索]  [刷新]  [? 帮助]"
+        actions_width = max(0, status_x - (x + 4))
+        safe_addstr(
+            self.screen,
+            y + 1,
+            x + 2,
+            truncate(actions, actions_width),
+            self.border_attr(True),
+        )
+        cursor = x + 2
+        for label, action in (
+            ("[+ 新任务]", "new"),
+            ("[编辑]", "edit"),
+            ("[完成/恢复]", "toggle-current"),
+            ("[删除]", "delete"),
+            ("[搜索]", "search"),
+            ("[刷新]", "refresh"),
+            ("[? 帮助]", "help"),
+        ):
+            label_width = display_width(label)
+            if cursor + label_width <= status_x - 2:
+                self.add_hotspot(y + 1, cursor, 1, label_width, action)
+            cursor += label_width + 2
+        safe_addstr(self.screen, y + 1, status_x, status, status_attr)
+
+    def format_due(self, value: Optional[str], all_day: bool) -> str:
+        if not value:
+            return ""
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
+            if all_day:
+                return parsed.strftime("%m-%d")
+            return parsed.strftime("%m-%d %H:%M")
+        except ValueError:
+            return value[:16]
+
+    @staticmethod
+    def priority_name(value: int) -> str:
+        if 1 <= value <= 4:
+            return "高"
+        if value == 5:
+            return "中"
+        if 6 <= value <= 9:
+            return "低"
+        return "无"
+
+    @staticmethod
+    def wrap(value: str, width: int) -> List[str]:
+        if not value:
+            return [""]
+        result: List[str] = []
+        current = ""
+        for char in value:
+            if char == "\n" or display_width(current + char) > width:
+                result.append(current)
+                current = "" if char == "\n" else char
+            else:
+                current += char
+        result.append(current)
+        return result
+
+    def run(self) -> None:
+        self.refresh()
+        while self.running:
+            if time.monotonic() - self.last_refresh > 5:
+                self.refresh(quiet=True)
+            self.render()
+            try:
+                key = self.screen.get_wch()
+            except curses.error:
+                continue
+            self.handle_key(key)
+
+    def wait_key(self) -> Any:
+        self.screen.timeout(-1)
+        try:
+            return self.screen.get_wch()
+        finally:
+            self.screen.timeout(250)
+
+    def handle_key(self, key: Any) -> None:
+        if key == curses.KEY_RESIZE:
+            return
+        if key == curses.KEY_MOUSE:
+            self.handle_mouse()
+            return
+        if key in ("q", "Q"):
+            self.running = False
+        elif key in ("\t",):
+            self.focus = (self.focus + 1) % 3
+        elif key == curses.KEY_BTAB:
+            self.focus = (self.focus - 1) % 3
+        elif key in (curses.KEY_LEFT, "h"):
+            self.focus = max(0, self.focus - 1)
+        elif key in (curses.KEY_RIGHT, "l"):
+            self.focus = min(2, self.focus + 1)
+        elif key in (curses.KEY_UP, "k"):
+            self.move_selection(-1)
+        elif key in (curses.KEY_DOWN, "j"):
+            self.move_selection(1)
+        elif key in ("n", "N"):
+            self.edit_task(None)
+        elif key in ("e", "E", "m", "M"):
+            self.edit_selected()
+        elif key in (" ",):
+            self.toggle_selected()
+        elif key in ("d", "D"):
+            self.delete_selected()
+        elif key in ("r", "R"):
+            self.refresh()
+        elif key == "/":
+            self.search()
+        elif key == "?":
+            self.show_help()
+        elif key in ("\n", curses.KEY_ENTER):
+            if self.focus == 0:
+                self.focus = 1
+            else:
+                self.edit_selected()
+
+    def move_selection(self, amount: int) -> None:
+        if self.focus == 0:
+            self.selected_view = max(0, min(len(self.views) - 1, self.selected_view + amount))
+            self.selected_task = 0
+        else:
+            tasks = self.current_tasks()
+            self.selected_task = max(0, min(len(tasks) - 1, self.selected_task + amount))
+
+    def handle_mouse(self) -> None:
+        try:
+            _, mouse_x, mouse_y, _, state = curses.getmouse()
+        except curses.error:
+            return
+        if state & getattr(curses, "BUTTON4_PRESSED", 0):
+            self.move_selection(-1)
+            return
+        if state & getattr(curses, "BUTTON5_PRESSED", 0):
+            self.move_selection(1)
+            return
+        if not state & (
+            getattr(curses, "BUTTON1_CLICKED", 0)
+            | getattr(curses, "BUTTON1_RELEASED", 0)
+        ):
+            return
+        for y1, x1, y2, x2, action, value in reversed(self.hotspots):
+            if y1 <= mouse_y <= y2 and x1 <= mouse_x <= x2:
+                self.handle_action(action, value)
+                break
+
+    def handle_action(self, action: str, value: Any = None) -> None:
+        if action == "view":
+            self.selected_view = value
+            self.selected_task = 0
+            self.focus = 0
+        elif action == "task":
+            self.selected_task = value
+            self.focus = 1
+        elif action == "toggle":
+            self.toggle_task(value)
+        elif action == "toggle-current":
+            self.toggle_selected()
+        elif action == "new":
+            self.edit_task(None)
+        elif action == "edit":
+            self.edit_selected()
+        elif action == "delete":
+            self.delete_selected()
+        elif action == "refresh":
+            self.refresh()
+        elif action == "search":
+            self.search()
+        elif action == "help":
+            self.show_help()
+
+    def selected(self) -> Optional[Dict[str, Any]]:
+        tasks = self.current_tasks()
+        if not tasks:
+            return None
+        return tasks[min(self.selected_task, len(tasks) - 1)]
+
+    def toggle_selected(self) -> None:
+        task = self.selected()
+        if task:
+            self.toggle_task(task["id"])
+
+    def toggle_task(self, task_id: str) -> None:
+        task = next((item for item in self.tasks if item["id"] == task_id), None)
+        if not task:
+            return
+        try:
+            self.client.request(
+                {"action": "complete", "id": task_id, "completed": not task.get("completed")}
+            )
+            self.refresh(quiet=True)
+            self.set_status("任务状态已更新", "success")
+        except BridgeError as error:
+            self.set_status(f"更新失败：{error}", "error")
+
+    def edit_selected(self) -> None:
+        task = self.selected()
+        if task:
+            self.edit_task(task)
+
+    def search(self) -> None:
+        value = self.prompt_input("搜索", self.filter_text)
+        if value is not None:
+            self.filter_text = value.strip()
+            self.selected_task = 0
+            self.set_status(
+                f"正在筛选：{self.filter_text}" if self.filter_text else "已清除搜索",
+                "normal",
+            )
+
+    def default_list_id(self) -> Optional[str]:
+        if self.views:
+            kind, identifier, _ = self.views[self.selected_view]
+            if kind == "list":
+                return identifier
+        return self.lists[0]["id"] if self.lists else None
+
+    def edit_task(self, task: Optional[Dict[str, Any]]) -> None:
+        if not self.lists:
+            self.set_status("没有找到 iCloud 提醒事项列表", "error")
+            return
+        original = task or {}
+        data = {
+            "title": original.get("title", ""),
+            "notes": original.get("notes", ""),
+            "due": self.editable_due(original.get("due"), original.get("all_day", False)),
+            "all_day": original.get("all_day", False),
+            "priority": original.get("priority", 0),
+            "list_id": original.get("list_id") or self.default_list_id(),
+        }
+        selected = 0
+        fields = ["title", "notes", "due", "all_day", "priority", "list_id", "save", "cancel"]
+        while True:
+            hotspots = self.render_editor(data, selected, task is None)
+            key = self.wait_key()
+            if key == curses.KEY_MOUSE:
+                clicked = self.modal_click(hotspots)
+                if clicked is None:
+                    continue
+                selected = clicked
+                key = "\n"
+            if key in (27, "\x1b"):
+                return
+            if key in (curses.KEY_UP, "k"):
+                selected = (selected - 1) % len(fields)
+            elif key in (curses.KEY_DOWN, "j", "\t"):
+                selected = (selected + 1) % len(fields)
+            elif key in (curses.KEY_LEFT, "h"):
+                self.adjust_editor_choice(data, fields[selected], -1)
+            elif key in (curses.KEY_RIGHT, "l"):
+                self.adjust_editor_choice(data, fields[selected], 1)
+            elif key in ("\n", curses.KEY_ENTER):
+                field = fields[selected]
+                if field in ("title", "notes", "due"):
+                    value = self.prompt_input(
+                        {"title": "标题", "notes": "备注", "due": "日期"}[field], data[field]
+                    )
+                    if value is not None:
+                        data[field] = value
+                elif field in ("all_day", "priority", "list_id"):
+                    self.adjust_editor_choice(data, field, 1)
+                elif field == "cancel":
+                    return
+                elif field == "save":
+                    if not data["title"].strip():
+                        self.set_status("标题不能为空", "error")
+                        continue
+                    payload = dict(data)
+                    payload["due"] = payload["due"].strip()
+                    payload["title"] = payload["title"].strip()
+                    payload["action"] = "create" if task is None else "update"
+                    if task is not None:
+                        payload["id"] = task["id"]
+                    try:
+                        self.client.request(payload)
+                        self.refresh(quiet=True)
+                        self.set_status("任务已保存", "success")
+                    except BridgeError as error:
+                        self.set_status(f"保存失败：{error}", "error")
+                    return
+
+    def render_editor(
+        self, data: Dict[str, Any], selected: int, creating: bool
+    ) -> List[Tuple[int, int, int, int, int]]:
+        self.render()
+        height, width = self.screen.getmaxyx()
+        modal_width = min(72, width - 8)
+        modal_height = min(20, height - 4)
+        y = (height - modal_height) // 2
+        x = (width - modal_width) // 2
+        self.draw_box(y, x, modal_height, modal_width, "新建任务" if creating else "编辑任务", True)
+        list_name = next(
+            (item["name"] for item in self.lists if item["id"] == data["list_id"]), ""
+        )
+        values = [
+            data["title"] or "请输入标题",
+            data["notes"] or "无",
+            data["due"] or "无（格式：YYYY-MM-DD 或 YYYY-MM-DD HH:MM）",
+            "是" if data["all_day"] else "否",
+            self.priority_name(data["priority"]),
+            list_name,
+            "保存",
+            "取消",
+        ]
+        labels = ["标题", "备注", "日期", "全天", "优先级", "列表", "", ""]
+        hotspots: List[Tuple[int, int, int, int, int]] = []
+        row = y + 2
+        for index in range(6):
+            attr = curses.color_pair(SELECTED) | curses.A_BOLD if selected == index else 0
+            line = f" {labels[index]:<4}  {values[index]} "
+            safe_addstr(self.screen, row, x + 2, pad(line, modal_width - 4), attr)
+            hotspots.append((row, x + 2, row, x + modal_width - 3, index))
+            row += 2
+        button_row = y + modal_height - 5
+        save_attr = curses.color_pair(SELECTED) | curses.A_BOLD if selected == 6 else self.border_attr(True)
+        cancel_attr = curses.color_pair(SELECTED) | curses.A_BOLD if selected == 7 else self.border_attr(True)
+        safe_addstr(self.screen, button_row, x + 4, "╭────────╮", save_attr)
+        safe_addstr(self.screen, button_row + 1, x + 4, "│  保存  │", save_attr)
+        safe_addstr(self.screen, button_row + 2, x + 4, "╰────────╯", save_attr)
+        safe_addstr(self.screen, button_row, x + 18, "╭────────╮", cancel_attr)
+        safe_addstr(self.screen, button_row + 1, x + 18, "│  取消  │", cancel_attr)
+        safe_addstr(self.screen, button_row + 2, x + 18, "╰────────╯", cancel_attr)
+        hotspots.append((button_row, x + 4, button_row + 2, x + 13, 6))
+        hotspots.append((button_row, x + 18, button_row + 2, x + 27, 7))
+        self.screen.refresh()
+        return hotspots
+
+    def adjust_editor_choice(self, data: Dict[str, Any], field: str, amount: int) -> None:
+        if field == "all_day":
+            data["all_day"] = not data["all_day"]
+        elif field == "priority":
+            priorities = [0, 1, 5, 9]
+            index = priorities.index(data["priority"]) if data["priority"] in priorities else 0
+            data["priority"] = priorities[(index + amount) % len(priorities)]
+        elif field == "list_id":
+            identifiers = [item["id"] for item in self.lists]
+            index = identifiers.index(data["list_id"]) if data["list_id"] in identifiers else 0
+            data["list_id"] = identifiers[(index + amount) % len(identifiers)]
+
+    @staticmethod
+    def editable_due(value: Optional[str], all_day: bool) -> str:
+        if not value:
+            return ""
+        try:
+            parsed = dt.datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone()
+            return parsed.strftime("%Y-%m-%d" if all_day else "%Y-%m-%d %H:%M")
+        except ValueError:
+            return value
+
+    def modal_click(self, hotspots: Sequence[Tuple[int, int, int, int, int]]) -> Optional[int]:
+        try:
+            _, mouse_x, mouse_y, _, state = curses.getmouse()
+        except curses.error:
+            return None
+        if not state & (
+            getattr(curses, "BUTTON1_CLICKED", 0)
+            | getattr(curses, "BUTTON1_RELEASED", 0)
+        ):
+            return None
+        for y1, x1, y2, x2, index in hotspots:
+            if y1 <= mouse_y <= y2 and x1 <= mouse_x <= x2:
+                return index
+        return None
+
+    def prompt_input(self, label: str, initial: str) -> Optional[str]:
+        value = list(initial)
+        cursor = len(value)
+        curses.curs_set(1)
+        try:
+            while True:
+                self.render()
+                height, width = self.screen.getmaxyx()
+                modal_width = min(76, width - 8)
+                x = (width - modal_width) // 2
+                y = height // 2 - 3
+                self.draw_box(y, x, 7, modal_width, f"编辑{label}", True)
+                safe_addstr(self.screen, y + 2, x + 2, "输入后按 Enter 保存，Esc 取消", curses.A_DIM)
+                text = "".join(value)
+                available = modal_width - 6
+                prefix = "".join(value[:cursor])
+                while display_width(prefix) > available - 1 and value:
+                    prefix = prefix[1:]
+                visible_start = max(0, cursor - len(prefix))
+                visible = truncate("".join(value[visible_start:]), available)
+                safe_addstr(self.screen, y + 4, x + 2, "╭" + "─" * (modal_width - 6) + "╮", self.border_attr(True))
+                safe_addstr(self.screen, y + 5, x + 2, "│" + pad(visible, modal_width - 6) + "│", self.border_attr(True))
+                safe_addstr(self.screen, y + 6, x + 2, "╰" + "─" * (modal_width - 6) + "╯", self.border_attr(True))
+                cursor_x = x + 3 + display_width("".join(value[visible_start:cursor]))
+                try:
+                    self.screen.move(y + 5, min(x + modal_width - 4, cursor_x))
+                except curses.error:
+                    pass
+                self.screen.refresh()
+                key = self.wait_key()
+                if key in (27, "\x1b"):
+                    return None
+                if key in ("\n", curses.KEY_ENTER):
+                    return text
+                if key in (curses.KEY_BACKSPACE, "\x7f", "\b"):
+                    if cursor:
+                        del value[cursor - 1]
+                        cursor -= 1
+                elif key == curses.KEY_DC:
+                    if cursor < len(value):
+                        del value[cursor]
+                elif key == curses.KEY_LEFT:
+                    cursor = max(0, cursor - 1)
+                elif key == curses.KEY_RIGHT:
+                    cursor = min(len(value), cursor + 1)
+                elif key == curses.KEY_HOME:
+                    cursor = 0
+                elif key == curses.KEY_END:
+                    cursor = len(value)
+                elif key == "\x15":
+                    value = []
+                    cursor = 0
+                elif isinstance(key, str) and key.isprintable():
+                    value.insert(cursor, key)
+                    cursor += 1
+        finally:
+            curses.curs_set(0)
+
+    def delete_selected(self) -> None:
+        task = self.selected()
+        if not task:
+            return
+        if not self.confirm(f"删除“{task['title']}”？"):
+            return
+        try:
+            self.client.request({"action": "delete", "id": task["id"]})
+            self.refresh(quiet=True)
+            self.set_status("任务已删除", "success")
+        except BridgeError as error:
+            self.set_status(f"删除失败：{error}", "error")
+
+    def confirm(self, message: str) -> bool:
+        while True:
+            self.render()
+            height, width = self.screen.getmaxyx()
+            modal_width = min(60, width - 8)
+            y = height // 2 - 3
+            x = (width - modal_width) // 2
+            self.draw_box(y, x, 7, modal_width, "确认", True)
+            safe_addstr(self.screen, y + 2, x + 3, truncate(message, modal_width - 6))
+            safe_addstr(self.screen, y + 4, x + 3, "[y 确认]   [n 取消]", self.border_attr(True))
+            self.screen.refresh()
+            key = self.wait_key()
+            if key in ("y", "Y"):
+                return True
+            if key in ("n", "N", 27, "\x1b"):
+                return False
+
+    def show_help(self) -> None:
+        lines = [
+            "↑/↓ 或 j/k：移动选择       ←/→ 或 Tab：切换面板",
+            "Enter/e：编辑              Space：完成或恢复",
+            "n：新建                    m：修改所属列表",
+            "d：删除                    r：刷新",
+            "/：搜索标题和备注；提交空内容可清除搜索",
+            "鼠标：点击列表、任务、复选框和按钮；滚轮滚动",
+            "Esc：取消                  q：退出",
+        ]
+        while True:
+            self.render()
+            height, width = self.screen.getmaxyx()
+            modal_width = min(72, width - 8)
+            modal_height = len(lines) + 5
+            y = (height - modal_height) // 2
+            x = (width - modal_width) // 2
+            self.draw_box(y, x, modal_height, modal_width, "快捷键", True)
+            for index, line in enumerate(lines):
+                safe_addstr(self.screen, y + 2 + index, x + 3, truncate(line, modal_width - 6))
+            safe_addstr(self.screen, y + modal_height - 2, x + 3, "按任意键关闭", curses.A_DIM)
+            self.screen.refresh()
+            self.wait_key()
+            return
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Open the interactive iCloud Reminders TUI")
+    parser.add_argument("--demo", action="store_true", help="use local demo data")
+    return parser.parse_args()
+
+
+def main() -> int:
+    locale.setlocale(locale.LC_ALL, "")
+    args = parse_args()
+    if args.demo:
+        client: Any = DemoClient()
+    else:
+        host = os.environ.get("TODO_BRIDGE_HOST", "127.0.0.1")
+        raw_port = os.environ.get("TODO_BRIDGE_PORT", "")
+        token = os.environ.get("TODO_BRIDGE_TOKEN", "")
+        if not raw_port.isdigit() or not token:
+            print("todo：没有可用的 Mac iCloud Reminders 通道。")
+            print("请通过 ghostty-dev/connect-remote-dev 重新进入远程容器。")
+            return 1
+        client = BridgeClient(host, int(raw_port), token)
+    curses.wrapper(lambda screen: TodoApp(screen, client).run())
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
