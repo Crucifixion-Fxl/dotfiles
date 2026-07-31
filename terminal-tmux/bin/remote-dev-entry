@@ -28,11 +28,13 @@ fallback_ghostty_term() {
   fi
 }
 
-sync_termscp_tmux_environment() {
+sync_bridge_tmux_environment() {
   # 已存在的 tmux server 不会自动接收自定义 SSH 会话变量。把连接脚本传来的
-  # Mac 用户名和反向端口写入 tmux 全局环境，termscp-mac 可从旧 pane 中读取。
+  # SFTP/Todo bridge 变量写入 tmux 全局环境，让已有 pane 也能读取。
   local variable value
-  for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST; do
+  for variable in \
+    TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST \
+    TODO_BRIDGE_TOKEN TODO_BRIDGE_PORT TODO_BRIDGE_HOST; do
     value=${!variable:-}
     [[ -n "$value" ]] || continue
     tmux set-environment -g "$variable" "$value" 2>/dev/null || true
@@ -82,23 +84,17 @@ authorize_termscp_container_key() {
     --label "$container_name"
 }
 
-start_termscp_container_relay() {
-  local container_id=$1 network_container network_mode gateway reverse_port
+start_container_bridge_relay() {
+  local container_id=$1 service_name=$2 listen_port=$3 target_port=$4
+  local network_container network_mode gateway
   local relay relay_ready relay_log relay_pid relay_status ready_port attempt relay_error
-
-  # 普通 SSH 入口没有 Mac 反向隧道，仍允许用户进入容器；termscp-mac 会给出
-  # 重新通过 ghostty-dev/connect-remote-dev 连接的明确提示。
-  [[ -n ${TERMSCP_MAC_USER:-} ]] || return 0
-
-  reverse_port=${TERMSCP_REVERSE_PORT:-6022}
-  valid_termscp_port "$reverse_port" || fail "无效的 termscp 反向端口：$reverse_port"
   network_mode=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$container_id") || \
     fail "无法读取所选容器的网络模式"
 
   # host 网络与宿主机共用 127.0.0.1，不需要中继。bridge/custom network 则
   # 只监听该 Docker 网关地址，不把 Mac SFTP 暴露到服务器的物理网卡。
   if [[ "$network_mode" == host ]]; then
-    termscp_mac_host=127.0.0.1
+    bridge_relay_host=127.0.0.1
     return 0
   fi
 
@@ -110,7 +106,7 @@ start_termscp_container_relay() {
     '{{range .NetworkSettings.Networks}}{{if .Gateway}}{{.Gateway}}{{println}}{{end}}{{end}}' \
     "$network_container" | sed -n '/./{p;q;}') || \
     fail "无法读取所选容器的 Docker 网关"
-  [[ -n "$gateway" ]] || fail "所选容器没有可用的 Docker 网关，无法连接 Mac SFTP"
+  [[ -n "$gateway" ]] || fail "所选容器没有可用的 Docker 网关，无法连接 Mac $service_name"
   [[ "$gateway" =~ ^[0-9A-Fa-f:.]+$ ]] || fail "Docker 网关地址无效：$gateway"
 
   relay="$HOME/.local/bin/termscp-bridge-relay"
@@ -121,9 +117,9 @@ start_termscp_container_relay() {
   relay_log="${relay_ready}.log"
   python3 "$relay" \
     --listen-host "$gateway" \
-    --listen-port "$reverse_port" \
+    --listen-port "$listen_port" \
     --target-host 127.0.0.1 \
-    --target-port "$reverse_port" \
+    --target-port "$target_port" \
     --parent-pid "$$" \
     --ready-file "$relay_ready" </dev/null >"$relay_log" 2>&1 &
   relay_pid=$!
@@ -139,19 +135,41 @@ start_termscp_container_relay() {
     kill "$relay_pid" 2>/dev/null || true
     wait "$relay_pid" 2>/dev/null || true
     rm -f "$relay_ready" "$relay_log"
-    fail "无法为容器启动 termscp 中继${relay_error:+：$relay_error}"
+    fail "无法为容器启动 $service_name 中继${relay_error:+：$relay_error}"
   fi
 
   read -r relay_status ready_port < "$relay_ready"
   if [[ "$relay_status" != READY ]] || ! valid_termscp_port "$ready_port" ||
-    (( 10#$ready_port != 10#$reverse_port )); then
+    (( 10#$ready_port != 10#$listen_port )); then
     kill "$relay_pid" 2>/dev/null || true
     wait "$relay_pid" 2>/dev/null || true
     rm -f "$relay_ready" "$relay_log"
-    fail "termscp 容器中继没有正确就绪"
+    fail "$service_name 容器中继没有正确就绪"
   fi
   rm -f "$relay_ready" "$relay_log"
-  termscp_mac_host=$gateway
+  bridge_relay_host=$gateway
+}
+
+start_termscp_container_relay() {
+  local container_id=$1 reverse_port bridge_relay_host
+
+  # 普通 SSH 入口没有 Mac 反向隧道，仍允许用户进入容器；termscp-mac 会给出
+  # 重新通过 ghostty-dev/connect-remote-dev 连接的明确提示。
+  [[ -n ${TERMSCP_MAC_USER:-} ]] || return 0
+  reverse_port=${TERMSCP_REVERSE_PORT:-6022}
+  valid_termscp_port "$reverse_port" || fail "无效的 termscp 反向端口：$reverse_port"
+  start_container_bridge_relay "$container_id" SFTP "$reverse_port" "$reverse_port"
+  termscp_mac_host=$bridge_relay_host
+}
+
+start_todo_container_relay() {
+  local container_id=$1 todo_port bridge_relay_host
+
+  [[ -n ${TODO_BRIDGE_TOKEN:-} ]] || return 0
+  todo_port=${TODO_BRIDGE_PORT:-6024}
+  valid_termscp_port "$todo_port" || fail "无效的 Todo 反向端口：$todo_port"
+  start_container_bridge_relay "$container_id" Todo "$todo_port" "$todo_port"
+  todo_bridge_host=$bridge_relay_host
 }
 
 enter_host_tmux() {
@@ -159,13 +177,13 @@ enter_host_tmux() {
   fallback_ghostty_term
   command -v tmux >/dev/null 2>&1 || fail "宿主机未安装 tmux"
   if tmux list-sessions >/dev/null 2>&1; then
-    sync_termscp_tmux_environment
+    sync_bridge_tmux_environment
   fi
   exec tmux new-session -A -s "$HOST_TMUX_SESSION"
 }
 
 enter_container_tmux() {
-  local container_id=$1 container_name=$2 termscp_mac_host authorization_output
+  local container_id=$1 container_name=$2 termscp_mac_host todo_bridge_host authorization_output
   local -a docker_environment
 
   if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
@@ -178,13 +196,22 @@ enter_container_tmux() {
   fi
 
   termscp_mac_host=127.0.0.1
+  todo_bridge_host=127.0.0.1
   start_termscp_container_relay "$container_id"
+  start_todo_container_relay "$container_id"
   docker_environment=(-e "TERM=${TERM:-xterm-256color}")
   if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
     docker_environment+=(
       -e "TERMSCP_MAC_USER=$TERMSCP_MAC_USER"
       -e "TERMSCP_REVERSE_PORT=${TERMSCP_REVERSE_PORT:-6022}"
       -e "TERMSCP_MAC_HOST=$termscp_mac_host"
+    )
+  fi
+  if [[ -n ${TODO_BRIDGE_TOKEN:-} ]]; then
+    docker_environment+=(
+      -e "TODO_BRIDGE_TOKEN=$TODO_BRIDGE_TOKEN"
+      -e "TODO_BRIDGE_PORT=${TODO_BRIDGE_PORT:-6024}"
+      -e "TODO_BRIDGE_HOST=$todo_bridge_host"
     )
   fi
 
@@ -239,7 +266,9 @@ enter_container_tmux() {
       tmux set-environment -g LC_ALL "$LC_ALL" 2>/dev/null || true
     fi
     if tmux list-sessions >/dev/null 2>&1; then
-      for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST; do
+      for variable in \
+        TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST \
+        TODO_BRIDGE_TOKEN TODO_BRIDGE_PORT TODO_BRIDGE_HOST; do
         eval "value=\${$variable:-}"
         [ -n "$value" ] || continue
         tmux set-environment -g "$variable" "$value" 2>/dev/null || true

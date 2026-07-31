@@ -12,6 +12,8 @@ set -euo pipefail
 #      可以显示“服务器本地文件 ↔ Mac 文件”。
 #   5. 通过第二条令牌保护的回环转发，把最终所选容器的公钥自动写入本机
 #      authorized_keys；只授予回环来源的 SFTP 权限，不传输容器私钥。
+#   6. 通过第三条随机令牌保护的回环转发，让最终所选容器中的 Todo TUI
+#      直接读写 Mac EventKit 中的 iCloud 提醒事项。
 #
 # 此脚本不安装远程 tmux/zsh；要复现完整环境，仍应在远程运行 bootstrap。
 
@@ -23,14 +25,17 @@ fail() {
 run_ssh() {
   local host=$1 remote_command=$2 reverse_port=$3 mac_ssh_port=$4
   local authorization_reverse_port=$5 authorization_local_port=$6
-  local reverse_forward authorization_forward
+  local todo_reverse_port=$7 todo_local_port=$8
+  local reverse_forward authorization_forward todo_forward
   reverse_forward="127.0.0.1:${reverse_port}:127.0.0.1:${mac_ssh_port}"
   authorization_forward="127.0.0.1:${authorization_reverse_port}:127.0.0.1:${authorization_local_port}"
+  todo_forward="127.0.0.1:${todo_reverse_port}:127.0.0.1:${todo_local_port}"
 
   exec ssh \
     -o ExitOnForwardFailure=yes \
     -R "$reverse_forward" \
     -R "$authorization_forward" \
+    -R "$todo_forward" \
     -t "$host" "$remote_command"
 }
 
@@ -80,12 +85,54 @@ start_local_key_authorizer() {
   rm -f "$ready_file" "$log_file"
 }
 
+start_local_todo_bridge() {
+  local bridge=$1 backend=$2
+  local ready_file log_file bridge_pid status attempt error
+
+  [[ -x "$backend" ]] || \
+    fail "找不到 $backend；请先在 Mac 执行 dotfiles bootstrap"
+  todo_bridge_token=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+  ready_file=$(mktemp "${TMPDIR:-/tmp}/todo-bridge.XXXXXX")
+  log_file="${ready_file}.log"
+  python3 "$bridge" serve \
+    --listen-host 127.0.0.1 \
+    --listen-port 0 \
+    --token "$todo_bridge_token" \
+    --backend "$backend" \
+    --parent-pid "$$" \
+    --ready-file "$ready_file" </dev/null >"$log_file" 2>&1 &
+  bridge_pid=$!
+
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    [[ -s "$ready_file" ]] && break
+    kill -0 "$bridge_pid" 2>/dev/null || break
+    sleep 0.02
+  done
+  if [[ ! -s "$ready_file" ]]; then
+    error=$(<"$log_file")
+    kill "$bridge_pid" 2>/dev/null || true
+    wait "$bridge_pid" 2>/dev/null || true
+    rm -f "$ready_file" "$log_file"
+    fail "无法启动本机 iCloud Todo bridge${error:+：$error}"
+  fi
+
+  read -r status todo_bridge_local_port < "$ready_file"
+  if [[ "$status" != READY ]] || ! valid_port "$todo_bridge_local_port"; then
+    kill "$bridge_pid" 2>/dev/null || true
+    wait "$bridge_pid" 2>/dev/null || true
+    rm -f "$ready_file" "$log_file"
+    fail "本机 iCloud Todo bridge 没有正确就绪"
+  fi
+  rm -f "$ready_file" "$log_file"
+}
+
 main() {
-  local host script_dir entry relay authorizer
+  local host script_dir entry relay authorizer todo_bridge todo_backend
   local payload relay_payload authorizer_payload remote_command
-  local mac_user reverse_port mac_ssh_port authorization_reverse_port forced_command
-  local mac_user_quoted reverse_port_quoted authorization_reverse_port_quoted
+  local mac_user reverse_port mac_ssh_port authorization_reverse_port todo_reverse_port forced_command
+  local mac_user_quoted reverse_port_quoted authorization_reverse_port_quoted todo_reverse_port_quoted
   local authorizer_token authorizer_local_port authorizer_token_quoted
+  local todo_bridge_token todo_bridge_local_port todo_bridge_token_quoted
 
   [[ $# -eq 1 ]] || fail "用法：connect-remote-dev <ssh-host>"
   host=$1
@@ -93,23 +140,31 @@ main() {
   reverse_port=${TERMSCP_REVERSE_PORT:-6022}
   mac_ssh_port=${TERMSCP_MAC_SSH_PORT:-22}
   authorization_reverse_port=${TERMSCP_AUTH_REVERSE_PORT:-6023}
+  todo_reverse_port=${TODO_BRIDGE_REVERSE_PORT:-6024}
 
   [[ "$mac_user" =~ ^[A-Za-z0-9._-]+$ ]] || fail "无效的 Mac 用户名：$mac_user"
   valid_port "$reverse_port" || fail "无效的服务器反向端口：$reverse_port"
   valid_port "$mac_ssh_port" || fail "无效的 Mac SSH 端口：$mac_ssh_port"
   valid_port "$authorization_reverse_port" || \
     fail "无效的服务器授权反向端口：$authorization_reverse_port"
+  valid_port "$todo_reverse_port" || fail "无效的服务器 Todo 反向端口：$todo_reverse_port"
   (( 10#$authorization_reverse_port != 10#$reverse_port )) || \
     fail "SFTP 与授权反向端口不能相同"
+  (( 10#$todo_reverse_port != 10#$reverse_port &&
+    10#$todo_reverse_port != 10#$authorization_reverse_port )) || \
+    fail "Todo、SFTP 与授权反向端口不能相同"
 
   script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   entry="$script_dir/remote-dev-entry"
   relay="$script_dir/termscp-bridge-relay"
   authorizer="$script_dir/termscp-key-authorizer"
+  todo_bridge="$script_dir/todo-bridge"
+  todo_backend="$HOME/.local/libexec/todo-reminders"
 
   [[ -f "$entry" ]] || fail "找不到 $entry"
   [[ -f "$relay" ]] || fail "找不到 $relay"
   [[ -f "$authorizer" ]] || fail "找不到 $authorizer"
+  [[ -f "$todo_bridge" ]] || fail "找不到 $todo_bridge"
   command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
   command -v ssh >/dev/null 2>&1 || fail "本机未安装 ssh"
   command -v python3 >/dev/null 2>&1 || fail "本机未安装 python3"
@@ -120,6 +175,7 @@ main() {
     forced_command=internal-sftp
   fi
   start_local_key_authorizer "$authorizer" "$forced_command"
+  start_local_todo_bridge "$todo_bridge" "$todo_backend"
 
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
   # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
@@ -130,6 +186,8 @@ main() {
   printf -v reverse_port_quoted '%q' "$reverse_port"
   printf -v authorization_reverse_port_quoted '%q' "$authorization_reverse_port"
   printf -v authorizer_token_quoted '%q' "$authorizer_token"
+  printf -v todo_reverse_port_quoted '%q' "$todo_reverse_port"
+  printf -v todo_bridge_token_quoted '%q' "$todo_bridge_token"
   remote_command='set -eu
 command -v base64 >/dev/null 2>&1 || {
   printf "%s\n" "connect-remote-dev：远端未安装 base64" >&2
@@ -162,12 +220,17 @@ TERMSCP_REVERSE_PORT='"$reverse_port_quoted"'
 TERMSCP_MAC_HOST=127.0.0.1
 TERMSCP_AUTH_TOKEN='"$authorizer_token_quoted"'
 TERMSCP_AUTH_REVERSE_PORT='"$authorization_reverse_port_quoted"'
+TODO_BRIDGE_TOKEN='"$todo_bridge_token_quoted"'
+TODO_BRIDGE_PORT='"$todo_reverse_port_quoted"'
+TODO_BRIDGE_HOST=127.0.0.1
 export TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST
 export TERMSCP_AUTH_TOKEN TERMSCP_AUTH_REVERSE_PORT
+export TODO_BRIDGE_TOKEN TODO_BRIDGE_PORT TODO_BRIDGE_HOST
 exec "$directory/remote-dev-entry"'
 
   run_ssh "$host" "$remote_command" "$reverse_port" "$mac_ssh_port" \
-    "$authorization_reverse_port" "$authorizer_local_port"
+    "$authorization_reverse_port" "$authorizer_local_port" \
+    "$todo_reverse_port" "$todo_bridge_local_port"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

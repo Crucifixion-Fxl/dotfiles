@@ -18,6 +18,8 @@ run_ssh() {
   printf 'mac_ssh_port=%s\n' "$4"
   printf 'authorization_reverse_port=%s\n' "$5"
   printf 'authorization_local_port=%s\n' "$6"
+  printf 'todo_reverse_port=%s\n' "$7"
+  printf 'todo_local_port=%s\n' "$8"
 }
 
 start_local_key_authorizer() {
@@ -25,13 +27,21 @@ start_local_key_authorizer() {
   authorizer_local_port=49152
 }
 
+start_local_todo_bridge() {
+  todo_bridge_token=test-todo-token
+  todo_bridge_local_port=49153
+}
+
 output=$(TERMSCP_MAC_USER=mac-user TERMSCP_REVERSE_PORT=16022 \
-  TERMSCP_MAC_SSH_PORT=2222 TERMSCP_AUTH_REVERSE_PORT=16023 main dev-4090)
+  TERMSCP_MAC_SSH_PORT=2222 TERMSCP_AUTH_REVERSE_PORT=16023 \
+  TODO_BRIDGE_REVERSE_PORT=16024 main dev-4090)
 grep -Fq 'host=dev-4090' <<< "$output"
 grep -Fq 'reverse_port=16022' <<< "$output"
 grep -Fq 'mac_ssh_port=2222' <<< "$output"
 grep -Fq 'authorization_reverse_port=16023' <<< "$output"
 grep -Fq 'authorization_local_port=49152' <<< "$output"
+grep -Fq 'todo_reverse_port=16024' <<< "$output"
+grep -Fq 'todo_local_port=49153' <<< "$output"
 grep -Fq 'directory="$HOME/.local/bin"' <<< "$output"
 grep -Fq 'mv -f "$temporary" "$directory/remote-dev-entry"' <<< "$output"
 grep -Fq 'mv -f "$relay_temporary" "$directory/termscp-bridge-relay"' <<< "$output"
@@ -41,6 +51,9 @@ grep -Fq 'TERMSCP_REVERSE_PORT=16022' <<< "$output"
 grep -Fq 'TERMSCP_MAC_HOST=127.0.0.1' <<< "$output"
 grep -Fq 'TERMSCP_AUTH_TOKEN=test-token' <<< "$output"
 grep -Fq 'TERMSCP_AUTH_REVERSE_PORT=16023' <<< "$output"
+grep -Fq 'TODO_BRIDGE_TOKEN=test-todo-token' <<< "$output"
+grep -Fq 'TODO_BRIDGE_PORT=16024' <<< "$output"
+grep -Fq 'TODO_BRIDGE_HOST=127.0.0.1' <<< "$output"
 grep -Fq 'exec "$directory/remote-dev-entry"' <<< "$output"
 
 payload=$(sed -n "s/^payload='\\(.*\\)'$/\\1/p" <<< "$output")
@@ -68,3 +81,4 @@ fi
 grep -Fq -- '-o ExitOnForwardFailure=yes' "$CONNECTOR"
 grep -Fq -- '-R "$reverse_forward"' "$CONNECTOR"
 grep -Fq -- '-R "$authorization_forward"' "$CONNECTOR"
+grep -Fq -- '-R "$todo_forward"' "$CONNECTOR"

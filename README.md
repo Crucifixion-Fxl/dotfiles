@@ -3,7 +3,7 @@
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、Oh My Tmux、lazygit、
 git-delta、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
-Codex 状态通知和 zsh 交互环境。
+Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
 
 ## 目录结构
 
@@ -20,10 +20,15 @@ Codex 状态通知和 zsh 交互环境。
     │   ├── ghostty-dev              # 新 Ghostty tab 中的远端开发入口
     │   ├── ghostty-tab-command      # 远端入口结束后精确关闭对应 tab
     │   ├── remote-dev-entry         # SSH 后选择宿主机或容器开发环境
-    │   ├── connect-remote-dev       # 启动交互 SSH 和 Mac SFTP 反向转发
+    │   ├── connect-remote-dev       # 启动交互 SSH、SFTP 和 Todo 反向转发
     │   ├── termscp-mac              # 在服务器/容器浏览并传输 Mac 文件
     │   ├── termscp-bridge-relay     # Docker bridge 到宿主机隧道的临时中继
-    │   └── termscp-key-authorizer   # Mac 侧受限 SFTP 公钥自动授权
+    │   ├── termscp-key-authorizer   # Mac 侧受限 SFTP 公钥自动授权
+    │   ├── todo                     # 容器中的 iCloud Reminders 交互式 TUI
+    │   └── todo-bridge              # Mac EventKit 后端的令牌保护服务
+    ├── todo/
+    │   ├── TodoReminders.swift      # 只操作 iCloud 列表的 EventKit 后端
+    │   └── Info.plist               # macOS 提醒事项权限说明
     ├── tmux/
     │   ├── tmux.conf.local          # Oh My Tmux 的 Nord 主题与现有行为覆盖
     │   ├── tmux.conf                # 切换前配置，仅作为旧机器回退
@@ -39,6 +44,8 @@ Codex 状态通知和 zsh 交互环境。
     │   ├── test-termscp-mac.sh        # Mac SFTP 入口参数检查
     │   ├── test-termscp-bridge-relay.sh # Docker bridge 中继检查
     │   ├── test-termscp-key-authorizer.sh # 容器公钥自动授权检查
+    │   ├── test-todo-bridge.sh       # Todo bridge 认证和请求转发检查
+    │   ├── test-todo-tui.py          # TUI 数据、中文宽度和视觉契约检查
     │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
     │   └── test-lazygit-safe.sh       # Git safe.directory 回归检查
     ├── codex/
@@ -251,6 +258,8 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/bin/termscp-mac` | `~/.local/bin/termscp-mac` |
 | `terminal-tmux/bin/termscp-bridge-relay` | `~/.local/bin/termscp-bridge-relay` |
 | `terminal-tmux/bin/termscp-key-authorizer` | `~/.local/bin/termscp-key-authorizer` |
+| `terminal-tmux/bin/todo` | `~/.local/bin/todo` |
+| `terminal-tmux/bin/todo-bridge` | `~/.local/bin/todo-bridge` |
 | `terminal-tmux/bin/ghostty-dev` | `~/.local/bin/ghostty-dev`（仅 macOS） |
 | `terminal-tmux/shell/tmux-window-name.zsh` | `~/.config/tmux/window-name.zsh` |
 | `terminal-tmux/yazi/yazi.toml` | `~/.config/yazi/yazi.toml` |
@@ -286,6 +295,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 连接并更新远程入口 | `bin/connect-remote-dev` | 保持单条 SSH 连接和原子替换 |
 | 容器访问 Mac SFTP | `bin/termscp-bridge-relay` + `bin/termscp-mac` | 中继只绑定所选 Docker 网关，并随 SSH 容器入口退出 |
 | 容器公钥自动授权 | `bin/termscp-key-authorizer` | 只接收令牌保护的公钥，并写入仅回环、仅 SFTP 的 Mac 授权 |
+| 容器访问 iCloud Todo | `bin/todo` + `bin/todo-bridge` + `todo/TodoReminders.swift` | EventKit 只读取 iCloud；bridge 只监听回环并使用会话令牌 |
 | Ghostty 字体、shell integration | `ghostty/config.ghostty` | 默认窗口保持本地 zsh，远端入口不要写入 `command` |
 | Ghostty 远端启动 | `bin/ghostty-dev` | 在现有窗口创建 tab，并用方向键选择 `~/.ssh/config` Host |
 | 工具版本 | `versions.lock` | 升级 Release 时同时更新版本和各平台 SHA256 |
@@ -368,8 +378,36 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 给交互菜单，因此不会额外建立上传连接。同时它建立
 `127.0.0.1:6022`（服务器）到 `127.0.0.1:22`（Mac）的 SSH 反向转发；服务器端
 端口只监听回环地址，不会暴露给服务器所在局域网。第二条服务器回环转发默认使用
-`6023`，只连接本机随机端口上的临时公钥授权服务。`ExitOnForwardFailure` 会在
-任一端口被占用或服务器禁用 TCP forwarding 时直接终止连接并显示错误。
+`6023`，只连接本机随机端口上的临时公钥授权服务。第三条回环转发默认使用 `6024`，
+只连接当前 Mac 会话的 iCloud Reminders bridge。`ExitOnForwardFailure` 会在任一
+端口被占用或服务器禁用 TCP forwarding 时直接终止连接并显示错误。
+
+### 在远程容器中使用 iCloud Todo TUI
+
+Mac 和目标容器都需要先拉取本仓库并运行一次 bootstrap。Mac bootstrap 会编译带有
+提醒事项权限说明的 EventKit 后端；容器 bootstrap 会把 `todo` 链接到
+`~/.local/bin`。之后通过 `ghostty-dev` 或 `connect-remote-dev HOST` 进入容器并运行：
+
+```bash
+todo
+```
+
+`todo` 只打开全屏 TUI，不提供日常 CRUD 子命令。左侧显示“今天、已计划、全部、
+已完成”和所有真实 iCloud 列表，中间显示当前列表的任务，宽终端还会显示右侧详情。
+所有面板、输入框、确认框和按钮都使用紫色 Unicode 圆角矩形边界。可以用鼠标点击
+列表、任务复选框和按钮，用滚轮滚动；也可以用方向键或 `j/k` 导航，`n` 新建、
+`e`/`Enter` 编辑、`Space` 完成或恢复、`m` 移动到其他列表、`d` 删除、`/` 搜索。
+
+实际数据始终保存在 Mac 的 iCloud Reminders/EventKit 中，容器只持有当前界面快照；
+每次写操作都在 Mac 确认成功后刷新。bridge 只监听 Mac 回环地址，使用每条 SSH 连接
+新生成的随机令牌，并随连接退出。Mac 睡眠或连接断开时 TUI 会显示离线，不会把修改
+伪装成已经保存。第一次使用时 macOS 会请求提醒事项完整访问权限，需要选择“允许”。
+
+服务器端 Todo 回环端口可覆盖，但必须与 SFTP 和授权端口不同：
+
+```bash
+TODO_BRIDGE_REVERSE_PORT=16024 ghostty-dev HOST
+```
 
 ### 在 SSH 服务器中打开 Mac ↔ 服务器文件传输
 
@@ -405,13 +443,14 @@ Mac。Mac 会幂等写入 `~/.ssh/authorized_keys`，规则限定来源只能是
 进入容器，不会自动创建或替换身份文件。
 
 直接进入服务器宿主机时不会自动授权宿主机密钥，仍需单独配置密码或公钥。连接变量
-由 `connect-remote-dev` 自动传入；Mac 用户名默认为本机 `id -un`，两个服务器
+由 `connect-remote-dev` 自动传入；Mac 用户名默认为本机 `id -un`，三个服务器
 回环端口可按需覆盖：
 
 ```bash
 TERMSCP_MAC_USER=a4x \
 TERMSCP_REVERSE_PORT=16022 \
 TERMSCP_AUTH_REVERSE_PORT=16023 \
+TODO_BRIDGE_REVERSE_PORT=16024 \
 TERMSCP_MAC_SSH_PORT=22 \
 ghostty-dev HOST
 ```

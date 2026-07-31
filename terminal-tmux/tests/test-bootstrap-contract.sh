@@ -11,6 +11,10 @@ GHOSTTY_APPLESCRIPT="$ROOT/ghostty/open-tab.applescript"
 GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
 TERMSCP_LAUNCHER="$ROOT/bin/termscp-mac"
 TERMSCP_AUTHORIZER="$ROOT/bin/termscp-key-authorizer"
+TODO_TUI="$ROOT/bin/todo"
+TODO_BRIDGE="$ROOT/bin/todo-bridge"
+TODO_SWIFT="$ROOT/todo/TodoReminders.swift"
+TODO_INFO="$ROOT/todo/Info.plist"
 TMUX_LOCAL_CONFIG="$ROOT/tmux/tmux.conf.local"
 TMUX_SYSTEM_METER="$ROOT/tmux/system-meter.sh"
 
@@ -47,10 +51,22 @@ grep -q '^install_oh_my_tmux()' "$BOOTSTRAP"
 grep -q '^uninstall_druk()' "$BOOTSTRAP"
 grep -q '^install_fresh()' "$BOOTSTRAP"
 grep -q '^install_ghostty()' "$BOOTSTRAP"
+grep -q '^install_todo_reminders_backend()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
 grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo-bridge" "$HOME/.local/bin/todo-bridge"' "$BOOTSTRAP"
+grep -Fq 'swiftc \' "$BOOTSTRAP"
+grep -Fq 'NSRemindersFullAccessUsageDescription' "$TODO_INFO"
+grep -Fq 'case "snapshot"' "$TODO_SWIFT"
+grep -Fq 'case "create"' "$TODO_SWIFT"
+grep -Fq 'case "update"' "$TODO_SWIFT"
+grep -Fq 'case "complete"' "$TODO_SWIFT"
+grep -Fq 'case "delete"' "$TODO_SWIFT"
+python3 "$TODO_TUI" --help >/dev/null
+python3 "$TODO_BRIDGE" --help >/dev/null
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
