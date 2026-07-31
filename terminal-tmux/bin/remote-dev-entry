@@ -314,14 +314,31 @@ terminal_size() {
   printf '%d %d\n' "$lines" "$columns"
 }
 
+repeat_panel_character() {
+  local character=$1 count=$2
+  local output=
+
+  while ((count > 0)); do
+    output+=$character
+    count=$((count - 1))
+  done
+  printf '%s' "$output"
+}
+
 choose_container() {
   # 菜单每次外层循环都重新读取 docker ps；内层循环处理翻页、键盘和缩放。
   # REMOTE_DEV_MENU_ROWS 可改每页目标行数，实际行数仍会受终端高度限制。
   local container_output id name image status key key_tail index selected
   local interactive menu_resized read_status
   local configured_page_size page_size page_start page_end available_rows
-  local terminal_lines terminal_columns menu_width menu_height menu_row menu_column
-  local field_width name_width image_width status_width menu_text render_row
+  local terminal_lines terminal_columns panel_width content_width panel_height
+  local panel_row panel_column bottom_row field_width name_width image_width
+  local status_width menu_text render_row line_index selected_line
+  local panel_title panel_title_width top_border bottom_border
+  local purple=$'\033[38;5;141m'
+  local selected_style=$'\033[1;38;5;231;48;5;55m'
+  local muted=$'\033[38;5;245m'
+  local reset=$'\033[0m'
   local -a container_ids=()
   local -a container_names=()
   local -a container_images=()
@@ -375,17 +392,21 @@ choose_container() {
       terminal_columns=80
       if (( interactive )); then
         read -r terminal_lines terminal_columns <<< "$(terminal_size)"
-        available_rows=$((terminal_lines - 3))
+        available_rows=$((terminal_lines - 5))
         (( available_rows > 0 )) || available_rows=1
         (( page_size <= available_rows )) || page_size=$available_rows
       fi
-      menu_width=88
+      panel_width=92
+      if (( interactive && terminal_columns < panel_width )); then
+        panel_width=$terminal_columns
+      fi
+      ((panel_width >= 16)) || panel_width=16
+      content_width=$((panel_width - 4))
       name_width=24
       image_width=32
       status_width=24
-      if (( interactive && terminal_columns < menu_width )); then
-        menu_width=$terminal_columns
-        field_width=$((menu_width - 8))
+      if (( content_width < 88 )); then
+        field_width=$((content_width - 8))
         (( field_width >= 3 )) || field_width=3
         name_width=$((field_width * 3 / 10))
         image_width=$((field_width * 4 / 10))
@@ -421,17 +442,10 @@ choose_container() {
 
       for ((index = page_start; index < page_end; index++)); do
         if (( index == selected )); then
-          if (( interactive )) && [[ ${TERM:-dumb} != dumb ]]; then
-            printf -v menu_text '\033[7m  %-3s %-*.*s %-*.*s %-*.*s\033[0m' '>' \
-              "$name_width" "$name_width" "${container_names[$index]}" \
-              "$image_width" "$image_width" "${container_images[$index]}" \
-              "$status_width" "$status_width" "${container_statuses[$index]}"
-          else
-            printf -v menu_text '  %-3s %-*.*s %-*.*s %-*.*s' '>' \
-              "$name_width" "$name_width" "${container_names[$index]}" \
-              "$image_width" "$image_width" "${container_images[$index]}" \
-              "$status_width" "$status_width" "${container_statuses[$index]}"
-          fi
+          printf -v menu_text '  %-3s %-*.*s %-*.*s %-*.*s' '>' \
+            "$name_width" "$name_width" "${container_names[$index]}" \
+            "$image_width" "$image_width" "${container_images[$index]}" \
+            "$status_width" "$status_width" "${container_statuses[$index]}"
         else
           printf -v menu_text '  %-3s %-*.*s %-*.*s %-*.*s' '' \
             "$name_width" "$name_width" "${container_names[$index]}" \
@@ -442,19 +456,53 @@ choose_container() {
       done
 
       if (( interactive )); then
-        # 菜单最宽 88 列，窄终端会按比例压缩字段。先计算整个菜单块的居中原点，
-        # 再绝对定位每一行；每次缩放先清屏，不会沿用旧尺寸的锚点。
-        menu_height=${#menu_lines[@]}
-        menu_row=$(((terminal_lines - menu_height) / 2 + 1))
-        menu_column=$(((terminal_columns - menu_width) / 2 + 1))
-        (( menu_row > 0 )) || menu_row=1
-        (( menu_column > 0 )) || menu_column=1
+        # 表格内容最宽 88 列，外加圆角紫色边框和左右留白。窄终端按比例压缩
+        # 字段；每次缩放都按完整 Panel 重新计算居中位置。
+        panel_title=' DOCKER CONTAINERS '
+        panel_title_width=19
+        if ((panel_width < 24)); then
+          panel_title=' DOCKER '
+          panel_title_width=8
+        fi
+        panel_height=$((${#menu_lines[@]} + 2))
+        panel_row=$(((terminal_lines - panel_height) / 2 + 1))
+        panel_column=$(((terminal_columns - panel_width) / 2 + 1))
+        (( panel_row > 0 )) || panel_row=1
+        (( panel_column > 0 )) || panel_column=1
+        bottom_row=$((panel_row + panel_height - 1))
+        selected_line=$((selected - page_start + 3))
+        top_border="╭─${panel_title}$(repeat_panel_character '─' \
+          "$((panel_width - panel_title_width - 3))")╮"
+        bottom_border="╰$(repeat_panel_character '─' "$((panel_width - 2))")╯"
+
         printf '\033[2J\033[H'
-        render_row=$menu_row
+        printf '\033[%d;%dH%s%s%s' \
+          "$panel_row" "$panel_column" "$purple" "$top_border" "$reset"
+        render_row=$((panel_row + 1))
+        line_index=0
         for menu_text in "${menu_lines[@]}"; do
-          printf '\033[%d;%dH%s\033[K' "$render_row" "$menu_column" "$menu_text"
+          printf '\033[%d;%dH%s│%s' \
+            "$render_row" "$panel_column" "$purple" "$reset"
+          printf '\033[%d;%dH%s│%s' \
+            "$render_row" "$((panel_column + panel_width - 1))" "$purple" "$reset"
+          if ((line_index == selected_line)) && [[ ${TERM:-dumb} != dumb ]]; then
+            printf '\033[%d;%dH%s%-*.*s%s' \
+              "$render_row" "$((panel_column + 2))" "$selected_style" \
+              "$content_width" "$content_width" "$menu_text" "$reset"
+          elif ((line_index == 0)); then
+            printf '\033[%d;%dH%s%s%s' \
+              "$render_row" "$((panel_column + 2))" "$purple" "$menu_text" "$reset"
+          elif ((line_index == 1)); then
+            printf '\033[%d;%dH%s%s%s' \
+              "$render_row" "$((panel_column + 2))" "$muted" "$menu_text" "$reset"
+          else
+            printf '\033[%d;%dH%s' "$render_row" "$((panel_column + 2))" "$menu_text"
+          fi
           render_row=$((render_row + 1))
+          line_index=$((line_index + 1))
         done
+        printf '\033[%d;%dH%s%s%s' \
+          "$bottom_row" "$panel_column" "$purple" "$bottom_border" "$reset"
       else
         printf '%s\n' "${menu_lines[@]}"
       fi
@@ -526,27 +574,53 @@ choose_container() {
 }
 
 render_docker_prompt() {
-  # 初始询问界面只有两行，根据每次重绘时的 TTY 大小动态居中。
-  local lines columns title hint title_row hint_row title_column hint_column
+  # 初始询问也使用与容器列表一致的紫色圆角 Panel。
+  local lines columns panel_width=54 panel_height=5 panel_row panel_column
+  local question_row hint_row question_column hint_column bottom_row
+  local panel_title=' REMOTE TARGET ' panel_title_width=15
+  local question='是否进入 Docker 容器？'
+  local hint='Enter  进入容器    Esc  进入宿主机'
+  local purple=$'\033[38;5;141m'
+  local muted=$'\033[38;5;245m'
+  local reset=$'\033[0m'
+  local top_border bottom_border row
 
-  title='是否进入 Docker 容器？'
-  hint='Enter：进入    Esc：进入宿主机'
   read -r lines columns <<< "$(terminal_size)"
 
-  title_row=$((lines / 2))
-  (( title_row > 0 )) || title_row=1
-  hint_row=$((title_row + 2))
-  (( hint_row <= lines )) || hint_row=$lines
+  ((panel_width <= columns)) || panel_width=$columns
+  ((panel_width >= 20)) || panel_width=20
+  panel_row=$(((lines - panel_height) / 2 + 1))
+  panel_column=$(((columns - panel_width) / 2 + 1))
+  ((panel_row > 0)) || panel_row=1
+  ((panel_column > 0)) || panel_column=1
+  bottom_row=$((panel_row + panel_height - 1))
+  question_row=$((panel_row + 1))
+  hint_row=$((panel_row + 3))
 
-  # 这里使用的是终端显示宽度而非字符数：中文字符占两列。
-  title_column=$(((columns - 22) / 2 + 1))
-  hint_column=$(((columns - 30) / 2 + 1))
-  (( title_column > 0 )) || title_column=1
-  (( hint_column > 0 )) || hint_column=1
+  # 这里使用终端显示宽度：中文字符占两列。
+  question_column=$((panel_column + (panel_width - 22) / 2))
+  hint_column=$((panel_column + (panel_width - 34) / 2))
+  ((question_column > panel_column)) || question_column=$((panel_column + 1))
+  ((hint_column > panel_column)) || hint_column=$((panel_column + 1))
+
+  top_border="╭─${panel_title}$(repeat_panel_character '─' \
+    "$((panel_width - panel_title_width - 3))")╮"
+  bottom_border="╰$(repeat_panel_character '─' "$((panel_width - 2))")╯"
 
   printf '\033[2J\033[H'
-  printf '\033[%d;%dH%s' "$title_row" "$title_column" "$title"
-  printf '\033[%d;%dH%s' "$hint_row" "$hint_column" "$hint"
+  printf '\033[%d;%dH%s%s%s' \
+    "$panel_row" "$panel_column" "$purple" "$top_border" "$reset"
+  for ((row = panel_row + 1; row < bottom_row; row++)); do
+    printf '\033[%d;%dH%s│%s' "$row" "$panel_column" "$purple" "$reset"
+    printf '\033[%d;%dH%s│%s' \
+      "$row" "$((panel_column + panel_width - 1))" "$purple" "$reset"
+  done
+  printf '\033[%d;%dH%s%s%s' \
+    "$bottom_row" "$panel_column" "$purple" "$bottom_border" "$reset"
+  printf '\033[%d;%dH%s%s%s' \
+    "$question_row" "$question_column" "$purple" "$question" "$reset"
+  printf '\033[%d;%dH%s%s%s' \
+    "$hint_row" "$hint_column" "$muted" "$hint" "$reset"
 }
 
 read_docker_choice() {

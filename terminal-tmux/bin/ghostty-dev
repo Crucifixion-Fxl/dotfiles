@@ -69,48 +69,99 @@ terminal_size() {
   printf '24 80\n'
 }
 
+repeat_character() {
+  local character=$1 count=$2
+  local output=
+
+  while ((count > 0)); do
+    output+=$character
+    count=$((count - 1))
+  done
+  printf '%s' "$output"
+}
+
 render_ssh_host_menu() {
   local selected_index=$1
   shift
   local hosts=("$@")
-  local title='请选择 Ghostty 要连接的 SSH 服务器：'
-  local help='↑/↓ 选择  Enter 确认  q/Esc 取消'
-  local terminal_rows terminal_columns menu_height menu_width
-  local start_row start_column menu_index host host_width
+  local panel_title=' SSH SERVERS '
+  local subtitle='选择要连接的服务器'
+  local help='↑/↓ 选择  Enter 连接  q/Esc 取消'
+  local purple=$'\033[38;5;141m'
+  local selected_style=$'\033[1;38;5;231;48;5;55m'
+  local muted=$'\033[38;5;245m'
+  local reset=$'\033[0m'
+  local terminal_rows terminal_columns panel_height panel_width inner_width
+  local start_row start_column bottom_row menu_index host host_width row
+  local panel_title_width=13 subtitle_width=18 help_width=32 host_capacity
+  local top_border bottom_border selected_text
 
   read -r terminal_rows terminal_columns < <(terminal_size)
 
-  # title/help 的显示宽度分别为 36/32 列；SSH Host alias 按 ASCII 计算。
-  # 菜单包含标题、两个空行、Host 列表和帮助行。
-  menu_height=$((${#hosts[@]} + 4))
-  menu_width=36
+  # 圆角面板默认 54 列；较长的 Host alias 会扩宽，窄终端则收缩到可见宽度。
+  # 面板由顶框、副标题、空行、Host 列表、帮助和底框组成。
+  panel_height=$((${#hosts[@]} + 5))
+  panel_width=54
   for host in "${hosts[@]}"; do
-    host_width=$((${#host} + 6))
-    ((host_width <= menu_width)) || menu_width=$host_width
+    host_width=$((${#host} + 10))
+    ((host_width <= panel_width)) || panel_width=$host_width
   done
+  ((panel_width <= terminal_columns)) || panel_width=$terminal_columns
+  ((panel_width >= 16)) || panel_width=16
+  inner_width=$((panel_width - 2))
+  host_capacity=$((panel_width - 10))
+  ((host_capacity > 0)) || host_capacity=1
 
-  if ((terminal_rows > menu_height)); then
-    start_row=$(((terminal_rows - menu_height) / 2 + 1))
+  if ((panel_width < 42)); then
+    help='↑/↓  Enter  q/Esc'
+    help_width=18
+  fi
+
+  if ((terminal_rows > panel_height)); then
+    start_row=$(((terminal_rows - panel_height) / 2 + 1))
   else
     start_row=1
   fi
-  if ((terminal_columns > menu_width)); then
-    start_column=$(((terminal_columns - menu_width) / 2 + 1))
+  if ((terminal_columns > panel_width)); then
+    start_column=$(((terminal_columns - panel_width) / 2 + 1))
   else
     start_column=1
   fi
+  bottom_row=$((start_row + panel_height - 1))
 
-  printf '\033[2J\033[%d;%dH%s' "$start_row" "$start_column" "$title" >&2
+  top_border="╭─${panel_title}$(repeat_character '─' "$((panel_width - panel_title_width - 3))")╮"
+  bottom_border="╰$(repeat_character '─' "$inner_width")╯"
+
+  printf '\033[2J\033[H' >&2
+  printf '\033[%d;%dH%s%s%s' \
+    "$start_row" "$start_column" "$purple" "$top_border" "$reset" >&2
+  for ((row = start_row + 1; row < bottom_row; row++)); do
+    printf '\033[%d;%dH%s│%s' "$row" "$start_column" "$purple" "$reset" >&2
+    printf '\033[%d;%dH%s│%s' \
+      "$row" "$((start_column + panel_width - 1))" "$purple" "$reset" >&2
+  done
+  printf '\033[%d;%dH%s%s%s' \
+    "$bottom_row" "$start_column" "$purple" "$bottom_border" "$reset" >&2
+
+  printf '\033[%d;%dH%s%s%s' \
+    "$((start_row + 1))" "$((start_column + (panel_width - subtitle_width) / 2))" \
+    "$purple" "$subtitle" "$reset" >&2
   for menu_index in "${!hosts[@]}"; do
-    printf '\033[%d;%dH' "$((start_row + menu_index + 2))" "$start_column" >&2
+    row=$((start_row + menu_index + 3))
     if ((menu_index == selected_index)); then
-      printf '\033[7m  > %s  \033[0m' "${hosts[$menu_index]}" >&2
+      printf -v selected_text '  > %-*.*s' \
+        "$((panel_width - 8))" "$host_capacity" "${hosts[$menu_index]}"
+      printf '\033[%d;%dH%s%-*.*s%s' \
+        "$row" "$((start_column + 2))" "$selected_style" \
+        "$((panel_width - 4))" "$((panel_width - 4))" "$selected_text" "$reset" >&2
     else
-      printf '    %s' "${hosts[$menu_index]}" >&2
+      printf '\033[%d;%dH    %.*s' \
+        "$row" "$((start_column + 2))" "$host_capacity" "${hosts[$menu_index]}" >&2
     fi
   done
-  printf '\033[%d;%dH%s' \
-    "$((start_row + ${#hosts[@]} + 3))" "$start_column" "$help" >&2
+  printf '\033[%d;%dH%s%s%s' \
+    "$((bottom_row - 1))" "$((start_column + (panel_width - help_width) / 2))" \
+    "$muted" "$help" "$reset" >&2
 }
 
 choose_ssh_host() {
