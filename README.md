@@ -27,6 +27,7 @@ Codex 状态通知和 zsh 交互环境。
     ├── tmux/
     │   ├── tmux.conf.local          # Oh My Tmux 的 Nord 主题与现有行为覆盖
     │   ├── tmux.conf                # 切换前配置，仅作为旧机器回退
+    │   ├── system-meter.sh          # Mac 电量 / Linux 负载进度条
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
     ├── shell/
     │   ├── zshrc                    # Oh My Zsh、主题、插件和 Yazi y() 包装函数
@@ -85,6 +86,9 @@ Codex 状态通知和 zsh 交互环境。
   `~/.local/share/oh-my-tmux`；运行时覆盖由仓库内的 `tmux.conf.local` 维护。受控
   覆盖会关闭额外的 `Ctrl-a` Prefix、保留原生绑定和 0 起始编号，并继续提供现有
   popup、Lazygit、Codex session tree 与容器内 tmux 行为。
+- 状态栏的第一个 Nord 色块使用固定宽度的 ASCII 进度条：MacBook 显示
+  `BAT`电量，Linux 服务器和容器显示按在线 CPU 核数归一化的 `LOAD`
+  一分钟负载。远程不再因没有电池设备而留下空色块。
 - tmux-continuum 每 15 分钟保存 session/window/pane 布局。
 - tmux 启动时不自动恢复，也不保存 pane 的历史显示内容。
 - `Prefix + S` 手动保存，`Prefix + R` 手动恢复。
@@ -237,6 +241,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | `terminal-tmux/shell/zshrc` | `~/.zshrc` |
 | `~/.local/share/oh-my-tmux/.tmux.conf`（锁定的官方 checkout） | `~/.tmux.conf` |
 | `terminal-tmux/tmux/tmux.conf.local` | `~/.tmux.conf.local` |
+| `terminal-tmux/tmux/system-meter.sh` | `~/.tmux/system-meter.sh` |
 | `terminal-tmux/tmux/session-status-counts.sh` | `~/.tmux/session-status-counts.sh` |
 | `terminal-tmux/bin/tmux-zsh` | `~/.local/bin/tmux-zsh` |
 | `terminal-tmux/bin/lazygit-safe` | `~/.local/bin/lazygit-safe` |
@@ -273,6 +278,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | Yazi 内部目录历史同步 | `yazi/init.lua` | `update_db` 让 fzf 跳转写入 zoxide |
 | Yazi 插件版本 | `yazi/package.toml` | 由 `ya pkg` 维护 Piper 的 revision 和 hash |
 | tmux 按键、Nord 状态栏、插件 | `tmux/tmux.conf.local` | Prefix 仍为 `Ctrl-b`；`#!important` 行保护现有行为；修改后可用 `tmux source-file ~/.tmux.conf` 重载 |
+| tmux 跨平台系统进度条 | `tmux/system-meter.sh` | macOS 读取 `pmset`；Linux 使用 `/proc/loadavg` 和在线 CPU 数 |
 | tmux window 动态命名 | `shell/tmux-window-name.zsh` | 不要破坏 Codex owner pane 机制 |
 | Codex 的 🔄/❓/✅ 状态 | `codex/hooks.json` + `codex/notify-tmux.sh` | JSON 事件和 shell 状态名必须一致 |
 | lazygit diff 渲染 | `lazygit/config.yml` | lazygit 负责滚动，delta 不再开二级 pager |
@@ -335,6 +341,7 @@ hook 在所有机器上的行为一致。
 - Oh My Tmux、三个 tmux 插件以及 Oh My Zsh、zsh-syntax-highlighting 的 commit
 - SSH 入口的宿主机/容器分支不会互相嵌套 tmux
 - 使用隔离 socket 启动 tmux 并加载完整配置
+- Mac 电量 / Linux 负载进度条的输出格式与受管链接
 - tmux 与 lazygit 配置文件 SHA256
 
 ## 连接远端

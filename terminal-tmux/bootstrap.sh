@@ -826,6 +826,7 @@ install_links() {
   backup_and_link "$oh_my_tmux_config" "$HOME/.tmux.conf"
   backup_and_link "$DOTFILES_DIR/tmux/tmux.conf.local" "$HOME/.tmux.conf.local"
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
+  backup_and_link "$DOTFILES_DIR/tmux/system-meter.sh" "$HOME/.tmux/system-meter.sh"
   backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
   backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
@@ -967,6 +968,7 @@ validate() {
   local ghostty_config ghostty_destination ghostty_launcher ghostty_launcher_destination
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
   local oh_my_tmux_checkout oh_my_tmux_config tmux_local_config
+  local tmux_meter tmux_meter_destination tmux_meter_output
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination yazi_package_list
 
@@ -1007,6 +1009,7 @@ validate() {
   bash -n "$DOTFILES_DIR/bin/pre-commit"
   sh -n "$DOTFILES_DIR/bin/lazygit-safe"
   bash -n "$DOTFILES_DIR/tmux/session-status-counts.sh"
+  bash -n "$DOTFILES_DIR/tmux/system-meter.sh"
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
@@ -1081,6 +1084,13 @@ validate() {
   [[ -L "$HOME/.tmux.conf.local" &&
     $(readlink "$HOME/.tmux.conf.local") == "$tmux_local_config" ]] || \
     fail "managed Oh My Tmux local config link is missing"
+  tmux_meter="$DOTFILES_DIR/tmux/system-meter.sh"
+  tmux_meter_destination="$HOME/.tmux/system-meter.sh"
+  [[ -L "$tmux_meter_destination" && $(readlink "$tmux_meter_destination") == "$tmux_meter" ]] || \
+    fail "managed tmux system meter link is missing"
+  tmux_meter_output=$("$tmux_meter")
+  [[ $tmux_meter_output =~ ^(BAT|LOAD)[[:space:]]+\[[=.]{10}\][[:space:]]+[0-9]{1,3}%$ ]] || \
+    fail "tmux system meter output is invalid: $tmux_meter_output"
   [[ $(git -C "$HOME/.oh-my-zsh" rev-parse HEAD) == "$OH_MY_ZSH_COMMIT" ]] || fail "Oh My Zsh commit mismatch"
   [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" rev-parse HEAD) == "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" ]] || fail "zsh-syntax-highlighting commit mismatch"
 
@@ -1109,6 +1119,8 @@ validate() {
   [[ $(tmux -L terminal-tmux-check show-options -gqv history-limit) == 100000 ]] || \
     fail "managed tmux history limit was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv @continuum-restore) == off ]] || fail "tmux config validation failed"
+  tmux -L terminal-tmux-check show-options -gqv status-right | grep -Fq 'system-meter.sh' || \
+    fail "tmux system meter was not added to status-right"
   grep -Fq '' <<< "$status_left" || \
     fail "Oh My Tmux Nord status-left was not applied"
   prefix_bindings=$(tmux -L terminal-tmux-check list-keys -T prefix)

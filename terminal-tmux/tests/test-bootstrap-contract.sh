@@ -12,8 +12,10 @@ GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
 TERMSCP_LAUNCHER="$ROOT/bin/termscp-mac"
 TERMSCP_AUTHORIZER="$ROOT/bin/termscp-key-authorizer"
 TMUX_LOCAL_CONFIG="$ROOT/tmux/tmux.conf.local"
+TMUX_SYSTEM_METER="$ROOT/tmux/system-meter.sh"
 
 bash -n "$BOOTSTRAP"
+bash -n "$TMUX_SYSTEM_METER"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
@@ -380,6 +382,11 @@ grep -Fqx 'bind-key > swap-window -d -t +1 #!important' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'tmux_conf_theme_status_left="  #S "' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'tmux_conf_theme_window_status_current_bg="#5e81ac"' "$TMUX_LOCAL_CONFIG"
 grep -Fqx 'tmux_conf_theme_window_status_last_format="#I #W-"' "$TMUX_LOCAL_CONFIG"
+grep -Fq '#($HOME/.tmux/system-meter.sh)' "$TMUX_LOCAL_CONFIG"
+if grep -Eq '#\{\?battery_(bar|percentage|status)' "$TMUX_LOCAL_CONFIG"; then
+  printf '%s\n' 'tmux status-right must use the cross-platform system meter' >&2
+  exit 1
+fi
 grep -Fqx "set -g @plugin 'tmux-plugins/tmux-resurrect'" "$TMUX_LOCAL_CONFIG"
 grep -Fqx "set -g @plugin 'tmux-plugins/tmux-continuum'" "$TMUX_LOCAL_CONFIG"
 if grep -Eq "@plugin.*['\\\"]?tmux-plugins/tpm|run(-shell)? .*plugins/tpm/tpm" "$TMUX_LOCAL_CONFIG"; then
@@ -482,6 +489,7 @@ fi
 
 grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/system-meter.sh" "$HOME/.tmux/system-meter.sh"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$oh_my_tmux_config" "$HOME/.tmux.conf"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/tmux.conf.local" "$HOME/.tmux.conf.local"' "$BOOTSTRAP"
 grep -Eq '^[[:space:]]*set[[:space:]]+number([[:space:]]|$)' "$ROOT/vim/vimrc"
@@ -533,6 +541,7 @@ python3 "$TERMSCP_AUTHORIZER" --help >/dev/null
 bash -n "$ROOT/bin/ghostty-dev"
 bash -n "$ROOT/bin/ghostty-tab-command"
 bash -n "$ROOT/bin/pre-commit"
+bash "$ROOT/tests/test-system-meter.sh"
 sh -n "$ROOT/bin/lazygit-safe"
 bash "$ROOT/tests/test-ghostty-dev.sh"
 bash "$ROOT/tests/test-termscp-mac.sh"

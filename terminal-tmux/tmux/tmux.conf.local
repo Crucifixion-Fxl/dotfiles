@@ -55,12 +55,13 @@ tmux_conf_theme_window_status_last_attr="none"
 tmux_conf_theme_window_status_last_format="#I #W-"
 
 # 左侧一个 section；右侧四个 section，颜色和属性数量严格一一对应。
+# 第一段由受管脚本生成：Mac 显示电量条，Linux/容器显示系统负载条。
 tmux_conf_theme_status_left="  #S "
 tmux_conf_theme_status_left_fg="#e5e9f0"
 tmux_conf_theme_status_left_bg="#2e3440"
 tmux_conf_theme_status_left_attr="bold"
 
-tmux_conf_theme_status_right='#{prefix}#{pairing}#{synchronized}#{?battery_bar, #{battery_bar},}#{?battery_percentage, #{battery_percentage},}#{?battery_status,#{battery_status},} | 󰃭 %b %d |  %R |  #{username} '
+tmux_conf_theme_status_right='#{prefix}#{pairing}#{synchronized}#($HOME/.tmux/system-meter.sh) | 󰃭 %b %d |  %R |  #{username} '
 tmux_conf_theme_status_right_fg="#d8dee9,#eceff4,#eceff4,#e5e9f0"
 tmux_conf_theme_status_right_bg="#3b4252,#8fbcbb,#5e81ac,#434c5e"
 tmux_conf_theme_status_right_attr="bold,none,bold,none"
