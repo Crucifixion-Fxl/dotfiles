@@ -61,11 +61,17 @@ silent_entry_output=$(
     termscp_mac_host=127.0.0.1
   }
   exec() {
-    printf '%s\n' 'container-exec-called'
+    local -a arguments=("$@")
+    printf 'container-exec-called:shell-mode=%s\n' \
+      "${arguments[${#arguments[@]} - 4]}"
   }
   enter_container_tmux abc123 api-dev
 )
-[[ $silent_entry_output == 'container-exec-called' ]]
+if [[ $silent_entry_output != 'container-exec-called:shell-mode=-c' ]]; then
+  printf 'container entry must use a non-login shell, got: %s\n' \
+    "$silent_entry_output" >&2
+  exit 1
+fi
 
 enter_host_tmux() {
   printf 'selected:host:%s\n' "$HOST_TMUX_SESSION"

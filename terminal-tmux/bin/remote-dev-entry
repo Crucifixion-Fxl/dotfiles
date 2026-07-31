@@ -218,7 +218,9 @@ enter_container_tmux() {
 
   # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
   # 命令只会在容器内解析和启动。
-  exec docker exec -it "${docker_environment[@]}" "$container_id" sh -lc '
+  # 与公钥采集相同，这里必须使用非登录 shell。否则 ~/.profile 可能提前加载
+  # Iris 等交互包装器，导致下面的 tmux 入口脚本根本没有机会执行。
+  exec docker exec -it "${docker_environment[@]}" "$container_id" sh -c '
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
 
