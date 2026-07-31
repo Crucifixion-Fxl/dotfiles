@@ -9,6 +9,7 @@ GHOSTTY_CONFIG="$ROOT/ghostty/config.ghostty"
 GHOSTTY_LAUNCHER="$ROOT/bin/ghostty-dev"
 GHOSTTY_APPLESCRIPT="$ROOT/ghostty/open-tab.applescript"
 GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
+TERMSCP_LAUNCHER="$ROOT/bin/termscp-mac"
 
 bash -n "$BOOTSTRAP"
 grep -q 'ncurses-base' "$BOOTSTRAP"
@@ -34,6 +35,7 @@ grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
+grep -q '^install_termscp()' "$BOOTSTRAP"
 grep -q '^uninstall_druk()' "$BOOTSTRAP"
 grep -q '^install_fresh()' "$BOOTSTRAP"
 grep -q '^install_ghostty()' "$BOOTSTRAP"
@@ -394,6 +396,24 @@ if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   exit 1
 fi
 
+# termscp follows the latest official universal installer on both macOS and
+# Debian/Ubuntu. The bootstrap passes --yes so containers/headless SSH hosts
+# never block on the installer's confirmation prompt.
+TERMSCP_CURL_ARGS_FILE="$TEST_HOME/termscp-curl-args"
+curl() {
+  printf '%s\n' "$*" > "$TERMSCP_CURL_ARGS_FILE"
+  printf '%s\n' ':'
+}
+termscp() {
+  printf '%s\n' 'termscp v999.0.0 - test build'
+}
+HOME=$TEST_HOME install_termscp
+grep -Fq -- "--proto =https --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 $TERMSCP_INSTALL_URL" \
+  "$TERMSCP_CURL_ARGS_FILE"
+grep -Fq '| sh -s -- --yes' "$BOOTSTRAP"
+termscp_is_installed
+unset -f curl termscp
+
 mkdir -p \
   "$TEST_HOME/.druk/bin" \
   "$TEST_HOME/.local/lib/node_modules/druk" \
@@ -438,6 +458,7 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"' "$BOOTSTRAP"
 grep -Eq '^[[:space:]]*set[[:space:]]+number([[:space:]]|$)' "$ROOT/vim/vimrc"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/pre-commit" "$HOME/.local/bin/pre-commit"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"' "$BOOTSTRAP"
@@ -464,6 +485,7 @@ grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
 grep -Fq '  install_pre_commit' "$BOOTSTRAP"
+grep -Fq '  install_termscp' "$BOOTSTRAP"
 grep -Fq '  uninstall_druk' "$BOOTSTRAP"
 grep -Fq '  install_fresh' "$BOOTSTRAP"
 grep -Fq '  configure_git_identity' "$BOOTSTRAP"
@@ -473,11 +495,13 @@ grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
+bash -n "$TERMSCP_LAUNCHER"
 bash -n "$ROOT/bin/ghostty-dev"
 bash -n "$ROOT/bin/ghostty-tab-command"
 bash -n "$ROOT/bin/pre-commit"
 sh -n "$ROOT/bin/lazygit-safe"
 bash "$ROOT/tests/test-ghostty-dev.sh"
+bash "$ROOT/tests/test-termscp-mac.sh"
 
 # Git identity setup is machine-local: preserve existing values and never
 # prompt or write placeholders when the bootstrap runs without a terminal.
