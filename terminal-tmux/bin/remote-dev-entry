@@ -200,7 +200,14 @@ enter_container_tmux() {
   todo_bridge_host=127.0.0.1
   start_termscp_container_relay "$container_id"
   start_todo_container_relay "$container_id"
-  docker_environment=(-e "TERM=${TERM:-xterm-256color}")
+  # 容器镜像可能通过 BASH_ENV/ENV 注入 shell 初始化脚本（例如 Iris）。tmux
+  # 状态栏的 #() helper 是非交互子 shell；继承这些变量会把初始化脚本输出的
+  # 终端控制序列当作状态文本显示。
+  docker_environment=(
+    -e "TERM=${TERM:-xterm-256color}"
+    -e "BASH_ENV="
+    -e "ENV="
+  )
   if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
     docker_environment+=(
       -e "TERMSCP_MAC_USER=$TERMSCP_MAC_USER"
@@ -221,6 +228,7 @@ enter_container_tmux() {
   # 与公钥采集相同，这里必须使用非登录 shell。否则 ~/.profile 可能提前加载
   # Iris 等交互包装器，导致下面的 tmux 入口脚本根本没有机会执行。
   exec docker exec -it "${docker_environment[@]}" "$container_id" sh -c '
+    unset BASH_ENV ENV
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
 
@@ -269,6 +277,10 @@ enter_container_tmux() {
       tmux set-environment -g LC_ALL "$LC_ALL" 2>/dev/null || true
     fi
     if tmux list-sessions >/dev/null 2>&1; then
+      # 已有 server 可能保留了容器镜像注入的非交互 shell 初始化变量。
+      # 先删除它们，再重载包含状态栏 helper 的配置。
+      tmux set-environment -gu BASH_ENV 2>/dev/null || true
+      tmux set-environment -gu ENV 2>/dev/null || true
       for variable in \
         TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST \
         TODO_BRIDGE_TOKEN TODO_BRIDGE_PORT TODO_BRIDGE_HOST; do
