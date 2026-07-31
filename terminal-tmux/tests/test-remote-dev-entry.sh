@@ -62,6 +62,12 @@ silent_entry_output=$(
   }
   exec() {
     local -a arguments=("$@")
+    local arguments_text=" ${arguments[*]} "
+    if [[ $arguments_text != *' -e BASH_ENV= '* ||
+      $arguments_text != *' -e ENV= '* ]]; then
+      printf '%s\n' 'container-exec-must-clear-noninteractive-shell-hooks'
+      return 1
+    fi
     printf 'container-exec-called:shell-mode=%s\n' \
       "${arguments[${#arguments[@]} - 4]}"
   }
@@ -154,6 +160,11 @@ grep -Fq -- '-e "TERMSCP_MAC_HOST=$termscp_mac_host"' "$ENTRY"
 grep -Fq -- '-e "TODO_BRIDGE_TOKEN=$TODO_BRIDGE_TOKEN"' "$ENTRY"
 grep -Fq -- '-e "TODO_BRIDGE_PORT=${TODO_BRIDGE_PORT:-6024}"' "$ENTRY"
 grep -Fq -- '-e "TODO_BRIDGE_HOST=$todo_bridge_host"' "$ENTRY"
+grep -Fq -- '-e "BASH_ENV="' "$ENTRY"
+grep -Fq -- '-e "ENV="' "$ENTRY"
+grep -Fq 'unset BASH_ENV ENV' "$ENTRY"
+grep -Fq 'tmux set-environment -gu BASH_ENV' "$ENTRY"
+grep -Fq 'tmux set-environment -gu ENV' "$ENTRY"
 grep -Fq 'tmux source-file "$HOME/.tmux.conf"' "$ENTRY"
 grep -Fq 'tmux has-session -t "=$tmux_session"' "$ENTRY"
 grep -Fq '#{pane_current_command}' "$ENTRY"
