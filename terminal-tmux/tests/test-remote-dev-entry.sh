@@ -63,8 +63,8 @@ silent_entry_output=$(
   exec() {
     local -a arguments=("$@")
     local arguments_text=" ${arguments[*]} "
-    if [[ $arguments_text != *' -e BASH_ENV= '* ||
-      $arguments_text != *' -e ENV= '* ]]; then
+    if [[ $arguments_text != *' -e BASH_ENV=/dev/null '* ||
+      $arguments_text != *' -e ENV=/dev/null '* ]]; then
       printf '%s\n' 'container-exec-must-clear-noninteractive-shell-hooks'
       return 1
     fi
@@ -160,12 +160,20 @@ grep -Fq -- '-e "TERMSCP_MAC_HOST=$termscp_mac_host"' "$ENTRY"
 grep -Fq -- '-e "TODO_BRIDGE_TOKEN=$TODO_BRIDGE_TOKEN"' "$ENTRY"
 grep -Fq -- '-e "TODO_BRIDGE_PORT=${TODO_BRIDGE_PORT:-6024}"' "$ENTRY"
 grep -Fq -- '-e "TODO_BRIDGE_HOST=$todo_bridge_host"' "$ENTRY"
-grep -Fq -- '-e "BASH_ENV="' "$ENTRY"
-grep -Fq -- '-e "ENV="' "$ENTRY"
-grep -Fq 'unset BASH_ENV ENV' "$ENTRY"
-grep -Fq 'tmux set-environment -gu BASH_ENV' "$ENTRY"
-grep -Fq 'tmux set-environment -gu ENV' "$ENTRY"
-grep -Fq 'tmux source-file "$HOME/.tmux.conf"' "$ENTRY"
+grep -Fq -- '-e "BASH_ENV=/dev/null"' "$ENTRY"
+grep -Fq -- '-e "ENV=/dev/null"' "$ENTRY"
+grep -Fq 'export BASH_ENV=/dev/null' "$ENTRY"
+grep -Fq 'export ENV=/dev/null' "$ENTRY"
+grep -Fq 'tmux set-environment -g BASH_ENV /dev/null' "$ENTRY"
+grep -Fq 'tmux set-environment -g ENV /dev/null' "$ENTRY"
+grep -Fq 'reload_oh_my_tmux() (' "$ENTRY"
+grep -Fq 'tmux source-file "$HOME/.tmux.conf.local"' "$ENTRY"
+grep -Fq 'tmux show-environment -gs' "$ENTRY"
+grep -Fq 'grep "^tmux_conf_"' "$ENTRY"
+grep -Fq 'TMUX_SOCKET=$(tmux display-message -p "#{socket_path}")' "$ENTRY"
+grep -Fq 'TMUX="$TMUX_SOCKET,$(tmux display-message -p "#{pid}"),0"' "$ENTRY"
+grep -Fq 'cut -c3- "$TMUX_CONF" | sh -s _apply_configuration' "$ENTRY"
+grep -Fq 'reload_oh_my_tmux || {' "$ENTRY"
 grep -Fq 'tmux has-session -t "=$tmux_session"' "$ENTRY"
 grep -Fq '#{pane_current_command}' "$ENTRY"
 grep -Fq 'tmux list-panes -s -t "=$tmux_session"' "$ENTRY"
