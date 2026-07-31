@@ -93,6 +93,9 @@ text = source.read_text(encoding="utf-8")
 for glyph in "╭╮╰╯│─":
     assert glyph in text
 assert "curses.COLOR_MAGENTA" in text
+assert "curses.init_pair(BORDER, curses.COLOR_GREEN, -1)" in text
+assert "return curses.color_pair(BORDER) | curses.A_BOLD" in text
+assert "return curses.color_pair(BORDER)" in text
 assert "curses.ALL_MOUSE_EVENTS" in text
 
 print("todo TUI tests passed")
