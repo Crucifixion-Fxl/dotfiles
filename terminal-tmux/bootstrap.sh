@@ -158,7 +158,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm p7zip-full pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
+      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -822,6 +822,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"
   backup_and_link "$DOTFILES_DIR/bin/termscp-bridge-relay" "$HOME/.local/bin/termscp-bridge-relay"
+  backup_and_link "$DOTFILES_DIR/bin/termscp-key-authorizer" "$HOME/.local/bin/termscp-key-authorizer"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
@@ -974,6 +975,7 @@ validate() {
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
+  command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen is required"
   command -v vi >/dev/null 2>&1 || fail "vi is required"
   vi --version 2>/dev/null | grep -Eq '\+mouse([[:space:]]|$)' || fail "vi must support mouse input"
   infocmp tmux-256color >/dev/null 2>&1 || fail "tmux-256color terminfo is missing"
@@ -986,6 +988,7 @@ validate() {
   bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
   bash -n "$DOTFILES_DIR/bin/termscp-mac"
   python3 "$DOTFILES_DIR/bin/termscp-bridge-relay" --help >/dev/null
+  python3 "$DOTFILES_DIR/bin/termscp-key-authorizer" --help >/dev/null
   bash -n "$DOTFILES_DIR/bin/ghostty-dev"
   bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
@@ -996,6 +999,7 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
+  bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 

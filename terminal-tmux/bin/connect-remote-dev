@@ -10,6 +10,8 @@ set -euo pipefail
 #   3. stdin 始终留给交互式菜单，因此脚本内容通过 Base64 嵌入远程命令。
 #   4. 把服务器回环端口反向转发到本机 SSH/SFTP，使服务器上的 termscp
 #      可以显示“服务器本地文件 ↔ Mac 文件”。
+#   5. 通过第二条令牌保护的回环转发，把最终所选容器的公钥自动写入本机
+#      authorized_keys；只授予回环来源的 SFTP 权限，不传输容器私钥。
 #
 # 此脚本不安装远程 tmux/zsh；要复现完整环境，仍应在远程运行 bootstrap。
 
@@ -19,12 +21,16 @@ fail() {
 }
 
 run_ssh() {
-  local host=$1 remote_command=$2 reverse_port=$3 mac_ssh_port=$4 reverse_forward
+  local host=$1 remote_command=$2 reverse_port=$3 mac_ssh_port=$4
+  local authorization_reverse_port=$5 authorization_local_port=$6
+  local reverse_forward authorization_forward
   reverse_forward="127.0.0.1:${reverse_port}:127.0.0.1:${mac_ssh_port}"
+  authorization_forward="127.0.0.1:${authorization_reverse_port}:127.0.0.1:${authorization_local_port}"
 
   exec ssh \
     -o ExitOnForwardFailure=yes \
     -R "$reverse_forward" \
+    -R "$authorization_forward" \
     -t "$host" "$remote_command"
 }
 
@@ -34,36 +40,96 @@ valid_port() {
   (( 10#$port >= 1 && 10#$port <= 65535 ))
 }
 
+start_local_key_authorizer() {
+  local authorizer=$1 forced_command=$2
+  local ready_file log_file authorizer_pid status attempt error
+
+  authorizer_token=$(python3 -c 'import secrets; print(secrets.token_hex(32))')
+  ready_file=$(mktemp "${TMPDIR:-/tmp}/termscp-authorizer.XXXXXX")
+  log_file="${ready_file}.log"
+  python3 "$authorizer" serve \
+    --listen-host 127.0.0.1 \
+    --listen-port 0 \
+    --token "$authorizer_token" \
+    --parent-pid "$$" \
+    --ready-file "$ready_file" \
+    --authorized-keys "$HOME/.ssh/authorized_keys" \
+    --forced-command "$forced_command" </dev/null >"$log_file" 2>&1 &
+  authorizer_pid=$!
+
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    [[ -s "$ready_file" ]] && break
+    kill -0 "$authorizer_pid" 2>/dev/null || break
+    sleep 0.02
+  done
+  if [[ ! -s "$ready_file" ]]; then
+    error=$(<"$log_file")
+    kill "$authorizer_pid" 2>/dev/null || true
+    wait "$authorizer_pid" 2>/dev/null || true
+    rm -f "$ready_file" "$log_file"
+    fail "无法启动本机容器公钥授权服务${error:+：$error}"
+  fi
+
+  read -r status authorizer_local_port < "$ready_file"
+  if [[ "$status" != READY ]] || ! valid_port "$authorizer_local_port"; then
+    kill "$authorizer_pid" 2>/dev/null || true
+    wait "$authorizer_pid" 2>/dev/null || true
+    rm -f "$ready_file" "$log_file"
+    fail "本机容器公钥授权服务没有正确就绪"
+  fi
+  rm -f "$ready_file" "$log_file"
+}
+
 main() {
-  local host script_dir entry relay payload relay_payload remote_command
-  local mac_user reverse_port mac_ssh_port
-  local mac_user_quoted reverse_port_quoted
+  local host script_dir entry relay authorizer
+  local payload relay_payload authorizer_payload remote_command
+  local mac_user reverse_port mac_ssh_port authorization_reverse_port forced_command
+  local mac_user_quoted reverse_port_quoted authorization_reverse_port_quoted
+  local authorizer_token authorizer_local_port authorizer_token_quoted
 
   [[ $# -eq 1 ]] || fail "用法：connect-remote-dev <ssh-host>"
   host=$1
   mac_user=${TERMSCP_MAC_USER:-$(id -un)}
   reverse_port=${TERMSCP_REVERSE_PORT:-6022}
   mac_ssh_port=${TERMSCP_MAC_SSH_PORT:-22}
+  authorization_reverse_port=${TERMSCP_AUTH_REVERSE_PORT:-6023}
 
   [[ "$mac_user" =~ ^[A-Za-z0-9._-]+$ ]] || fail "无效的 Mac 用户名：$mac_user"
   valid_port "$reverse_port" || fail "无效的服务器反向端口：$reverse_port"
   valid_port "$mac_ssh_port" || fail "无效的 Mac SSH 端口：$mac_ssh_port"
+  valid_port "$authorization_reverse_port" || \
+    fail "无效的服务器授权反向端口：$authorization_reverse_port"
+  (( 10#$authorization_reverse_port != 10#$reverse_port )) || \
+    fail "SFTP 与授权反向端口不能相同"
 
   script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   entry="$script_dir/remote-dev-entry"
   relay="$script_dir/termscp-bridge-relay"
+  authorizer="$script_dir/termscp-key-authorizer"
 
   [[ -f "$entry" ]] || fail "找不到 $entry"
   [[ -f "$relay" ]] || fail "找不到 $relay"
+  [[ -f "$authorizer" ]] || fail "找不到 $authorizer"
   command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
   command -v ssh >/dev/null 2>&1 || fail "本机未安装 ssh"
+  command -v python3 >/dev/null 2>&1 || fail "本机未安装 python3"
+
+  if [[ -x /usr/libexec/sftp-server ]]; then
+    forced_command=/usr/libexec/sftp-server
+  else
+    forced_command=internal-sftp
+  fi
+  start_local_key_authorizer "$authorizer" "$forced_command"
 
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
   # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
   payload=$(base64 < "$entry" | tr -d '\r\n')
   relay_payload=$(base64 < "$relay" | tr -d '\r\n')
+  authorizer_payload=$(base64 < "$authorizer" | tr -d '\r\n')
   printf -v mac_user_quoted '%q' "$mac_user"
   printf -v reverse_port_quoted '%q' "$reverse_port"
+  printf -v authorization_reverse_port_quoted '%q' "$authorization_reverse_port"
+  printf -v authorizer_token_quoted '%q' "$authorizer_token"
   remote_command='set -eu
 command -v base64 >/dev/null 2>&1 || {
   printf "%s\n" "connect-remote-dev：远端未安装 base64" >&2
@@ -72,27 +138,36 @@ command -v base64 >/dev/null 2>&1 || {
 directory="$HOME/.local/bin"
 temporary="$directory/.remote-dev-entry.$$"
 relay_temporary="$directory/.termscp-bridge-relay.$$"
+authorizer_temporary="$directory/.termscp-key-authorizer.$$"
 payload='"'$payload'"'
 relay_payload='"'$relay_payload'"'
+authorizer_payload='"'$authorizer_payload'"'
 umask 077
 mkdir -p "$directory"
-trap '\''rm -f "$temporary" "$relay_temporary"'\'' 0 HUP INT TERM
+trap '\''rm -f "$temporary" "$relay_temporary" "$authorizer_temporary"'\'' 0 HUP INT TERM
 printf "%s" "$payload" | base64 -d > "$temporary"
 printf "%s" "$relay_payload" | base64 -d > "$relay_temporary"
+printf "%s" "$authorizer_payload" | base64 -d > "$authorizer_temporary"
 chmod 700 "$temporary"
 chmod 700 "$relay_temporary"
+chmod 700 "$authorizer_temporary"
 mv -f "$temporary" "$directory/remote-dev-entry"
 mv -f "$relay_temporary" "$directory/termscp-bridge-relay"
+mv -f "$authorizer_temporary" "$directory/termscp-key-authorizer"
 trap - 0 HUP INT TERM
 PATH="$directory:$PATH"
 export PATH
 TERMSCP_MAC_USER='"$mac_user_quoted"'
 TERMSCP_REVERSE_PORT='"$reverse_port_quoted"'
 TERMSCP_MAC_HOST=127.0.0.1
+TERMSCP_AUTH_TOKEN='"$authorizer_token_quoted"'
+TERMSCP_AUTH_REVERSE_PORT='"$authorization_reverse_port_quoted"'
 export TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST
+export TERMSCP_AUTH_TOKEN TERMSCP_AUTH_REVERSE_PORT
 exec "$directory/remote-dev-entry"'
 
-  run_ssh "$host" "$remote_command" "$reverse_port" "$mac_ssh_port"
+  run_ssh "$host" "$remote_command" "$reverse_port" "$mac_ssh_port" \
+    "$authorization_reverse_port" "$authorizer_local_port"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
