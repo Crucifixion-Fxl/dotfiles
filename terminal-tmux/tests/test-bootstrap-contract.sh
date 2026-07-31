@@ -15,11 +15,9 @@ TODO_TUI="$ROOT/bin/todo"
 TODO_BRIDGE="$ROOT/bin/todo-bridge"
 TODO_SWIFT="$ROOT/todo/TodoReminders.swift"
 TODO_INFO="$ROOT/todo/Info.plist"
-TMUX_LOCAL_CONFIG="$ROOT/tmux/tmux.conf.local"
-TMUX_SYSTEM_METER="$ROOT/tmux/system-meter.sh"
+TMUX_CONFIG="$ROOT/tmux/tmux.conf"
 
 bash -n "$BOOTSTRAP"
-bash -n "$TMUX_SYSTEM_METER"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
@@ -31,7 +29,6 @@ grep -q 'resvg' "$BOOTSTRAP"
 grep -q 'unzip' "$BOOTSTRAP"
 grep -q 'python3 ripgrep' "$BOOTSTRAP"
 grep -q 'openssh-client' "$BOOTSTRAP"
-grep -q 'perl' "$BOOTSTRAP"
 grep -q 'command -v ssh-keygen' "$BOOTSTRAP"
 grep -q 'pkgconf python utf8proc' "$BOOTSTRAP"
 grep -q 'vim zsh' "$BOOTSTRAP"
@@ -47,7 +44,6 @@ grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
 grep -q '^install_termscp()' "$BOOTSTRAP"
-grep -q '^install_oh_my_tmux()' "$BOOTSTRAP"
 grep -q '^uninstall_druk()' "$BOOTSTRAP"
 grep -q '^install_fresh()' "$BOOTSTRAP"
 grep -q '^install_ghostty()' "$BOOTSTRAP"
@@ -117,8 +113,6 @@ git() {
 HOME=$TEST_HOME install_plugin test-plugin https://example.invalid/test.git "$TEST_PLUGIN_COMMIT"
 HOME=$TEST_HOME install_git_checkout test-checkout https://example.invalid/test.git \
   "$TEST_PLUGIN_COMMIT" "$TEST_HOME/.test-checkout"
-OH_MY_TMUX_COMMIT=$TEST_PLUGIN_COMMIT HOME=$TEST_HOME install_oh_my_tmux
-[[ -d "$TEST_HOME/.local/share/oh-my-tmux/.git" ]]
 
 # A fresh zoxide database receives useful initial entries exactly once. This
 # prevents Yazi's zoxide picker from starting with an empty-history error while
@@ -384,33 +378,12 @@ done
 grep -Fqx "$LANG_LINE" "$ROOT/shell/zshrc"
 grep -Fqx "$LC_ALL_LINE" "$ROOT/shell/zshrc"
 grep -Fqx 'export YAZI_ZOXIDE_OPTS="--no-scrollbar"' "$ROOT/shell/zshrc"
-grep -Fqx 'tmux_conf_preserve_stock_bindings=true' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_update_plugins_on_launch=false' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_update_plugins_on_reload=false' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_uninstall_plugins_on_reload=false' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'set -gu prefix2 #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'unbind-key C-a #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'set -g base-index 0 #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'set -gw pane-base-index 0 #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'set -g renumber-windows off #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'bind-key < swap-window -d -t -1 #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'bind-key > swap-window -d -t +1 #!important' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_theme_status_left="  #S "' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_theme_window_status_current_bg="#5e81ac"' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_theme_terminal_title="#h | #S | #I #W"' "$TMUX_LOCAL_CONFIG"
-grep -Fqx 'tmux_conf_theme_window_status_last_format="#I #W-"' "$TMUX_LOCAL_CONFIG"
-grep -Fq '#($HOME/.tmux/system-meter.sh)' "$TMUX_LOCAL_CONFIG"
-if grep -Eq '#\{\?battery_(bar|percentage|status)' "$TMUX_LOCAL_CONFIG"; then
-  printf '%s\n' 'tmux status-right must use the cross-platform system meter' >&2
-  exit 1
-fi
-grep -Fqx "set -g @plugin 'tmux-plugins/tmux-resurrect'" "$TMUX_LOCAL_CONFIG"
-grep -Fqx "set -g @plugin 'tmux-plugins/tmux-continuum'" "$TMUX_LOCAL_CONFIG"
-if grep -Eq "@plugin.*['\\\"]?tmux-plugins/tpm|run(-shell)? .*plugins/tpm/tpm" "$TMUX_LOCAL_CONFIG"; then
-  printf '%s\n' 'Oh My Tmux must manage TPM without declaring or running TPM itself' >&2
-  exit 1
-fi
-[[ $(cut -c3- "$TMUX_LOCAL_CONFIG" | sh -s printf probe) == probe ]]
+grep -Fqx 'bind-key < swap-window -d -t -1' "$TMUX_CONFIG"
+grep -Fqx 'bind-key > swap-window -d -t +1' "$TMUX_CONFIG"
+grep -Fqx "set -g @plugin 'tmux-plugins/tpm'" "$TMUX_CONFIG"
+grep -Fqx "set -g @plugin 'tmux-plugins/tmux-resurrect'" "$TMUX_CONFIG"
+grep -Fqx "set -g @plugin 'tmux-plugins/tmux-continuum'" "$TMUX_CONFIG"
+grep -Fqx "run '~/.tmux/plugins/tpm/tpm'" "$TMUX_CONFIG"
 
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
@@ -494,7 +467,7 @@ grep -Fq -- '-fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.
 fresh_is_installed
 unset -f curl fresh
 
-for version_variable in OH_MY_TMUX_COMMIT OH_MY_ZSH_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
+for version_variable in OH_MY_ZSH_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
 done
 plugins_block=$(sed -n '/^plugins=(/,/^)/p' "$ROOT/shell/zshrc")
@@ -506,9 +479,7 @@ fi
 
 grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/system-meter.sh" "$HOME/.tmux/system-meter.sh"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$oh_my_tmux_config" "$HOME/.tmux.conf"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/tmux.conf.local" "$HOME/.tmux.conf.local"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"' "$BOOTSTRAP"
 grep -Eq '^[[:space:]]*set[[:space:]]+number([[:space:]]|$)' "$ROOT/vim/vimrc"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
@@ -531,7 +502,6 @@ grep -Fq 'eval "$(iris init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
-grep -Fq '  install_oh_my_tmux' "$BOOTSTRAP"
 grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_ghostty' "$BOOTSTRAP"
 grep -Fq '  install_ghostty_config' "$BOOTSTRAP"
@@ -558,7 +528,6 @@ python3 "$TERMSCP_AUTHORIZER" --help >/dev/null
 bash -n "$ROOT/bin/ghostty-dev"
 bash -n "$ROOT/bin/ghostty-tab-command"
 bash -n "$ROOT/bin/pre-commit"
-bash "$ROOT/tests/test-system-meter.sh"
 sh -n "$ROOT/bin/lazygit-safe"
 bash "$ROOT/tests/test-ghostty-dev.sh"
 bash "$ROOT/tests/test-termscp-mac.sh"

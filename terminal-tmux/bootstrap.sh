@@ -9,7 +9,7 @@ set -euo pipefail
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
 #
 # 可复现策略：
-#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi、Oh My Tmux 及 shell 插件由 versions.lock 锁定。
+#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 始终安装 npm 官方 latest；termscp 和 Fresh 使用各自官方通用
 #     安装脚本，不锁版本。
@@ -158,7 +158,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full perl pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
+      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -701,11 +701,6 @@ install_plugin() {
   install_git_checkout "$name" "$repository" "$commit" "$HOME/.tmux/plugins/$name"
 }
 
-install_oh_my_tmux() {
-  install_git_checkout oh-my-tmux https://github.com/gpakosz/.tmux.git \
-    "$OH_MY_TMUX_COMMIT" "$HOME/.local/share/oh-my-tmux"
-}
-
 install_oh_my_zsh() {
   install_git_checkout oh-my-zsh https://github.com/ohmyzsh/ohmyzsh.git \
     "$OH_MY_ZSH_COMMIT" "$HOME/.oh-my-zsh"
@@ -850,16 +845,10 @@ install_todo_reminders_backend() {
 }
 
 install_links() {
-  local oh_my_tmux_config
-  oh_my_tmux_config="$HOME/.local/share/oh-my-tmux/.tmux.conf"
-  [[ -r "$oh_my_tmux_config" ]] || fail "Oh My Tmux main config is missing: $oh_my_tmux_config"
-
   backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
   backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
-  backup_and_link "$oh_my_tmux_config" "$HOME/.tmux.conf"
-  backup_and_link "$DOTFILES_DIR/tmux/tmux.conf.local" "$HOME/.tmux.conf.local"
+  backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
-  backup_and_link "$DOTFILES_DIR/tmux/system-meter.sh" "$HOME/.tmux/system-meter.sh"
   backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
   backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
@@ -999,11 +988,10 @@ remind_ssh_key() {
 
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
-  local attempt prefix_bindings status_left
+  local prefix_bindings
   local ghostty_config ghostty_destination ghostty_launcher ghostty_launcher_destination
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
-  local oh_my_tmux_checkout oh_my_tmux_config tmux_local_config
-  local tmux_meter tmux_meter_destination tmux_meter_output
+  local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination yazi_package_list
 
@@ -1024,7 +1012,6 @@ validate() {
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
-  command -v perl >/dev/null 2>&1 || fail "perl is required by Oh My Tmux"
   command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen is required"
   command -v vi >/dev/null 2>&1 || fail "vi is required"
   vi --version 2>/dev/null | grep -Eq '\+mouse([[:space:]]|$)' || fail "vi must support mouse input"
@@ -1050,7 +1037,6 @@ validate() {
   bash -n "$DOTFILES_DIR/bin/pre-commit"
   sh -n "$DOTFILES_DIR/bin/lazygit-safe"
   bash -n "$DOTFILES_DIR/tmux/session-status-counts.sh"
-  bash -n "$DOTFILES_DIR/tmux/system-meter.sh"
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
@@ -1121,44 +1107,17 @@ validate() {
   [[ $(git -C "$HOME/.tmux/plugins/tpm" rev-parse HEAD) == "$TPM_COMMIT" ]] || fail "TPM commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-resurrect" rev-parse HEAD) == "$RESURRECT_COMMIT" ]] || fail "tmux-resurrect commit mismatch"
   [[ $(git -C "$HOME/.tmux/plugins/tmux-continuum" rev-parse HEAD) == "$CONTINUUM_COMMIT" ]] || fail "tmux-continuum commit mismatch"
-  oh_my_tmux_checkout="$HOME/.local/share/oh-my-tmux"
-  oh_my_tmux_config="$oh_my_tmux_checkout/.tmux.conf"
-  tmux_local_config="$DOTFILES_DIR/tmux/tmux.conf.local"
-  [[ $(git -C "$oh_my_tmux_checkout" rev-parse HEAD) == "$OH_MY_TMUX_COMMIT" ]] || \
-    fail "Oh My Tmux commit mismatch"
-  [[ -L "$HOME/.tmux.conf" && $(readlink "$HOME/.tmux.conf") == "$oh_my_tmux_config" ]] || \
-    fail "Oh My Tmux main config link is missing"
-  [[ -L "$HOME/.tmux.conf.local" &&
-    $(readlink "$HOME/.tmux.conf.local") == "$tmux_local_config" ]] || \
-    fail "managed Oh My Tmux local config link is missing"
-  tmux_meter="$DOTFILES_DIR/tmux/system-meter.sh"
-  tmux_meter_destination="$HOME/.tmux/system-meter.sh"
-  [[ -L "$tmux_meter_destination" && $(readlink "$tmux_meter_destination") == "$tmux_meter" ]] || \
-    fail "managed tmux system meter link is missing"
-  tmux_meter_output=$("$tmux_meter")
-  [[ $tmux_meter_output =~ ^(BAT|LOAD)[[:space:]]+\[[=.]{10}\][[:space:]]+[0-9]{1,3}%$ ]] || \
-    fail "tmux system meter output is invalid: $tmux_meter_output"
+  tmux_config="$DOTFILES_DIR/tmux/tmux.conf"
+  tmux_config_destination="$HOME/.tmux.conf"
+  [[ -L "$tmux_config_destination" && $(readlink "$tmux_config_destination") == "$tmux_config" ]] || \
+    fail "managed tmux config link is missing"
   [[ $(git -C "$HOME/.oh-my-zsh" rev-parse HEAD) == "$OH_MY_ZSH_COMMIT" ]] || fail "Oh My Zsh commit mismatch"
   [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" rev-parse HEAD) == "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" ]] || fail "zsh-syntax-highlighting commit mismatch"
 
   tmux -L terminal-tmux-check kill-server >/dev/null 2>&1 || true
-  tmux -L terminal-tmux-check -f "$HOME/.tmux.conf" new-session -d -s terminal-tmux-check
-  status_left=
-  for attempt in 1 2 3 4 5 6 7 8; do
-    status_left=$(tmux -L terminal-tmux-check show-options -gqv status-left)
-    [[ $status_left == *''* ]] && break
-    sleep 1
-  done
+  tmux -L terminal-tmux-check -f "$tmux_config" new-session -d -s terminal-tmux-check
   [[ $(tmux -L terminal-tmux-check show-options -gqv prefix) == C-b ]] || \
     fail "managed tmux prefix was not preserved"
-  [[ $(tmux -L terminal-tmux-check show-options -gqv prefix2) == None ]] || \
-    fail "Oh My Tmux Ctrl-a prefix was not disabled"
-  [[ $(tmux -L terminal-tmux-check show-options -gqv base-index) == 0 ]] || \
-    fail "managed tmux base index was not preserved"
-  [[ $(tmux -L terminal-tmux-check show-options -gwv pane-base-index) == 0 ]] || \
-    fail "managed tmux pane base index was not preserved"
-  [[ $(tmux -L terminal-tmux-check show-options -gqv renumber-windows) == off ]] || \
-    fail "managed tmux renumber setting was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv default-terminal) == tmux-256color ]] || \
     fail "managed tmux default-terminal was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv mouse) == on ]] || \
@@ -1166,10 +1125,6 @@ validate() {
   [[ $(tmux -L terminal-tmux-check show-options -gqv history-limit) == 100000 ]] || \
     fail "managed tmux history limit was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv @continuum-restore) == off ]] || fail "tmux config validation failed"
-  tmux -L terminal-tmux-check show-options -gqv status-right | grep -Fq 'system-meter.sh' || \
-    fail "tmux system meter was not added to status-right"
-  grep -Fq '' <<< "$status_left" || \
-    fail "Oh My Tmux Nord status-left was not applied"
   prefix_bindings=$(tmux -L terminal-tmux-check list-keys -T prefix)
   grep -Eq '^bind-key +(-r +)?-T prefix < +swap-window -d -t -1$' <<< "$prefix_bindings" || \
     fail "managed tmux Prefix+< binding was not preserved"
@@ -1183,7 +1138,7 @@ validate() {
     fail "managed tmux Prefix+s chooser binding was not preserved"
   tmux -L terminal-tmux-check kill-server
 
-  printf 'tmux.conf.local sha256: %s\n' "$(sha256_file "$tmux_local_config")"
+  printf 'tmux.conf sha256: %s\n' "$(sha256_file "$tmux_config")"
   printf 'lazygit config sha256: %s\n' "$(sha256_file "$DOTFILES_DIR/lazygit/config.yml")"
 }
 
@@ -1219,8 +1174,6 @@ main() {
   uninstall_druk
   install_fresh
   install_oh_my_zsh
-  install_oh_my_tmux
-
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
   install_plugin tmux-resurrect https://github.com/tmux-plugins/tmux-resurrect.git "$RESURRECT_COMMIT"
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
