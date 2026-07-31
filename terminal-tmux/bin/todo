@@ -286,14 +286,10 @@ class TodoApp:
                 if needle in task.get("title", "").casefold()
                 or needle in task.get("notes", "").casefold()
             ]
-        return sorted(
-            filtered,
-            key=lambda task: (
-                task.get("due") is None,
-                task.get("due") or "",
-                task.get("title", "").casefold(),
-            ),
-        )
+        # The macOS bridge returns reminders in their source order. Keep that
+        # order intact in every view; filtering must never introduce a second
+        # due-date/title sort that disagrees with Reminders.
+        return filtered
 
     def refresh(self, quiet: bool = False) -> None:
         try:
