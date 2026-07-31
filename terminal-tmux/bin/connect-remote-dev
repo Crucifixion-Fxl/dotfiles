@@ -35,7 +35,7 @@ valid_port() {
 }
 
 main() {
-  local host script_dir entry payload remote_command
+  local host script_dir entry relay payload relay_payload remote_command
   local mac_user reverse_port mac_ssh_port
   local mac_user_quoted reverse_port_quoted
 
@@ -51,14 +51,17 @@ main() {
 
   script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   entry="$script_dir/remote-dev-entry"
+  relay="$script_dir/termscp-bridge-relay"
 
   [[ -f "$entry" ]] || fail "找不到 $entry"
+  [[ -f "$relay" ]] || fail "找不到 $relay"
   command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
   command -v ssh >/dev/null 2>&1 || fail "本机未安装 ssh"
 
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
   # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
   payload=$(base64 < "$entry" | tr -d '\r\n')
+  relay_payload=$(base64 < "$relay" | tr -d '\r\n')
   printf -v mac_user_quoted '%q' "$mac_user"
   printf -v reverse_port_quoted '%q' "$reverse_port"
   remote_command='set -eu
@@ -68,19 +71,25 @@ command -v base64 >/dev/null 2>&1 || {
 }
 directory="$HOME/.local/bin"
 temporary="$directory/.remote-dev-entry.$$"
+relay_temporary="$directory/.termscp-bridge-relay.$$"
 payload='"'$payload'"'
+relay_payload='"'$relay_payload'"'
 umask 077
 mkdir -p "$directory"
-trap '\''rm -f "$temporary"'\'' 0 HUP INT TERM
+trap '\''rm -f "$temporary" "$relay_temporary"'\'' 0 HUP INT TERM
 printf "%s" "$payload" | base64 -d > "$temporary"
+printf "%s" "$relay_payload" | base64 -d > "$relay_temporary"
 chmod 700 "$temporary"
+chmod 700 "$relay_temporary"
 mv -f "$temporary" "$directory/remote-dev-entry"
+mv -f "$relay_temporary" "$directory/termscp-bridge-relay"
 trap - 0 HUP INT TERM
 PATH="$directory:$PATH"
 export PATH
 TERMSCP_MAC_USER='"$mac_user_quoted"'
 TERMSCP_REVERSE_PORT='"$reverse_port_quoted"'
-export TERMSCP_MAC_USER TERMSCP_REVERSE_PORT
+TERMSCP_MAC_HOST=127.0.0.1
+export TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST
 exec "$directory/remote-dev-entry"'
 
   run_ssh "$host" "$remote_command" "$reverse_port" "$mac_ssh_port"

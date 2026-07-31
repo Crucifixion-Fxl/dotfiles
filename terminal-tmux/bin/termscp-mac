@@ -2,8 +2,8 @@
 
 set -euo pipefail
 
-# 在 SSH 服务器宿主机上启动 termscp：本地面板是服务器，SFTP 面板通过
-# connect-remote-dev 建立的反向端口回到 Mac。
+# 在 SSH 服务器宿主机或所选 Docker 容器中启动 termscp：本地面板是当前
+# 环境，SFTP 面板通过 connect-remote-dev 建立的反向端口回到 Mac。
 
 fail() {
   printf 'termscp-mac：%s\n' "$*" >&2
@@ -27,7 +27,7 @@ valid_port() {
 }
 
 main() {
-  local mac_user reverse_port server_directory
+  local mac_user mac_host sftp_host reverse_port server_directory
 
   [[ $# -le 1 ]] || fail "用法：termscp-mac [服务器起始目录]"
   command -v termscp >/dev/null 2>&1 || \
@@ -35,18 +35,24 @@ main() {
 
   mac_user=${TERMSCP_MAC_USER:-}
   [[ -n "$mac_user" ]] || mac_user=$(tmux_environment TERMSCP_MAC_USER || true)
+  mac_host=${TERMSCP_MAC_HOST:-}
+  [[ -n "$mac_host" ]] || mac_host=$(tmux_environment TERMSCP_MAC_HOST || true)
+  mac_host=${mac_host:-127.0.0.1}
   reverse_port=${TERMSCP_REVERSE_PORT:-}
   [[ -n "$reverse_port" ]] || reverse_port=$(tmux_environment TERMSCP_REVERSE_PORT || true)
   reverse_port=${reverse_port:-6022}
   server_directory=${1:-$PWD}
 
   [[ -n "$mac_user" ]] || \
-    fail "找不到 Mac 用户名；请通过 connect-remote-dev 重新连接并在服务器宿主机运行"
+    fail "找不到 Mac 用户名；请通过 ghostty-dev 或 connect-remote-dev 重新连接"
   [[ "$mac_user" =~ ^[A-Za-z0-9._-]+$ ]] || fail "无效的 Mac 用户名：$mac_user"
+  [[ "$mac_host" =~ ^[A-Za-z0-9._:-]+$ ]] || fail "无效的 Mac 地址：$mac_host"
   valid_port "$reverse_port" || fail "无效的反向端口：$reverse_port"
   [[ -d "$server_directory" ]] || fail "服务器目录不存在：$server_directory"
 
-  exec termscp "sftp://${mac_user}@127.0.0.1:${reverse_port}" "$server_directory"
+  sftp_host=$mac_host
+  [[ "$sftp_host" == *:* ]] && sftp_host="[$sftp_host]"
+  exec termscp "sftp://${mac_user}@${sftp_host}:${reverse_port}" "$server_directory"
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then

@@ -32,11 +32,89 @@ sync_termscp_tmux_environment() {
   # 已存在的 tmux server 不会自动接收自定义 SSH 会话变量。把连接脚本传来的
   # Mac 用户名和反向端口写入 tmux 全局环境，termscp-mac 可从旧 pane 中读取。
   local variable value
-  for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT; do
+  for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST; do
     value=${!variable:-}
     [[ -n "$value" ]] || continue
     tmux set-environment -g "$variable" "$value" 2>/dev/null || true
   done
+}
+
+valid_termscp_port() {
+  local port=$1
+  [[ "$port" =~ ^[0-9]{1,5}$ ]] || return 1
+  (( 10#$port >= 1 && 10#$port <= 65535 ))
+}
+
+start_termscp_container_relay() {
+  local container_id=$1 network_container network_mode gateway reverse_port
+  local relay relay_ready relay_log relay_pid relay_status ready_port attempt relay_error
+
+  # 普通 SSH 入口没有 Mac 反向隧道，仍允许用户进入容器；termscp-mac 会给出
+  # 重新通过 ghostty-dev/connect-remote-dev 连接的明确提示。
+  [[ -n ${TERMSCP_MAC_USER:-} ]] || return 0
+
+  reverse_port=${TERMSCP_REVERSE_PORT:-6022}
+  valid_termscp_port "$reverse_port" || fail "无效的 termscp 反向端口：$reverse_port"
+  network_mode=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$container_id") || \
+    fail "无法读取所选容器的网络模式"
+
+  # host 网络与宿主机共用 127.0.0.1，不需要中继。bridge/custom network 则
+  # 只监听该 Docker 网关地址，不把 Mac SFTP 暴露到服务器的物理网卡。
+  if [[ "$network_mode" == host ]]; then
+    termscp_mac_host=127.0.0.1
+    return 0
+  fi
+
+  network_container=$container_id
+  if [[ "$network_mode" == container:* ]]; then
+    network_container=${network_mode#container:}
+  fi
+  gateway=$(docker inspect -f \
+    '{{range .NetworkSettings.Networks}}{{if .Gateway}}{{.Gateway}}{{println}}{{end}}{{end}}' \
+    "$network_container" | sed -n '/./{p;q;}') || \
+    fail "无法读取所选容器的 Docker 网关"
+  [[ -n "$gateway" ]] || fail "所选容器没有可用的 Docker 网关，无法连接 Mac SFTP"
+  [[ "$gateway" =~ ^[0-9A-Fa-f:.]+$ ]] || fail "Docker 网关地址无效：$gateway"
+
+  relay="$HOME/.local/bin/termscp-bridge-relay"
+  [[ -x "$relay" ]] || fail "找不到 $relay；请重新运行 connect-remote-dev"
+  command -v python3 >/dev/null 2>&1 || fail "服务器宿主机未安装 python3"
+
+  relay_ready=$(mktemp "${TMPDIR:-/tmp}/termscp-relay.XXXXXX")
+  relay_log="${relay_ready}.log"
+  python3 "$relay" \
+    --listen-host "$gateway" \
+    --listen-port "$reverse_port" \
+    --target-host 127.0.0.1 \
+    --target-port "$reverse_port" \
+    --parent-pid "$$" \
+    --ready-file "$relay_ready" </dev/null >"$relay_log" 2>&1 &
+  relay_pid=$!
+
+  for ((attempt = 0; attempt < 100; attempt++)); do
+    [[ -s "$relay_ready" ]] && break
+    kill -0 "$relay_pid" 2>/dev/null || break
+    sleep 0.02
+  done
+
+  if [[ ! -s "$relay_ready" ]]; then
+    relay_error=$(<"$relay_log")
+    kill "$relay_pid" 2>/dev/null || true
+    wait "$relay_pid" 2>/dev/null || true
+    rm -f "$relay_ready" "$relay_log"
+    fail "无法为容器启动 termscp 中继${relay_error:+：$relay_error}"
+  fi
+
+  read -r relay_status ready_port < "$relay_ready"
+  if [[ "$relay_status" != READY ]] || ! valid_termscp_port "$ready_port" ||
+    (( 10#$ready_port != 10#$reverse_port )); then
+    kill "$relay_pid" 2>/dev/null || true
+    wait "$relay_pid" 2>/dev/null || true
+    rm -f "$relay_ready" "$relay_log"
+    fail "termscp 容器中继没有正确就绪"
+  fi
+  rm -f "$relay_ready" "$relay_log"
+  termscp_mac_host=$gateway
 }
 
 enter_host_tmux() {
@@ -50,14 +128,26 @@ enter_host_tmux() {
 }
 
 enter_container_tmux() {
-  local container_id=$1 container_name=$2
+  local container_id=$1 container_name=$2 termscp_mac_host
+  local -a docker_environment
+
+  termscp_mac_host=127.0.0.1
+  start_termscp_container_relay "$container_id"
+  docker_environment=(-e "TERM=${TERM:-xterm-256color}")
+  if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
+    docker_environment+=(
+      -e "TERMSCP_MAC_USER=$TERMSCP_MAC_USER"
+      -e "TERMSCP_REVERSE_PORT=${TERMSCP_REVERSE_PORT:-6022}"
+      -e "TERMSCP_MAC_HOST=$termscp_mac_host"
+    )
+  fi
 
   printf '正在进入容器 %s（tmux session: %s）\n' \
     "$container_name" "$CONTAINER_TMUX_SESSION"
 
   # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
   # 命令只会在容器内解析和启动。
-  exec docker exec -it -e "TERM=${TERM:-xterm-256color}" "$container_id" sh -lc '
+  exec docker exec -it "${docker_environment[@]}" "$container_id" sh -lc '
     export PATH="$HOME/.local/bin:$PATH"
     tmux_session=$1
 
@@ -106,6 +196,11 @@ enter_container_tmux() {
       tmux set-environment -g LC_ALL "$LC_ALL" 2>/dev/null || true
     fi
     if tmux list-sessions >/dev/null 2>&1; then
+      for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST; do
+        eval "value=\${$variable:-}"
+        [ -n "$value" ] || continue
+        tmux set-environment -g "$variable" "$value" 2>/dev/null || true
+      done
       tmux source-file "$HOME/.tmux.conf" || {
         printf "%s\n" "remote-dev-entry：无法重新加载 $HOME/.tmux.conf" >&2
         exit 1
