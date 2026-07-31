@@ -206,7 +206,7 @@ choose_ssh_host() {
         else
           trap - WINCH
         fi
-        printf '\033[2J\033[H正在连接 %s...\n' "${hosts[$selected_index]}" >&2
+        printf '\033[2J\033[H' >&2
         printf '%s\n' "${hosts[$selected_index]}"
         return 0
         ;;
