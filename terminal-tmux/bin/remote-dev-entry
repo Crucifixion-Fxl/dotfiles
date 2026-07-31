@@ -169,10 +169,8 @@ enter_container_tmux() {
   local -a docker_environment
 
   if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
-    if authorization_output=$(authorize_termscp_container_key "$container_id" "$container_name" 2>&1); then
-      [[ -z "$authorization_output" ]] || \
-        printf 'Mac SFTP 公钥授权：%s\n' "$authorization_output"
-    else
+    if ! authorization_output=$(authorize_termscp_container_key \
+      "$container_id" "$container_name" 2>&1); then
       printf 'remote-dev-entry：无法自动授权容器公钥：%s\n' \
         "$authorization_output" >&2
       printf '%s\n' '仍会进入容器，但 termscp-mac 可能需要手动配置认证。' >&2
@@ -189,9 +187,6 @@ enter_container_tmux() {
       -e "TERMSCP_MAC_HOST=$termscp_mac_host"
     )
   fi
-
-  printf '正在进入容器 %s（tmux session: %s）\n' \
-    "$container_name" "$CONTAINER_TMUX_SESSION"
 
   # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
   # 命令只会在容器内解析和启动。

@@ -97,6 +97,10 @@ grep -Fq '↑/↓ 选择  Enter 连接  q/Esc 取消' "$TEST_HOME/menu.log"
 grep -Fq $'\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu.log"
 grep -Fq $'\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu.log"
 grep -Fq '╰────────────────────────────────────────────────────╯' "$TEST_HOME/menu.log"
+if grep -Fq '正在连接' "$TEST_HOME/menu.log"; then
+  printf '%s\n' 'server selection must clear the panel without printing a transition log' >&2
+  exit 1
+fi
 
 printf '\n' | HOME=$TEST_HOME LINES=20 COLUMNS=100 \
   run_server_selector 2>"$TEST_HOME/menu-large.log" >/dev/null

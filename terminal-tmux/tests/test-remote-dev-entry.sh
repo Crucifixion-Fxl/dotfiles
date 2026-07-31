@@ -51,6 +51,22 @@ docker() {
   fi
 }
 
+# 成功授权和容器进入都应保持静默；这里只保留 fake exec 的测试标记。
+silent_entry_output=$(
+  TERMSCP_MAC_USER=mac-user
+  authorize_termscp_container_key() {
+    printf '%s\n' 'AUTHORIZED SHA256:test added'
+  }
+  start_termscp_container_relay() {
+    termscp_mac_host=127.0.0.1
+  }
+  exec() {
+    printf '%s\n' 'container-exec-called'
+  }
+  enter_container_tmux abc123 api-dev
+)
+[[ $silent_entry_output == 'container-exec-called' ]]
+
 enter_host_tmux() {
   printf 'selected:host:%s\n' "$HOST_TMUX_SESSION"
 }
@@ -111,9 +127,19 @@ grep -Fq 'tmux set-environment -g LC_ALL "$LC_ALL"' "$ENTRY"
 grep -Fq 'tmux set-environment -g "$variable" "$value"' "$ENTRY"
 grep -Fq 'TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST' "$ENTRY"
 grep -Fq 'start_termscp_container_relay "$container_id"' "$ENTRY"
-grep -Fq 'authorize_termscp_container_key "$container_id" "$container_name"' "$ENTRY"
+grep -Fq 'authorize_termscp_container_key \' "$ENTRY"
+grep -Fq '"$container_id" "$container_name" 2>&1' "$ENTRY"
 grep -Fq 'ssh-keygen -y -f "$key_path"' "$ENTRY"
 grep -Fq 'termscp-key-authorizer request' "$ENTRY"
+if grep -Fq 'Mac SFTP 公钥授权：' "$ENTRY"; then
+  printf '%s\n' 'successful container key authorization must stay silent' >&2
+  exit 1
+fi
+if grep -Fq '正在进入容器' "$ENTRY"; then
+  printf '%s\n' 'container entry must not print a transition log' >&2
+  exit 1
+fi
+grep -Fq '无法自动授权容器公钥' "$ENTRY"
 grep -Fq -- '-e "TERMSCP_MAC_USER=$TERMSCP_MAC_USER"' "$ENTRY"
 grep -Fq -- '-e "TERMSCP_REVERSE_PORT=${TERMSCP_REVERSE_PORT:-6022}"' "$ENTRY"
 grep -Fq -- '-e "TERMSCP_MAC_HOST=$termscp_mac_host"' "$ENTRY"
