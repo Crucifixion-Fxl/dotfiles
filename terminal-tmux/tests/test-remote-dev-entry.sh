@@ -130,6 +130,7 @@ grep -Fq 'start_termscp_container_relay "$container_id"' "$ENTRY"
 grep -Fq 'start_todo_container_relay "$container_id"' "$ENTRY"
 grep -Fq 'authorize_termscp_container_key \' "$ENTRY"
 grep -Fq '"$container_id" "$container_name" 2>&1' "$ENTRY"
+grep -Fq 'public_key=$(docker exec "$container_id" sh -c' "$ENTRY"
 grep -Fq 'ssh-keygen -y -f "$key_path"' "$ENTRY"
 grep -Fq 'termscp-key-authorizer request' "$ENTRY"
 if grep -Fq 'Mac SFTP 公钥授权：' "$ENTRY"; then
