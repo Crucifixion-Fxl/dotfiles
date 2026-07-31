@@ -1,0 +1,295 @@
+#!/usr/bin/env python3
+
+"""Authorize one container public key for loopback-only Mac SFTP access."""
+
+from __future__ import annotations
+
+import argparse
+import base64
+import binascii
+import ctypes
+import fcntl
+import hashlib
+import hmac
+import json
+import os
+from pathlib import Path
+import re
+import signal
+import socket
+import struct
+import sys
+import threading
+
+
+MAX_REQUEST_BYTES = 16384
+AUTHORIZED_SOURCE = "127.0.0.1,::1"
+LABEL_PATTERN = re.compile(r"[^A-Za-z0-9_.-]+")
+
+
+def port(value: str) -> int:
+    parsed = int(value)
+    if not 0 <= parsed <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 0 and 65535")
+    return parsed
+
+
+def positive_pid(value: str) -> int:
+    parsed = int(value)
+    if parsed < 1:
+        raise argparse.ArgumentTypeError("parent pid must be positive")
+    return parsed
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(
+        description="Authorize container SSH public keys through a token-protected local socket."
+    )
+    commands = root.add_subparsers(dest="command", required=True)
+
+    serve = commands.add_parser("serve", help="run the Mac-side authorization service")
+    serve.add_argument("--listen-host", required=True)
+    serve.add_argument("--listen-port", required=True, type=port)
+    serve.add_argument("--token", required=True)
+    serve.add_argument("--parent-pid", required=True, type=positive_pid)
+    serve.add_argument("--ready-file", required=True, type=Path)
+    serve.add_argument("--authorized-keys", required=True, type=Path)
+    serve.add_argument("--forced-command", required=True)
+
+    request = commands.add_parser("request", help="submit one container public key")
+    request.add_argument("--host", required=True)
+    request.add_argument("--port", required=True, type=port)
+    request.add_argument("--token", required=True)
+    request.add_argument("--public-key", required=True)
+    request.add_argument("--label", required=True)
+    return root
+
+
+def install_parent_death_signal(parent_pid: int) -> None:
+    if sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        # Linux prctl(PR_SET_PDEATHSIG, SIGTERM). Parent polling below is the
+        # portable fallback and also covers the startup race.
+        libc.prctl(1, signal.SIGTERM, 0, 0, 0)
+    if os.getppid() != parent_pid:
+        raise RuntimeError("parent process exited before authorizer startup")
+
+
+def normalized_public_key(public_key: str) -> tuple[str, str, str]:
+    fields = public_key.strip().split()
+    if len(fields) < 2:
+        raise ValueError("public key is incomplete")
+    key_type, encoded_key = fields[0], fields[1]
+    if key_type != "ssh-ed25519":
+        raise ValueError(f"unsupported public key type: {key_type}")
+    try:
+        key_blob = base64.b64decode(encoded_key, validate=True)
+    except (binascii.Error, ValueError) as error:
+        raise ValueError("public key contains invalid base64") from error
+    if len(key_blob) < 4:
+        raise ValueError("public key blob is too short")
+    algorithm_length = struct.unpack(">I", key_blob[:4])[0]
+    algorithm_end = 4 + algorithm_length
+    if algorithm_end > len(key_blob):
+        raise ValueError("public key blob is truncated")
+    algorithm = key_blob[4:algorithm_end].decode("ascii", errors="strict")
+    if algorithm != key_type:
+        raise ValueError("public key type does not match its encoded blob")
+    fingerprint = (
+        "SHA256:"
+        + base64.b64encode(hashlib.sha256(key_blob).digest()).decode("ascii").rstrip("=")
+    )
+    return key_type, encoded_key, fingerprint
+
+
+def sanitize_label(label: str) -> str:
+    sanitized = LABEL_PATTERN.sub("-", label).strip("-.")
+    return sanitized[:80] or "container"
+
+
+def restricted_entry(
+    key_type: str, encoded_key: str, forced_command: str, label: str
+) -> str:
+    if any(character in forced_command for character in ('"', "\\", "\r", "\n")):
+        raise ValueError("forced command contains unsupported characters")
+    return (
+        f'from="{AUTHORIZED_SOURCE}",restrict,command="{forced_command}" '
+        f"{key_type} {encoded_key} termscp-{sanitize_label(label)}"
+    )
+
+
+def line_has_key(line: str, key_type: str, encoded_key: str) -> bool:
+    fields = line.strip().split()
+    return key_type in fields and encoded_key in fields
+
+
+def line_is_restricted(line: str, forced_command: str) -> bool:
+    options = line.split(" ssh-ed25519 ", 1)[0]
+    return (
+        f'from="{AUTHORIZED_SOURCE}"' in options
+        and ",restrict," in f",{options},"
+        and f'command="{forced_command}"' in options
+    )
+
+
+def install_authorized_key(
+    authorized_keys: Path, public_key: str, forced_command: str, label: str
+) -> tuple[str, str]:
+    key_type, encoded_key, fingerprint = normalized_public_key(public_key)
+    entry = restricted_entry(key_type, encoded_key, forced_command, label)
+    ssh_directory = authorized_keys.parent
+
+    if ssh_directory.is_symlink() or authorized_keys.is_symlink():
+        raise ValueError("refusing to write through an SSH path symlink")
+    ssh_directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(ssh_directory, 0o700)
+
+    descriptor = os.open(authorized_keys, os.O_RDWR | os.O_CREAT, 0o600)
+    with os.fdopen(descriptor, "r+", encoding="utf-8") as stream:
+        fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
+        os.fchmod(stream.fileno(), 0o600)
+        contents = stream.read()
+        for line in contents.splitlines():
+            if not line_has_key(line, key_type, encoded_key):
+                continue
+            if not line_is_restricted(line, forced_command):
+                raise ValueError(
+                    "the public key already exists without the required SFTP restrictions"
+                )
+            return fingerprint, "existing"
+
+        stream.seek(0, os.SEEK_END)
+        if contents and not contents.endswith("\n"):
+            stream.write("\n")
+        stream.write(entry + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    return fingerprint, "added"
+
+
+def receive_request(connection: socket.socket) -> dict[str, object]:
+    connection.settimeout(5)
+    payload = bytearray()
+    while b"\n" not in payload:
+        chunk = connection.recv(4096)
+        if not chunk:
+            break
+        payload.extend(chunk)
+        if len(payload) > MAX_REQUEST_BYTES:
+            raise ValueError("authorization request is too large")
+    if not payload:
+        raise ValueError("authorization request is empty")
+    return json.loads(bytes(payload).split(b"\n", 1)[0].decode("utf-8"))
+
+
+def send_response(connection: socket.socket, response: dict[str, object]) -> None:
+    connection.sendall(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+
+
+def handle_connection(
+    connection: socket.socket,
+    token: str,
+    authorized_keys: Path,
+    forced_command: str,
+) -> None:
+    with connection:
+        try:
+            request = receive_request(connection)
+            request_token = request.get("token")
+            public_key = request.get("public_key")
+            label = request.get("label")
+            if not isinstance(request_token, str) or not hmac.compare_digest(
+                request_token, token
+            ):
+                raise PermissionError("invalid authorization token")
+            if not isinstance(public_key, str) or not isinstance(label, str):
+                raise ValueError("authorization request fields are invalid")
+            fingerprint, state = install_authorized_key(
+                authorized_keys, public_key, forced_command, label
+            )
+            send_response(
+                connection,
+                {"ok": True, "message": f"AUTHORIZED {fingerprint} {state}"},
+            )
+        except Exception as error:
+            try:
+                send_response(connection, {"ok": False, "error": str(error)})
+            except OSError:
+                pass
+
+
+def serve(args: argparse.Namespace) -> int:
+    if len(args.token) < 16:
+        raise ValueError("authorization token must contain at least 16 characters")
+    install_parent_death_signal(args.parent_pid)
+
+    family = socket.AF_INET6 if ":" in args.listen_host else socket.AF_INET
+    listener = socket.socket(family, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind((args.listen_host, args.listen_port))
+    listener.listen(8)
+    listener.settimeout(0.5)
+    stopping = threading.Event()
+
+    def stop(_signum: int, _frame: object) -> None:
+        stopping.set()
+
+    signal.signal(signal.SIGTERM, stop)
+    signal.signal(signal.SIGINT, stop)
+
+    def watch_parent() -> None:
+        while not stopping.wait(0.25):
+            if os.getppid() != args.parent_pid:
+                os.kill(os.getpid(), signal.SIGTERM)
+                return
+
+    threading.Thread(target=watch_parent, daemon=True).start()
+    args.ready_file.write_text(f"READY {listener.getsockname()[1]}\n", encoding="utf-8")
+
+    try:
+        while not stopping.is_set():
+            try:
+                connection, _ = listener.accept()
+            except socket.timeout:
+                continue
+            handle_connection(
+                connection,
+                args.token,
+                args.authorized_keys.expanduser(),
+                args.forced_command,
+            )
+    finally:
+        listener.close()
+        try:
+            args.ready_file.unlink()
+        except FileNotFoundError:
+            pass
+    return 0
+
+
+def request(args: argparse.Namespace) -> int:
+    payload = {
+        "token": args.token,
+        "public_key": args.public_key,
+        "label": args.label,
+    }
+    with socket.create_connection((args.host, args.port), timeout=5) as connection:
+        connection.sendall(json.dumps(payload, separators=(",", ":")).encode("utf-8") + b"\n")
+        response = receive_request(connection)
+    if response.get("ok") is True and isinstance(response.get("message"), str):
+        print(response["message"])
+        return 0
+    error = response.get("error", "unknown authorization error")
+    print(f"termscp-key-authorizer: {error}", file=sys.stderr)
+    return 1
+
+
+def main() -> int:
+    args = parser().parse_args()
+    if args.command == "serve":
+        return serve(args)
+    return request(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
