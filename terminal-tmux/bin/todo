@@ -1319,6 +1319,14 @@ def complete_two_factor(app: TodoApp, api: Any) -> bool:
     raise TodoError("双重认证失败")
 
 
+def needs_two_factor_code(api: Any, requires_2sa: bool) -> bool:
+    # Some Apple responses omit dsInfo.hsaVersion while pyicloud still marks
+    # the freshly authenticated browser session as untrusted and sends a code.
+    # In that state requires_2fa is False, but trust_session must not run until
+    # the code challenge has been completed.
+    return bool(api.requires_2fa or (not requires_2sa and not api.is_trusted_session))
+
+
 def visual_login(
     app: TodoApp,
     initial_username: Optional[str],
@@ -1378,10 +1386,11 @@ def visual_login(
         password = ""
 
         try:
-            if api.requires_2fa:
+            requires_2sa = bool(api.requires_2sa)
+            if needs_two_factor_code(api, requires_2sa):
                 if not complete_two_factor(app, api):
                     return None
-            elif api.requires_2sa:
+            elif requires_2sa:
                 devices = list(api.trusted_devices or [])
                 if not devices:
                     raise TodoError("账户要求两步验证，但没有可用的受信任设备")
