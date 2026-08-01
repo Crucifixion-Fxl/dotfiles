@@ -514,6 +514,22 @@ class RunStore:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def cleanup_candidates(self) -> List[Dict[str, Any]]:
+        with self.connect() as connection:
+            connection.row_factory = sqlite3.Row
+            rows = connection.execute(
+                """
+                SELECT * FROM runs
+                WHERE status IN ('review', 'failed')
+                ORDER BY finished_at
+                """
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def delete(self, task_id: str) -> None:
+        with self.connect() as connection:
+            connection.execute("DELETE FROM runs WHERE task_id = ?", (task_id,))
+
 
 def slug(value: str, fallback: str = "project") -> str:
     normalized = re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-.").lower()
@@ -907,6 +923,93 @@ def recover_interrupted_runs(todoist: Todoist, store: RunStore) -> None:
         print(f"[{row['project_name']}] 已恢复中断任务：{task_id}", file=sys.stderr)
 
 
+def managed_child(path: Path, parent: Path, description: str) -> Path:
+    candidate = path.expanduser().resolve()
+    root = parent.expanduser().resolve()
+    try:
+        relative = candidate.relative_to(root)
+    except ValueError as error:
+        raise AgentError(f"拒绝清理不在托管目录中的{description}：{candidate}") from error
+    if not relative.parts:
+        raise AgentError(f"拒绝清理{description}根目录：{candidate}")
+    return candidate
+
+
+def cleanup_completed_run(
+    git: str,
+    store: RunStore,
+    project: Project,
+    row: Dict[str, Any],
+) -> None:
+    task_id = str(row["task_id"])
+    branch = str(row["branch"])
+    project_slug = slug(project.name)
+    task_slug = slug(task_id, "task")[:40]
+    expected_branch = f"codex/{project_slug}/{task_slug}"
+    if branch != expected_branch:
+        raise AgentError(f"拒绝清理不属于项目 {project.name} 的分支：{branch}")
+
+    repository = Path(project.repository).expanduser().resolve()
+    worktree = managed_child(Path(str(row["worktree"])), worktree_root(), "worktree")
+    expected_worktree = (worktree_root() / project_slug / task_slug).expanduser().resolve()
+    if worktree != expected_worktree:
+        raise AgentError(f"拒绝清理与任务 {task_id} 不匹配的 worktree：{worktree}")
+    task_runs = managed_child(
+        state_dir() / "runs" / task_id, state_dir() / "runs", "运行记录"
+    )
+
+    if worktree.exists():
+        run_process(
+            [git, "-C", str(repository), "worktree", "remove", "--force", str(worktree)]
+        )
+    branch_exists = subprocess.run(
+        [
+            git,
+            "-C",
+            str(repository),
+            "show-ref",
+            "--verify",
+            "--quiet",
+            f"refs/heads/{branch}",
+        ],
+        check=False,
+    ).returncode == 0
+    if branch_exists:
+        run_process([git, "-C", str(repository), "branch", "-D", branch])
+    if task_runs.exists():
+        shutil.rmtree(task_runs)
+    store.delete(task_id)
+
+
+def cleanup_completed_runs(
+    todoist: Todoist,
+    store: RunStore,
+    projects: Sequence[Project],
+    git: str,
+) -> int:
+    projects_by_id = {project.todoist_project_id: project for project in projects}
+    failures = 0
+    for row in store.cleanup_candidates():
+        project = projects_by_id.get(str(row["project_id"]))
+        if project is None:
+            continue
+        task_id = str(row["task_id"])
+        try:
+            task = todoist.task(task_id)
+            if not task.get("checked"):
+                continue
+            cleanup_completed_run(git, store, project, row)
+            print(f"[{project.name}] 已清理完成任务：{task_id}", flush=True)
+        except (AgentError, OSError) as error:
+            failures += 1
+            print(
+                f"[{project.name}] 清理完成任务失败：{task_id}：{error}",
+                file=sys.stderr,
+                flush=True,
+            )
+    return failures
+
+
 def run_once(args: argparse.Namespace) -> int:
     projects = selected_projects(load_projects(), args.project)
     if not projects:
@@ -928,11 +1031,12 @@ def run_once(args: argparse.Namespace) -> int:
         except BlockingIOError as error:
             raise AgentError("另一个 todo-agent 正在运行") from error
 
+        failures = 0
         if not args.dry_run:
+            failures += cleanup_completed_runs(todoist, store, projects, git)
             recover_interrupted_runs(todoist, store)
 
         found = 0
-        failures = 0
         for project in projects:
             repository = Path(project.repository)
             if not repository.is_dir():

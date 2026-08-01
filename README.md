@@ -463,6 +463,10 @@ todo-agent run --once
 任务评论。审核后可直接完成任务；需要继续修改时，在 App 中追加评论并重新添加
 `codex-ready`，调度器会复用原分支和 worktree。
 
+用户在 Todoist 中完成任务后，watcher 会把它视为审核结束：自动删除对应的服务器
+worktree、本地 `codex/...` 分支、该任务的运行日志目录和 SQLite 运行记录。仍处于
+`codex-review` 或 `codex-failed`、但尚未完成的任务会继续保留全部现场。
+
 bootstrap 会在 Linux 上自动启动常驻轮询：存在可用的 user systemd 时启用并立即
 启动 `todo-agent.service`；容器没有 user systemd 时自动使用 `nohup` watcher，PID
 和日志分别写入 `~/.local/state/todoist-codex/watcher.pid` 与 `watcher.log`。重复运行
