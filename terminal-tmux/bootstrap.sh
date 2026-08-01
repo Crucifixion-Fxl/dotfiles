@@ -979,9 +979,108 @@ install_todo_agent_service() {
   backup_and_link \
     "$DOTFILES_DIR/systemd/todo-agent.service" \
     "$HOME/.config/systemd/user/todo-agent.service"
-  if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+
+  if todo_agent_systemd_available; then
     systemctl --user daemon-reload
+    systemctl --user enable todo-agent.service
+    if todo_agent_fallback_running; then
+      stop_todo_agent_fallback
+    fi
+    systemctl --user restart todo-agent.service
+    systemctl --user is-active --quiet todo-agent.service || \
+      fail "todo-agent systemd service failed to restart"
+    log "todo-agent systemd watcher is enabled and running with the current code"
+    return 0
   fi
+
+  restart_todo_agent_fallback
+}
+
+todo_agent_systemd_available() {
+  command -v systemctl >/dev/null 2>&1 && \
+    systemctl --user show-environment >/dev/null 2>&1
+}
+
+todo_agent_fallback_running() {
+  local command_line pid pid_file
+  pid_file="$HOME/.local/state/todoist-codex/watcher.pid"
+  [[ -s "$pid_file" ]] || return 1
+  IFS= read -r pid < "$pid_file"
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+
+  # Contract tests run in a restricted macOS sandbox where neither /proc nor
+  # process command inspection is available. Production callers never set
+  # this test-only switch.
+  [[ ${TODO_AGENT_SKIP_CMDLINE_CHECK:-0} == 1 ]] && return 0
+
+  if [[ -r "/proc/$pid/cmdline" ]]; then
+    command_line=$(tr '\0' ' ' < "/proc/$pid/cmdline")
+  else
+    command_line=$(ps -p "$pid" -o command= 2>/dev/null || true)
+  fi
+  [[ "$command_line" == *"todo-agent watch"* ]]
+}
+
+stop_todo_agent_fallback() {
+  local attempt pid pid_file
+  pid_file="$HOME/.local/state/todoist-codex/watcher.pid"
+  if ! todo_agent_fallback_running; then
+    [[ ! -e "$pid_file" ]] || unlink "$pid_file"
+    return 0
+  fi
+
+  IFS= read -r pid < "$pid_file"
+  log "Stopping todo-agent fallback watcher with PID $pid"
+  kill "$pid"
+  for attempt in {1..50}; do
+    kill -0 "$pid" >/dev/null 2>&1 || break
+    sleep 0.1
+  done
+  kill -0 "$pid" >/dev/null 2>&1 && \
+    fail "todo-agent fallback watcher PID $pid did not stop"
+  unlink "$pid_file"
+}
+
+start_todo_agent_fallback() {
+  local log_file pid pid_file state_directory
+  state_directory="$HOME/.local/state/todoist-codex"
+  pid_file="$state_directory/watcher.pid"
+  log_file="$state_directory/watcher.log"
+
+  mkdir -p "$state_directory"
+  chmod 700 "$state_directory"
+  if todo_agent_fallback_running; then
+    IFS= read -r pid < "$pid_file"
+    log "todo-agent fallback watcher is already running with PID $pid"
+    return 0
+  fi
+
+  log "Starting todo-agent fallback watcher in the background"
+  nohup "$HOME/.local/bin/todo-agent" watch --interval 30 \
+    >> "$log_file" 2>&1 < /dev/null &
+  pid=$!
+  printf '%s\n' "$pid" > "$pid_file"
+  chmod 600 "$pid_file"
+  sleep 1
+  kill -0 "$pid" >/dev/null 2>&1 || \
+    fail "todo-agent fallback watcher failed to start; inspect $log_file"
+  todo_agent_fallback_running || \
+    fail "todo-agent fallback watcher PID verification failed"
+  log "todo-agent fallback watcher is running with PID $pid"
+}
+
+restart_todo_agent_fallback() {
+  stop_todo_agent_fallback
+  start_todo_agent_fallback
+}
+
+todo_agent_background_running() {
+  if todo_agent_systemd_available && \
+    systemctl --user is-active --quiet todo-agent.service; then
+    return 0
+  fi
+  todo_agent_fallback_running
 }
 
 # --- Shell 持久环境 ---------------------------------------------------------
@@ -1190,6 +1289,7 @@ validate() {
     [[ -L "$todo_agent_service_destination" &&
       $(readlink "$todo_agent_service_destination") == "$todo_agent_service" ]] || \
       fail "todo-agent systemd service link is missing"
+    todo_agent_background_running || fail "todo-agent background watcher is not running"
   fi
 
   vim_config="$DOTFILES_DIR/vim/vimrc"

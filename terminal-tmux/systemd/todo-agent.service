@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 ExecStart=%h/.local/bin/todo-agent watch
-Restart=on-failure
+Restart=always
 RestartSec=10
 
 [Install]

@@ -70,7 +70,21 @@ with tempfile.TemporaryDirectory() as temporary:
                         "content": "修复 bootstrap",
                         "description": "保持现有 Node.js",
                         "labels": ["bug", "codex-ready"],
-                    }
+                    },
+                    {
+                        "id": "task-parallel-2",
+                        "projectId": "project-1",
+                        "content": "并行任务二",
+                        "description": "验证无并发上限",
+                        "labels": ["codex-ready"],
+                    },
+                    {
+                        "id": "task-parallel-3",
+                        "projectId": "project-1",
+                        "content": "并行任务三",
+                        "description": "验证无并发上限",
+                        "labels": ["codex-ready"],
+                    },
                 ],
                 "comments": [],
             },
@@ -83,11 +97,14 @@ with tempfile.TemporaryDirectory() as temporary:
         td_path,
         r'''#!/usr/bin/env python3
 import json
+import fcntl
 import os
 from pathlib import Path
 import sys
 
 path = Path(os.environ["FAKE_TODOIST_STATE"])
+lock = path.with_suffix(".lock").open("w", encoding="utf-8")
+fcntl.flock(lock, fcntl.LOCK_EX)
 state = json.loads(path.read_text(encoding="utf-8"))
 args = sys.argv[1:]
 
@@ -155,6 +172,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import time
 
 args = sys.argv[1:]
 worktree = Path(args[args.index("--cd") + 1])
@@ -163,6 +181,17 @@ prompt = sys.stdin.read()
 (worktree / "agent-change.txt").write_text("changed\n", encoding="utf-8")
 (worktree / "received-prompt.txt").write_text(prompt, encoding="utf-8")
 result.write_text("已修改 agent-change.txt，并完成验证。\n", encoding="utf-8")
+expected_parallel = int(os.environ.get("FAKE_CODEX_EXPECTED_PARALLEL", "0"))
+if expected_parallel:
+    parallel_dir = Path(os.environ["FAKE_CODEX_PARALLEL_DIR"])
+    parallel_dir.mkdir(parents=True, exist_ok=True)
+    (parallel_dir / worktree.name).write_text("started\n", encoding="utf-8")
+    deadline = time.monotonic() + 10
+    while len(list(parallel_dir.iterdir())) < expected_parallel:
+        if time.monotonic() >= deadline:
+            print("fake codex agents did not run concurrently", file=sys.stderr)
+            raise SystemExit(8)
+        time.sleep(0.05)
 print(json.dumps({"type": "thread.started", "thread_id": "thread-test"}))
 exit_code = int(os.environ.get("FAKE_CODEX_EXIT", "0"))
 if exit_code:
@@ -203,6 +232,8 @@ raise SystemExit(exit_code)
             "add",
             "--todoist-project",
             "terminal-tmux",
+            "--max-agents",
+            "1",
         ],
         environment=environment,
         cwd=repository,
@@ -212,7 +243,15 @@ raise SystemExit(exit_code)
     assert 'todoist_project_id = "project-1"' in config
     assert f'repository = "{repository.resolve()}"' in config
     assert 'base_branch = "main"' in config
+    assert "max_agents" not in config
     assert stat.S_IMODE((root / "projects.toml").stat().st_mode) == 0o600
+
+    # Configs written by the first dispatcher version remain readable, but the
+    # legacy cap is ignored and disappears the next time the config is saved.
+    (root / "projects.toml").write_text(
+        config.replace("enabled = true", "max_agents = 1\nenabled = true"),
+        encoding="utf-8",
+    )
 
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert {label["name"] for label in state["labels"]} >= {
@@ -227,22 +266,30 @@ raise SystemExit(exit_code)
         environment=environment,
     )
     assert "terminal-tmux\tproject-1" in listed.stdout
+    assert "max=" not in listed.stdout
 
     dry_run = run(
         [sys.executable, str(TODO_AGENT), "run", "--once", "--dry-run"],
         environment=environment,
     )
     assert "将执行：修复 bootstrap" in dry_run.stdout
+    assert "将执行：并行任务二" in dry_run.stdout
+    assert "将执行：并行任务三" in dry_run.stdout
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["tasks"][0]["labels"] == ["bug", "codex-ready"]
 
+    parallel_environment = environment.copy()
+    parallel_environment["FAKE_CODEX_EXPECTED_PARALLEL"] = "3"
+    parallel_environment["FAKE_CODEX_PARALLEL_DIR"] = str(root / "parallel")
     completed = run(
         [sys.executable, str(TODO_AGENT), "run", "--once"],
-        environment=environment,
+        environment=parallel_environment,
     )
     assert "等待审核：修复 bootstrap" in completed.stdout
     state = json.loads(state_path.read_text(encoding="utf-8"))
     assert state["tasks"][0]["labels"] == ["bug", "codex-review"]
+    assert all("codex-review" in task["labels"] for task in state["tasks"])
+    assert len(list((root / "parallel").iterdir())) == 3
     assert "已修改 agent-change.txt" in state["comments"][0]["content"]
     worktree = root / "worktrees" / "terminal-tmux" / "task-1"
     assert (worktree / "agent-change.txt").read_text(encoding="utf-8") == "changed\n"
