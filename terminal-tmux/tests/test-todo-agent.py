@@ -185,6 +185,9 @@ import sys
 import time
 
 args = sys.argv[1:]
+assert args[args.index("-a") + 1] == "never"
+assert args[args.index("-c") + 1] == "sandbox_workspace_write.network_access=true"
+assert args[args.index("--sandbox") + 1] == "workspace-write"
 worktree = Path(args[args.index("--cd") + 1])
 result = Path(args[args.index("--output-last-message") + 1])
 prompt = sys.stdin.read()
@@ -503,6 +506,63 @@ raise SystemExit(exit_code)
         assert wait_until(
             lambda: (control_dir / "task-live-2.started").exists(), 7
         ), "watcher did not start a newly-ready task while another task was running"
+
+        dynamic_repository = root / "dynamic-repository"
+        dynamic_repository.mkdir()
+        run(
+            ["git", "init", "-b", "main"],
+            environment=environment,
+            cwd=dynamic_repository,
+        )
+        run(
+            ["git", "config", "user.name", "Test User"],
+            environment=environment,
+            cwd=dynamic_repository,
+        )
+        run(
+            ["git", "config", "user.email", "test@example.com"],
+            environment=environment,
+            cwd=dynamic_repository,
+        )
+        (dynamic_repository / "README.md").write_text("dynamic\n", encoding="utf-8")
+        run(["git", "add", "README.md"], environment=environment, cwd=dynamic_repository)
+        run(
+            ["git", "commit", "-m", "initial"],
+            environment=environment,
+            cwd=dynamic_repository,
+        )
+
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["projects"].append({"id": "project-live-2", "name": "dynamic-project"})
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        registered_dynamic = run(
+            [
+                sys.executable,
+                str(TODO_AGENT),
+                "project",
+                "add",
+                "--todoist-project",
+                "dynamic-project",
+            ],
+            environment=environment,
+            cwd=dynamic_repository,
+        )
+        assert "已注册项目：dynamic-project" in registered_dynamic.stdout
+
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["tasks"].append(
+            {
+                "id": "task-live-project-2",
+                "projectId": "project-live-2",
+                "content": "监听期间注册的新项目任务",
+                "description": "无需重启 watcher 就必须领取",
+                "labels": ["codex-ready"],
+            }
+        )
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        assert wait_until(
+            lambda: (control_dir / "task-live-project-2.started").exists(), 7
+        ), "watcher did not reload projects registered after it started"
     finally:
         control_dir.mkdir(parents=True, exist_ok=True)
         (control_dir / "task-live-1.release").write_text("release\n", encoding="utf-8")
@@ -520,6 +580,11 @@ raise SystemExit(exit_code)
             watcher.kill()
             watcher.communicate()
 
+    removed_dynamic = run(
+        [sys.executable, str(TODO_AGENT), "project", "remove", "dynamic-project"],
+        environment=environment,
+    )
+    assert "已删除项目映射：dynamic-project" in removed_dynamic.stdout
     removed = run(
         [sys.executable, str(TODO_AGENT), "project", "remove", "terminal-tmux"],
         environment=environment,
