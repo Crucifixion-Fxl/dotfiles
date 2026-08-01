@@ -3,7 +3,7 @@
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
 git-delta、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
-Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
+Codex 状态通知、Todoist TUI 和 zsh 交互环境。
 
 ## 目录结构
 
@@ -24,7 +24,7 @@ Codex 状态通知、iCloud Reminders TUI 和 zsh 交互环境。
     │   ├── termscp-mac              # 在服务器/容器浏览并传输 Mac 文件
     │   ├── termscp-bridge-relay     # Docker bridge 到宿主机隧道的临时中继
     │   ├── termscp-key-authorizer   # Mac 侧受限 SFTP 公钥自动授权
-    │   └── todo                     # 基于 pyicloud 的 Reminders 交互式 TUI
+    │   └── todo                     # 基于官方 Todoist CLI 的交互式 TUI
     ├── tmux/
     │   ├── tmux.conf                # 本地与远端共用的 tmux 主配置
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
@@ -277,7 +277,7 @@ bootstrap 将仓库文件链接到程序实际读取的位置：
 | 连接并更新远程入口 | `bin/connect-remote-dev` | 保持单条 SSH 连接和原子替换 |
 | 容器访问 Mac SFTP | `bin/termscp-bridge-relay` + `bin/termscp-mac` | 中继只绑定所选 Docker 网关，并随 SSH 容器入口退出 |
 | 容器公钥自动授权 | `bin/termscp-key-authorizer` | 只接收令牌保护的公钥，并写入仅回环、仅 SFTP 的 Mac 授权 |
-| 服务器访问 iCloud Todo | `bin/todo` + `~/.venvs/pyicloud` | 服务器上的 pyicloud 直接访问 iCloud Web API；不经过 Mac 或 SSH 反向转发 |
+| 服务器访问 Todoist | `bin/todo` + 官方 `td` CLI | 服务器直接访问 Todoist API；不经过 Mac 或 SSH 反向转发 |
 | Ghostty 字体、shell integration | `ghostty/config.ghostty` | 默认窗口保持本地 zsh，远端入口不要写入 `command` |
 | Ghostty 远端启动 | `bin/ghostty-dev` | 在现有窗口创建 tab，并用方向键选择 `~/.ssh/config` Host |
 | 工具版本 | `versions.lock` | 升级 Release 时同时更新版本和各平台 SHA256 |
@@ -364,38 +364,40 @@ ssh -t HOST 'PATH="$HOME/.local/bin:$PATH" exec tmux new-session -A -s main'
 `ExitOnForwardFailure` 会在任一 SFTP 端口被占用或服务器禁用 TCP forwarding 时
 直接终止连接并显示错误。
 
-### 在服务器上使用 iCloud Todo TUI
+### 在服务器上使用 Todoist TUI
 
 在要运行 Todo 的 Linux 服务器中拉取本仓库并运行一次 bootstrap。bootstrap
-会创建 `~/.venvs/pyicloud`，安装锁定的 pyicloud 2.6.x 及其 CLI，并把 `icloud` 和
-`todo` 放入 `~/.local/bin`。安装后直接运行：
+会安装锁定版本的官方 `@doist/todoist-cli`，并把 `td` 和 `todo` 放入
+`~/.local/bin`。官方 CLI 要求 Node.js 24 或更高版本；Linux 系统版本过旧时，
+bootstrap 会安装经过 SHA256 校验的 Node.js 24 LTS 用户级运行时。安装后直接运行：
 
 ```bash
 todo
 ```
 
-服务器上第一次使用且没有有效会话时，`todo` 会先显示紫色可视化登录弹窗：依次输入
-Apple ID、隐藏显示的 Apple 账户密码，以及账户要求的 2FA 验证码。认证成功后自动进入
-任务界面。密码不会写入命令行参数或 dotfiles；登录会话和 cookie 持久保存在服务器的
-`~/.local/state/pyicloud`。只要会话仍然有效，之后运行 `todo` 会直接进入任务界面，
-不会再次询问账号或密码。
+服务器上第一次使用且没有有效凭据时，`todo` 会显示紫色可视化登录弹窗。到 Todoist
+“设置 → 集成 → 开发者”复制 API Token，并在隐藏输入框中粘贴。Token 先通过
+`td auth status --json` 验证，成功后以 `0600` 权限保存在
+`~/.local/state/todoist-cli/token`，不会出现在命令参数或 dotfiles 中；之后运行
+`todo` 会直接进入任务界面。若已经通过 `td auth login` 登录，或已设置
+`TODOIST_API_TOKEN`，TUI 会优先复用官方 CLI 的现有认证，不再弹窗。
 
 `todo` 只打开全屏 TUI，不提供日常 CRUD 子命令。左侧显示“今天、已计划、全部、
-已完成”和所有真实 iCloud 列表，中间显示当前列表的任务，宽终端还会显示右侧详情。
-任务严格保持 pyicloud 返回的 Reminders 原始顺序，搜索和刷新只过滤内容，不会再按
-到期时间或标题重新排列。TUI 首次启动读取完整快照，之后使用 `sync-cursor` 和
-`changes` 每 5 秒增量同步，并每小时重新读取一次完整快照。
+已完成”和所有真实 Todoist 项目，中间显示当前项目的任务，宽终端还会显示右侧详情。
+任务保持 Todoist CLI 返回的顺序，搜索和刷新只过滤内容，不会再按到期时间或标题重新
+排列。TUI 启动和手动刷新时读取项目、全部未完成任务，以及最近 89 天的已完成任务；
+运行期间每 30 秒自动刷新一次。
 所有面板、输入框、确认框和按钮都使用紫色 Unicode 圆角矩形边界。可以用鼠标点击
 列表、任务复选框和按钮，用滚轮滚动；也可以用方向键或 `j/k` 导航，`n` 新建、
-`e`/`Enter` 编辑、`Space` 完成或恢复、`d` 删除、`/` 搜索。新建任务时可以选择列表；
-pyicloud 2.6.x 的 `update` CLI 暂不提供移动列表参数，因此编辑已有任务时列表保持不变。
+`e`/`Enter` 编辑、`Space` 完成或恢复、`d` 删除、`/` 搜索。新建和编辑任务时都可以
+选择项目；编辑已有任务切换项目时，后端会调用官方 `td task move`。
 
-所有读取、创建、修改、完成和删除操作都由服务器上的 pyicloud 直接发往 iCloud，
-不依赖 Mac 在线，也不再使用 EventKit、Todo bridge 或 SSH Todo 反向端口。认证过期时，
-下一次运行 `todo` 会自动重新显示同一套可视化登录弹窗。
+所有读取、创建、修改、移动、完成、恢复和删除操作都由服务器上的官方 `td` CLI 直接
+发往 Todoist，不依赖 Mac 在线，也不使用 EventKit、Todo bridge 或 SSH Todo 反向端口。
+Token 失效时，下一次运行 `todo` 会自动重新显示同一套可视化登录弹窗。
 
-默认使用服务器上次认证的账户；需要明确切换账户时可运行
-`todo --username your-apple-id@example.com`，也可以设置 `ICLOUD_USERNAME`。
+需要改用单独的 Token 文件时，可以设置 `TODOIST_TOKEN_FILE`；需要覆盖 `td` 路径时，
+可以设置 `TODOIST_CLI`。
 
 ### 在 SSH 服务器中打开 Mac ↔ 服务器文件传输
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 
-"""Interactive iCloud Reminders TUI backed by the pyicloud CLI."""
+"""Interactive Todoist TUI backed by the official Todoist CLI."""
 
 from __future__ import annotations
 
@@ -13,7 +13,6 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import time
 import unicodedata
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -77,24 +76,24 @@ class TodoError(RuntimeError):
     pass
 
 
-def run_icloud_json(
+def run_td(
     executable: str,
     arguments: Sequence[str],
-    username: Optional[str] = None,
-    session_dir: Optional[Path] = None,
-) -> Any:
+    token: Optional[str] = None,
+    input_text: Optional[str] = None,
+) -> subprocess.CompletedProcess[str]:
     command = [executable, *arguments]
-    if username:
-        command.extend(("--username", username))
-    if session_dir:
-        command.extend(("--session-dir", str(session_dir)))
-    command.extend(("--format", "json"))
+    environment = os.environ.copy()
+    if token:
+        environment["TODOIST_API_TOKEN"] = token
     try:
         completed = subprocess.run(
             command,
+            input=input_text,
             capture_output=True,
             text=True,
             encoding="utf-8",
+            env=environment,
             timeout=30,
             check=False,
         )
@@ -102,104 +101,136 @@ def run_icloud_json(
         raise TodoError(str(error)) from error
     if completed.returncode != 0:
         detail = completed.stderr.strip() or completed.stdout.strip()
-        raise TodoError(detail or f"icloud exited with status {completed.returncode}")
+        try:
+            payload = json.loads(detail)
+            detail = str(payload.get("error", {}).get("message") or detail)
+        except (json.JSONDecodeError, AttributeError):
+            pass
+        raise TodoError(detail or f"td exited with status {completed.returncode}")
+    return completed
+
+
+def run_td_json(
+    executable: str,
+    arguments: Sequence[str],
+    token: Optional[str] = None,
+    input_text: Optional[str] = None,
+) -> Any:
+    completed = run_td(executable, arguments, token, input_text)
     try:
         return json.loads(completed.stdout)
     except json.JSONDecodeError as error:
-        raise TodoError("icloud 没有返回有效 JSON") from error
+        raise TodoError("Todoist CLI 没有返回有效 JSON") from error
 
 
-class PyiCloudClient:
-    def __init__(
-        self,
-        executable: str,
-        username: Optional[str] = None,
-        session_dir: Optional[Path] = None,
-    ):
+class TodoistClient:
+    def __init__(self, executable: str, token: Optional[str] = None):
         self.executable = executable
-        self.username = username
-        self.session_dir = session_dir
+        self.token = token
         self.task_lists: Dict[str, str] = {}
         self.lists: List[Dict[str, Any]] = []
         self.tasks: Dict[str, Dict[str, Any]] = {}
-        self.sync_cursor: Optional[str] = None
-        self.last_full_sync = 0.0
 
-    def _run(self, *arguments: str) -> Any:
-        return run_icloud_json(
-            self.executable,
-            ("reminders", *arguments),
-            self.username,
-            self.session_dir,
-        )
+    def _run(self, *arguments: str, input_text: Optional[str] = None) -> None:
+        run_td(self.executable, arguments, self.token, input_text)
+
+    def _run_json(self, *arguments: str, input_text: Optional[str] = None) -> Any:
+        return run_td_json(self.executable, arguments, self.token, input_text)
 
     @staticmethod
-    def _task(row: Dict[str, Any]) -> Dict[str, Any]:
+    def _priority_from_api(value: int) -> int:
+        return {4: 1, 3: 5, 2: 9, 1: 0}.get(value, 0)
+
+    @staticmethod
+    def _priority_for_cli(value: int) -> str:
+        return {1: "p1", 5: "p2", 9: "p3"}.get(value, "p4")
+
+    @staticmethod
+    def _due(row: Dict[str, Any]) -> Tuple[Optional[str], bool]:
+        due = row.get("due") or {}
+        if due.get("datetime"):
+            return str(due["datetime"]), False
+        if due.get("date"):
+            return str(due["date"]), True
+        return None, False
+
+    @classmethod
+    def _task(cls, row: Dict[str, Any], completed: bool = False) -> Dict[str, Any]:
+        due, all_day = cls._due(row)
         return {
-            "id": row["id"],
-            "list_id": row["list_id"],
-            "title": row.get("title", ""),
-            "notes": row.get("desc", ""),
-            "due": row.get("due_date"),
-            "all_day": row.get("all_day", False),
-            "priority": row.get("priority", 0),
-            "completed": row.get("completed", False),
+            "id": str(row["id"]),
+            "list_id": str(row["projectId"]),
+            "title": row.get("content", ""),
+            "notes": row.get("description", ""),
+            "due": due,
+            "all_day": all_day,
+            "priority": cls._priority_from_api(int(row.get("priority", 1))),
+            "completed": completed or bool(row.get("checked", False)),
         }
 
-    def _full_snapshot(self) -> None:
-        cursor = self._run("sync-cursor").get("sync_cursor")
-        list_rows = self._run("lists")
-        task_rows = self._run("list", "--include-completed", "--limit", "10000")
-        self.lists = [
-            {"id": row["id"], "name": row.get("title", "")} for row in list_rows
-        ]
-        tasks = [self._task(row) for row in task_rows if not row.get("deleted")]
-        self.tasks = {task["id"]: task for task in tasks}
-        self.task_lists = {task["id"]: task["list_id"] for task in tasks}
-        self.sync_cursor = cursor
-        self.last_full_sync = time.monotonic()
-
-    def _incremental_snapshot(self) -> None:
-        list_rows = self._run("lists")
-        next_cursor = self._run("sync-cursor").get("sync_cursor")
-        changes = self._run(
-            "changes", "--since", self.sync_cursor or "", "--limit", "10000"
-        )
-        self.lists = [
-            {"id": row["id"], "name": row.get("title", "")} for row in list_rows
-        ]
-        for change in changes:
-            reminder_id = change.get("reminder_id")
-            if not reminder_id:
-                continue
-            if change.get("type") == "deleted":
-                self.tasks.pop(reminder_id, None)
-                self.task_lists.pop(reminder_id, None)
-                continue
-            if not change.get("reminder"):
-                continue
-            task = self._task(change["reminder"])
-            self.tasks[reminder_id] = task
-            self.task_lists[reminder_id] = task["list_id"]
-        self.sync_cursor = next_cursor
+    @staticmethod
+    def _results(payload: Any) -> List[Dict[str, Any]]:
+        if not isinstance(payload, dict) or not isinstance(payload.get("results"), list):
+            raise TodoError("Todoist CLI 返回了意外的数据格式")
+        return payload["results"]
 
     def snapshot(self) -> Dict[str, Any]:
-        if not self.sync_cursor or time.monotonic() - self.last_full_sync >= 3600:
-            self._full_snapshot()
-        else:
-            self._incremental_snapshot()
-        return {"ok": True, "lists": self.lists, "tasks": list(self.tasks.values())}
+        project_rows = self._results(
+            self._run_json("project", "list", "--all", "--json", "--full")
+        )
+        active_rows = self._results(
+            self._run_json("task", "list", "--all", "--json", "--full")
+        )
+        today = dt.date.today()
+        completed_rows = self._results(
+            self._run_json(
+                "completed",
+                "list",
+                "--all",
+                "--since",
+                (today - dt.timedelta(days=89)).isoformat(),
+                "--until",
+                (today + dt.timedelta(days=1)).isoformat(),
+                "--json",
+                "--full",
+            )
+        )
+        self.lists = [
+            {"id": str(row["id"]), "name": row.get("name", "")}
+            for row in project_rows
+            if not row.get("isDeleted")
+        ]
+        active_tasks = [
+            self._task(row) for row in active_rows if not row.get("isDeleted")
+        ]
+        completed_tasks = [
+            self._task(row, completed=True)
+            for row in completed_rows
+            if not row.get("isDeleted")
+        ]
+        self.tasks = {task["id"]: task for task in active_tasks}
+        for task in completed_tasks:
+            self.tasks.setdefault(task["id"], task)
+        self.task_lists = {
+            task["id"]: task["list_id"] for task in self.tasks.values()
+        }
+        return {
+            "ok": True,
+            "lists": self.lists,
+            "tasks": list(self.tasks.values()),
+        }
 
     @staticmethod
     def _due_argument(value: str, all_day: bool) -> str:
         try:
+            if all_day:
+                result = value[:10]
+                dt.date.fromisoformat(result)
+                return result
             if len(value) == 10:
-                parsed = dt.datetime.combine(dt.date.fromisoformat(value), dt.time())
-            else:
-                parsed = dt.datetime.fromisoformat(value)
-            if parsed.tzinfo is None:
-                parsed = parsed.astimezone()
-            return parsed.isoformat()
+                raise ValueError
+            dt.datetime.fromisoformat(value)
+            return value
         except ValueError as error:
             expected = "YYYY-MM-DD" if all_day else "YYYY-MM-DD HH:MM"
             raise TodoError(f"日期格式应为 {expected}") from error
@@ -210,63 +241,84 @@ class PyiCloudClient:
             return self.snapshot()
         if action == "create":
             arguments = [
-                "create",
-                "--list-id",
-                payload["list_id"],
-                "--title",
+                "task",
+                "add",
                 payload["title"],
-                "--desc",
-                payload.get("notes", ""),
+                "--project",
+                f"id:{payload['list_id']}",
                 "--priority",
-                str(payload.get("priority", 0)),
-                "--all-day" if payload.get("all_day") else "--not-all-day",
+                self._priority_for_cli(payload.get("priority", 0)),
+                "--stdin",
+                "--json",
             ]
             if payload.get("due"):
-                arguments.extend((
-                    "--due-date",
-                    self._due_argument(payload["due"], payload.get("all_day", False)),
-                ))
-            task = self._task(self._run(*arguments))
+                arguments.extend(
+                    (
+                        "--due",
+                        self._due_argument(
+                            payload["due"], payload.get("all_day", False)
+                        ),
+                    )
+                )
+            task = self._task(
+                self._run_json(*arguments, input_text=payload.get("notes", ""))
+            )
             self.tasks[task["id"]] = task
             self.task_lists[task["id"]] = task["list_id"]
             return {"ok": True, "task": task}
         if action == "update":
             original_list = self.task_lists.get(payload["id"])
-            if original_list and payload.get("list_id") != original_list:
-                raise TodoError("pyicloud CLI 暂不支持把已有提醒移动到其他列表")
             arguments = [
+                "task",
                 "update",
-                payload["id"],
-                "--title",
+                f"id:{payload['id']}",
+                "--content",
                 payload["title"],
-                "--desc",
-                payload.get("notes", ""),
                 "--priority",
-                str(payload.get("priority", 0)),
-                "--all-day" if payload.get("all_day") else "--not-all-day",
+                self._priority_for_cli(payload.get("priority", 0)),
+                "--stdin",
+                "--json",
             ]
             if payload.get("due"):
-                arguments.extend((
-                    "--due-date",
-                    self._due_argument(payload["due"], payload.get("all_day", False)),
-                ))
+                arguments.extend(
+                    (
+                        "--due",
+                        self._due_argument(
+                            payload["due"], payload.get("all_day", False)
+                        ),
+                    )
+                )
             else:
-                arguments.append("--clear-due-date")
-            task = self._task(self._run(*arguments))
+                arguments.append("--no-due")
+            task = self._task(
+                self._run_json(*arguments, input_text=payload.get("notes", ""))
+            )
+            if original_list and payload.get("list_id") != original_list:
+                self._run(
+                    "task",
+                    "move",
+                    f"id:{payload['id']}",
+                    "--project",
+                    f"id:{payload['list_id']}",
+                    "--no-section",
+                    "--no-parent",
+                )
+                task["list_id"] = payload["list_id"]
             self.tasks[task["id"]] = task
             self.task_lists[task["id"]] = task["list_id"]
             return {"ok": True, "task": task}
         if action == "complete":
-            row = self._run(
-                "set-status", payload["id"],
-                "--completed" if payload["completed"] else "--not-completed",
+            self._run(
+                "task",
+                "complete" if payload["completed"] else "uncomplete",
+                f"id:{payload['id']}",
             )
-            task = self._task(row)
-            self.tasks[task["id"]] = task
-            self.task_lists[task["id"]] = task["list_id"]
+            task = self.tasks.get(payload["id"])
+            if task:
+                task["completed"] = bool(payload["completed"])
             return {"ok": True, "task": task}
         if action == "delete":
-            self._run("delete", payload["id"])
+            self._run("task", "delete", f"id:{payload['id']}", "--yes")
             self.tasks.pop(payload["id"], None)
             self.task_lists.pop(payload["id"], None)
             return {"ok": True}
@@ -368,7 +420,7 @@ class TodoApp:
         self.selected_view = 0
         self.selected_task = 0
         self.focus = 0
-        self.status = "正在连接 iCloud…"
+        self.status = "正在连接 Todoist…"
         self.status_kind = "normal"
         self.filter_text = ""
         self.last_refresh = 0.0
@@ -451,8 +503,8 @@ class TodoApp:
                 if needle in task.get("title", "").casefold()
                 or needle in task.get("notes", "").casefold()
             ]
-        # pyicloud returns reminders in their source order. Keep that order
-        # intact in every view; filtering must not introduce a second sort.
+        # Keep the order returned by Todoist in every view. Filtering must not
+        # introduce a second sort.
         return filtered
 
     def refresh(self, quiet: bool = False) -> None:
@@ -465,9 +517,9 @@ class TodoApp:
             self.selected_task = min(self.selected_task, max(0, len(current) - 1))
             self.last_refresh = time.monotonic()
             if not quiet:
-                self.set_status("iCloud 内容已刷新", "success")
+                self.set_status("Todoist 内容已刷新", "success")
         except TodoError as error:
-            self.set_status(f"iCloud 不可用：{error}", "error")
+            self.set_status(f"Todoist 不可用：{error}", "error")
 
     def set_status(self, message: str, kind: str = "normal") -> None:
         self.status = message
@@ -502,7 +554,7 @@ class TodoApp:
         self.hotspots = []
         height, width = self.screen.getmaxyx()
         if height < 15 or width < 64:
-            self.draw_box(0, 0, height, width, "iCloud Todo", True)
+            self.draw_box(0, 0, height, width, "Todoist", True)
             safe_addstr(
                 self.screen,
                 height // 2,
@@ -532,7 +584,7 @@ class TodoApp:
         self.screen.refresh()
 
     def render_lists(self, y: int, x: int, height: int, width: int) -> None:
-        self.draw_box(y, x, height, width, "iCloud 列表", self.focus == 0)
+        self.draw_box(y, x, height, width, "Todoist 项目", self.focus == 0)
         row = y + 2
         for index, (kind, identifier, title) in enumerate(self.views):
             if row >= y + height - 1:
@@ -707,7 +759,7 @@ class TodoApp:
     def run(self) -> None:
         self.refresh()
         while self.running:
-            if time.monotonic() - self.last_refresh > 5:
+            if time.monotonic() - self.last_refresh > 30:
                 self.refresh(quiet=True)
             self.render()
             try:
@@ -865,7 +917,7 @@ class TodoApp:
 
     def edit_task(self, task: Optional[Dict[str, Any]]) -> None:
         if not self.lists:
-            self.set_status("没有找到 iCloud 提醒事项列表", "error")
+            self.set_status("没有找到 Todoist 项目", "error")
             return
         original = task or {}
         data = {
@@ -877,9 +929,7 @@ class TodoApp:
             "list_id": original.get("list_id") or self.default_list_id(),
         }
         selected = 0
-        fields = ["title", "notes", "due", "all_day", "priority"]
-        if task is None:
-            fields.append("list_id")
+        fields = ["title", "notes", "due", "all_day", "priority", "list_id"]
         fields.extend(("save", "cancel"))
         while True:
             hotspots = self.render_editor(data, fields, selected, task is None)
@@ -1184,274 +1234,94 @@ class TodoApp:
             return
 
 
-def todo_session_dir() -> Path:
-    configured = os.environ.get("TODO_ICLOUD_SESSION_DIR")
+def todoist_token_path() -> Path:
+    configured = os.environ.get("TODOIST_TOKEN_FILE")
     if configured:
         return Path(configured).expanduser()
-    return Path.home() / ".local" / "state" / "pyicloud"
+    return Path.home() / ".local" / "state" / "todoist-cli" / "token"
 
 
-def ensure_pyicloud_runtime(executable: str) -> None:
-    venv_python = Path(executable).resolve().with_name("python")
-    venv_root = venv_python.parent.parent.resolve()
-    # A venv's bin/python is commonly a symlink to the system interpreter.
-    # Comparing the resolved executables therefore cannot tell whether Python
-    # has activated the venv and is using its site-packages. sys.prefix can.
-    if venv_python.is_file() and Path(sys.prefix).resolve() != venv_root:
-        os.execv(
-            str(venv_python),
-            [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]],
-        )
+def load_saved_token(path: Path) -> Optional[str]:
     try:
-        import pyicloud  # noqa: F401
+        token = path.read_text(encoding="utf-8").strip()
+        path.chmod(0o600)
+        return token or None
+    except FileNotFoundError:
+        return None
+    except OSError as error:
+        raise TodoError(f"无法读取 Todoist Token：{error}") from error
 
-        return
-    except ImportError:
-        raise TodoError(
-            "pyicloud Python 模块不可用，请重新运行 dotfiles bootstrap"
-        )
 
-
-def known_username(session_dir: Path) -> Optional[str]:
-    from pyicloud.cli.account_index import load_accounts
-
-    accounts = load_accounts(session_dir)
-    return next(iter(sorted(accounts)), None)
+def save_token(path: Path, token: str) -> None:
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        path.parent.chmod(0o700)
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            stream.write(f"{token}\n")
+        os.replace(temporary, path)
+        path.chmod(0o600)
+    except OSError as error:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise TodoError(f"无法保存 Todoist Token：{error}") from error
 
 
 def authenticated_account(
-    executable: str, username: Optional[str], session_dir: Path
-) -> Optional[str]:
-    payload = run_icloud_json(
-        executable,
-        ("auth", "status"),
-        username,
-        session_dir,
-    )
-    if not payload.get("authenticated"):
-        return None
-    if payload.get("account_name"):
-        return str(payload["account_name"])
-    accounts = payload.get("accounts", [])
-    if username:
-        matched = next(
-            (row for row in accounts if row.get("account_name") == username),
-            None,
-        )
-        return username if matched else None
-    if len(accounts) == 1:
-        return str(accounts[0].get("account_name") or "") or None
-    return None
-
-
-def remember_account(api: Any, session_dir: Path) -> None:
-    from pyicloud.cli.account_index import remember_account as save_account
-
-    save_account(
-        session_dir,
-        username=api.account_name,
-        session_path=api.session.session_path,
-        cookiejar_path=api.session.cookiejar_path,
-        china_mainland=api.is_china_mainland,
-        keyring_has=lambda _username: False,
-    )
-
-
-def complete_two_factor(app: TodoApp, api: Any) -> bool:
-    security_key_names = list(getattr(api, "security_key_names", []) or [])
-    fido2_devices = list(getattr(api, "fido2_devices", []) or [])
-    if security_key_names or fido2_devices:
-        raise TodoError("当前账户要求使用安全密钥，服务器 Todo 暂不支持该认证方式")
-
-    delivery_method = getattr(api, "two_factor_delivery_method", "unknown")
-    delivery_notice = getattr(api, "two_factor_delivery_notice", None)
-    if not delivery_notice:
-        if delivery_method == "trusted_device":
-            delivery_notice = "验证码已发送到受信任设备。"
-        elif delivery_method == "sms":
-            delivery_notice = "验证码已发送到受信任手机号。"
-        else:
-            delivery_notice = "验证码已发送到受信任设备或手机号。"
-
-    invalid_attempts = 0
-    while invalid_attempts < 3:
-        code = app.prompt_input(
-            "验证码",
-            "",
-            instruction=f"{delivery_notice} 输入后按 Enter；输入 R 重新发送",
-            title="登录 iCloud · 双重认证",
-        )
-        if code is None:
-            return False
-        code = code.strip()
-        if code.lower() == "r":
-            try:
-                sent = api.request_2fa_code()
-            except Exception as error:
-                app.show_notice(
-                    "重新发送失败", str(error), error=True, wait=True
-                )
-                continue
-            if sent:
-                delivery_notice = (
-                    getattr(api, "two_factor_delivery_notice", None)
-                    or "新的验证码已经发送。"
-                )
-                app.show_notice("双重认证", delivery_notice, wait=True)
-            else:
-                app.show_notice(
-                    "重新发送失败",
-                    "当前认证方式无法重新发送，请使用已经收到的验证码。",
-                    error=True,
-                    wait=True,
-                )
-            continue
-        if api.validate_2fa_code(code):
-            return True
-        invalid_attempts += 1
-        remaining = 3 - invalid_attempts
-        app.show_notice(
-            "验证码错误",
-            f"验证码无效，还可以重试 {remaining} 次。",
-            error=True,
-            wait=True,
-        )
-    raise TodoError("双重认证失败")
-
-
-def needs_two_factor_code(api: Any, requires_2sa: bool) -> bool:
-    # Some Apple responses omit dsInfo.hsaVersion while pyicloud still marks
-    # the freshly authenticated browser session as untrusted and sends a code.
-    # In that state requires_2fa is False, but trust_session must not run until
-    # the code challenge has been completed.
-    return bool(api.requires_2fa or (not requires_2sa and not api.is_trusted_session))
+    executable: str, token: Optional[str] = None
+) -> Dict[str, Any]:
+    payload = run_td_json(executable, ("auth", "status", "--json"), token)
+    if not isinstance(payload, dict) or not payload.get("email"):
+        raise TodoError("Todoist CLI 未返回有效的账户信息")
+    return payload
 
 
 def visual_login(
-    app: TodoApp,
-    initial_username: Optional[str],
-    session_dir: Path,
-) -> Optional[str]:
-    from pyicloud import PyiCloudService
-    from pyicloud.exceptions import PyiCloudFailedLoginException
-
-    username = initial_username or ""
+    app: TodoApp, executable: str, token_path: Path
+) -> Optional[Tuple[str, Dict[str, Any]]]:
     while True:
-        entered_username = app.prompt_input(
-            "Apple ID",
-            username,
-            instruction="输入 Apple ID 后按 Enter，Esc 退出",
-            title="登录 iCloud · Apple ID",
-        )
-        if entered_username is None:
-            return None
-        username = entered_username.strip()
-        if not username:
-            app.show_notice("登录 iCloud", "Apple ID 不能为空", error=True, wait=True)
-            continue
-
-        password = app.prompt_input(
-            "密码",
+        token = app.prompt_input(
+            "API Token",
             "",
             secret=True,
-            instruction="输入 Apple 账户密码后按 Enter，内容会隐藏",
-            title="登录 iCloud · 密码",
+            instruction=(
+                "在 Todoist 设置 → 集成 → 开发者中复制 API Token；"
+                "输入后按 Enter，内容会隐藏"
+            ),
+            title="登录 Todoist · API Token",
         )
-        if password is None:
+        if token is None:
             return None
-        if not password:
-            app.show_notice("登录 iCloud", "密码不能为空", error=True, wait=True)
+        token = token.strip()
+        if not token:
+            app.show_notice("登录 Todoist", "API Token 不能为空", error=True, wait=True)
             continue
-
-        app.show_notice("登录 iCloud", "正在验证 Apple ID 和密码…")
+        app.show_notice("登录 Todoist", "正在验证 API Token…")
         try:
-            api = PyiCloudService(
-                apple_id=username,
-                password=password,
-                cookie_directory=str(session_dir),
-            )
-        except PyiCloudFailedLoginException:
-            password = ""
-            app.show_notice(
-                "登录失败",
-                "Apple ID 或密码不正确，请重新输入。",
-                error=True,
-                wait=True,
-            )
-            continue
-        except Exception as error:
-            password = ""
+            account = authenticated_account(executable, token)
+            save_token(token_path, token)
+            app.show_notice("登录成功", f"已登录 {account['email']}")
+            return token, account
+        except TodoError as error:
+            token = ""
             app.show_notice("登录失败", str(error), error=True, wait=True)
-            continue
-        password = ""
-
-        try:
-            requires_2sa = bool(api.requires_2sa)
-            if needs_two_factor_code(api, requires_2sa):
-                if not complete_two_factor(app, api):
-                    return None
-            elif requires_2sa:
-                devices = list(api.trusted_devices or [])
-                if not devices:
-                    raise TodoError("账户要求两步验证，但没有可用的受信任设备")
-                selected = 0
-                if len(devices) > 1:
-                    selection = app.prompt_input(
-                        "设备编号",
-                        "0",
-                        instruction=(
-                            f"输入 0 到 {len(devices) - 1} 选择接收验证码的设备"
-                        ),
-                        title="登录 iCloud · 选择受信任设备",
-                    )
-                    if selection is None:
-                        return None
-                    try:
-                        selected = int(selection)
-                    except ValueError as error:
-                        raise TodoError("受信任设备编号无效") from error
-                    if selected < 0 or selected >= len(devices):
-                        raise TodoError("受信任设备编号无效")
-                device = devices[selected]
-                if not api.send_verification_code(device):
-                    raise TodoError("无法发送两步验证码")
-                code = app.prompt_input(
-                    "验证码",
-                    "",
-                    instruction="输入验证码后按 Enter",
-                    title="登录 iCloud · 两步验证",
-                )
-                if code is None:
-                    return None
-                if not api.validate_verification_code(device, code.strip()):
-                    raise TodoError("两步验证码无效")
-
-            if not api.is_trusted_session and not api.trust_session():
-                raise TodoError("iCloud 会话认证成功，但无法设为受信任会话")
-            remember_account(api, session_dir)
-            app.show_notice("登录成功", f"已登录 {api.account_name}")
-            return str(api.account_name)
-        except Exception as error:
-            app.show_notice("认证失败", str(error), error=True, wait=True)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Open the interactive iCloud Reminders TUI")
+    parser = argparse.ArgumentParser(description="Open the interactive Todoist TUI")
     parser.add_argument("--demo", action="store_true", help="use local demo data")
-    parser.add_argument(
-        "--username",
-        default=os.environ.get("ICLOUD_USERNAME"),
-        help="Apple ID username; optional when exactly one pyicloud session is active",
-    )
     return parser.parse_args()
 
 
-def find_icloud_cli() -> Optional[str]:
-    configured = os.environ.get("TODO_ICLOUD_CLI")
+def find_todoist_cli() -> Optional[str]:
+    configured = os.environ.get("TODOIST_CLI")
     candidates = [
         configured,
-        str(Path.home() / ".venvs" / "pyicloud" / "bin" / "icloud"),
-        shutil.which("icloud"),
+        str(Path.home() / ".local" / "bin" / "td"),
+        shutil.which("td"),
     ]
     return next(
         (
@@ -1466,25 +1336,27 @@ def find_icloud_cli() -> Optional[str]:
 def run_authenticated_todo(
     screen: "curses._CursesWindow",
     executable: str,
-    requested_username: Optional[str],
-    session_dir: Path,
+    token_path: Path,
 ) -> bool:
     app = TodoApp(screen, None)
-    username = requested_username or known_username(session_dir)
-    app.show_notice("iCloud Todo", "正在检查服务器上的 iCloud 登录状态…")
+    app.show_notice("Todoist", "正在检查服务器上的 Todoist 登录状态…")
+    token: Optional[str] = None
     try:
-        active_username = authenticated_account(executable, username, session_dir)
-    except TodoError as error:
-        app.show_notice("会话检查失败", str(error), error=True, wait=True)
-        return False
+        account = authenticated_account(executable)
+    except TodoError:
+        token = load_saved_token(token_path)
+        try:
+            account = authenticated_account(executable, token) if token else None
+        except TodoError:
+            account = None
+        if not account:
+            login = visual_login(app, executable, token_path)
+            if not login:
+                return False
+            token, account = login
 
-    if not active_username:
-        active_username = visual_login(app, username, session_dir)
-    if not active_username:
-        return False
-
-    app.client = PyiCloudClient(executable, active_username, session_dir)
-    app.status = f"已登录 {active_username}，正在读取提醒事项…"
+    app.client = TodoistClient(executable, token)
+    app.status = f"已登录 {account['email']}，正在读取任务…"
     app.run()
     return True
 
@@ -1497,23 +1369,17 @@ def main() -> int:
         curses.wrapper(lambda screen: TodoApp(screen, client).run())
         return 0
 
-    executable = find_icloud_cli()
+    executable = find_todoist_cli()
     if not executable:
-        print("todo：找不到 pyicloud 的 icloud CLI。")
-        print("请运行 dotfiles bootstrap，或设置 TODO_ICLOUD_CLI。")
-        return 1
-    try:
-        ensure_pyicloud_runtime(executable)
-    except TodoError as error:
-        print(f"todo：{error}")
+        print("todo：找不到官方 Todoist CLI（td）。")
+        print("请运行 dotfiles bootstrap，或设置 TODOIST_CLI。")
         return 1
 
     succeeded = curses.wrapper(
         lambda screen: run_authenticated_todo(
             screen,
             executable,
-            args.username,
-            todo_session_dir(),
+            todoist_token_path(),
         )
     )
     return 0 if succeeded else 1

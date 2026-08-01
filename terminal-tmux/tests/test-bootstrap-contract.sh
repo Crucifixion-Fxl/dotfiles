@@ -25,6 +25,7 @@ grep -q 'ffmpeg' "$BOOTSTRAP"
 grep -q 'poppler-utils' "$BOOTSTRAP"
 grep -q 'resvg' "$BOOTSTRAP"
 grep -q 'unzip' "$BOOTSTRAP"
+grep -q 'xz-utils' "$BOOTSTRAP"
 grep -q 'python3 python3-venv ripgrep' "$BOOTSTRAP"
 grep -q 'openssh-client' "$BOOTSTRAP"
 grep -q 'passwd' "$BOOTSTRAP"
@@ -48,7 +49,8 @@ grep -q '^install_termscp()' "$BOOTSTRAP"
 grep -q '^uninstall_druk()' "$BOOTSTRAP"
 grep -q '^install_fresh()' "$BOOTSTRAP"
 grep -q '^install_ghostty()' "$BOOTSTRAP"
-grep -q '^install_pyicloud()' "$BOOTSTRAP"
+grep -q '^install_node_for_todoist()' "$BOOTSTRAP"
+grep -q '^install_todoist_cli()' "$BOOTSTRAP"
 grep -q '^remove_legacy_todo_bridge()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
@@ -56,8 +58,9 @@ grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
 grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"' "$BOOTSTRAP"
 grep -Fq 'python3-venv' "$BOOTSTRAP"
-grep -Fq '"pyicloud[cli]==$PYICLOUD_VERSION"' "$BOOTSTRAP"
-grep -Eq '^PYICLOUD_VERSION=2\.6\.[0-9]+$' "$VERSIONS"
+grep -Fq '"@doist/todoist-cli@$TODOIST_CLI_VERSION"' "$BOOTSTRAP"
+grep -Eq '^TODOIST_CLI_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$VERSIONS"
+grep -Eq '^NODE_VERSION=24\.[0-9]+\.[0-9]+$' "$VERSIONS"
 python3 "$TODO_TUI" --help >/dev/null
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
@@ -423,8 +426,16 @@ ghostty_config_line=$(grep -n '^  install_ghostty_config$' "$BOOTSTRAP" | cut -d
 # Codex intentionally follows the latest official npm release instead of the
 # versions.lock policy used by the other tools.
 NPM_ARGS=
+TD_VERSION=
 npm() {
   NPM_ARGS="$*"
+  if [[ $1 == --version ]]; then
+    printf '%s\n' '11.0.0'
+    return 0
+  fi
+  if [[ $* == *'@doist/todoist-cli@'* ]]; then
+    TD_VERSION=$TODOIST_CLI_VERSION
+  fi
   if [[ $1 == uninstall ]]; then
     rm -rf "$HOME/.local/lib/node_modules/druk"
     rm -f "$HOME/.local/bin/druk"
@@ -433,6 +444,9 @@ npm() {
 codex() {
   printf '%s\n' 'codex-cli 999.0.0'
 }
+td() {
+  printf '%s\n' "${TD_VERSION:-not-installed}"
+}
 
 HOME=$TEST_HOME install_codex
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @openai/codex@latest" ]]
@@ -440,6 +454,10 @@ if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   printf '%s\n' 'Codex must track latest and must not be pinned in versions.lock' >&2
   exit 1
 fi
+
+HOME=$TEST_HOME install_todoist_cli
+[[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @doist/todoist-cli@$TODOIST_CLI_VERSION" ]]
+todoist_cli_is_locked_version
 
 # termscp follows the latest official universal installer on both macOS and
 # Debian/Ubuntu. The bootstrap passes --yes so containers/headless SSH hosts
