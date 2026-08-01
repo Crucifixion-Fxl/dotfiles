@@ -10,7 +10,7 @@ set -euo pipefail
 #
 # 可复现策略：
 #   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
-#   - pyicloud 安装在独立虚拟环境中，并由 versions.lock 锁定 2.6.x 版本。
+#   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 始终安装 npm 官方 latest；termscp 和 Fresh 使用各自官方通用
 #     安装脚本，不锁版本。
@@ -116,11 +116,21 @@ fresh_is_installed() {
     fresh --version 2>/dev/null | grep -Eq '^fresh [0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 }
 
-pyicloud_is_locked_version() {
-  local python="$HOME/.venvs/pyicloud/bin/python"
-  local icloud="$HOME/.venvs/pyicloud/bin/icloud"
-  [[ -x "$python" && -x "$icloud" ]] &&
-    [[ $("$python" -c 'import importlib.metadata; print(importlib.metadata.version("pyicloud"))' 2>/dev/null) == "$PYICLOUD_VERSION" ]]
+todoist_cli_is_locked_version() {
+  command -v td >/dev/null 2>&1 &&
+    [[ $(td --version 2>/dev/null) == "$TODOIST_CLI_VERSION" ]]
+}
+
+node_supports_todoist_cli() {
+  command -v node >/dev/null 2>&1 &&
+    node -e 'process.exit(Number(process.versions.node.split(".")[0]) < 24 ? 1 : 0)' 2>/dev/null
+}
+
+npm_supports_todoist_cli() {
+  local major
+  command -v npm >/dev/null 2>&1 || return 1
+  major=$(npm --version 2>/dev/null | cut -d. -f1)
+  [[ $major =~ ^[0-9]+$ && $major -ge 11 ]]
 }
 
 find_supported_python() {
@@ -178,7 +188,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip vim zsh
+      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip xz-utils vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -859,27 +869,69 @@ install_ghostty_config() {
   backup_and_link "$launcher" "$launcher_destination"
 }
 
-install_pyicloud() {
-  local python venv="$HOME/.venvs/pyicloud"
+node_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    linux/arm64)
+      ASSET="node-v${NODE_VERSION}-linux-arm64.tar.xz"
+      ASSET_SHA256=$NODE_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="node-v${NODE_VERSION}-linux-x64.tar.xz"
+      ASSET_SHA256=$NODE_SHA256_LINUX_X86_64
+      ;;
+    *)
+      fail "Node.js fallback is not available for $PLATFORM_OS/$PLATFORM_ARCH"
+      ;;
+  esac
+}
 
-  python=$(find_supported_python) || fail "pyicloud requires Python 3.10 or newer"
-  if [[ ! -x "$venv/bin/python" ]]; then
-    log "Creating pyicloud virtual environment"
-    mkdir -p "$HOME/.venvs"
-    "$python" -m venv "$venv"
+install_node_for_todoist() {
+  node_supports_todoist_cli && return 0
+  [[ "$PLATFORM_OS" == linux ]] || \
+    fail "Todoist CLI requires Node.js 24 or newer; update Homebrew node and rerun bootstrap"
+
+  local work archive source_dir target binary
+  node_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  target="$HOME/.local/share/node-v$NODE_VERSION"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing Node.js $NODE_VERSION for Todoist CLI"
+  download "https://nodejs.org/dist/v$NODE_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xJf "$archive" -C "$work"
+  source_dir="$work/${ASSET%.tar.xz}"
+  mkdir -p "$target"
+  cp -R "$source_dir/." "$target/"
+  for binary in node npm npx corepack; do
+    [[ -e "$target/bin/$binary" ]] && \
+      backup_and_link "$target/bin/$binary" "$HOME/.local/bin/$binary"
+  done
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  node_supports_todoist_cli || fail "Node.js $NODE_VERSION installation verification failed"
+}
+
+install_todoist_cli() {
+  node_supports_todoist_cli || fail "Todoist CLI requires Node.js 24 or newer"
+  npm_supports_todoist_cli || fail "Todoist CLI requires npm 11 or newer"
+  if ! todoist_cli_is_locked_version; then
+    log "Installing official Todoist CLI $TODOIST_CLI_VERSION"
+    npm install --global --prefix "$HOME/.local" \
+      "@doist/todoist-cli@$TODOIST_CLI_VERSION"
+    hash -r
   fi
-  "$venv/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' || \
-    fail "$venv was created with Python older than 3.10; recreate it and rerun bootstrap"
-  if ! pyicloud_is_locked_version; then
-    log "Installing pyicloud $PYICLOUD_VERSION with CLI support"
-    "$venv/bin/python" -m pip install --upgrade "pyicloud[cli]==$PYICLOUD_VERSION"
-  fi
-  backup_and_link "$venv/bin/icloud" "$HOME/.local/bin/icloud"
+  todoist_cli_is_locked_version || \
+    fail "Todoist CLI $TODOIST_CLI_VERSION installation verification failed"
 }
 
 remove_legacy_todo_bridge() {
   local bridge="$HOME/.local/bin/todo-bridge"
   local backend="$HOME/.local/libexec/todo-reminders"
+  local icloud="$HOME/.local/bin/icloud"
 
   if [[ -L "$bridge" && $(readlink "$bridge") == "$DOTFILES_DIR/bin/todo-bridge" ]]; then
     log "Removing obsolete Todo bridge link"
@@ -888,6 +940,10 @@ remove_legacy_todo_bridge() {
   if [[ -f "$backend" ]]; then
     log "Removing obsolete Todo EventKit backend"
     rm -f "$backend"
+  fi
+  if [[ -L "$icloud" && $(readlink "$icloud") == "$HOME/.venvs/pyicloud/bin/icloud" ]]; then
+    log "Removing obsolete managed pyicloud CLI link"
+    rm -f "$icloud"
   fi
 }
 
@@ -1055,10 +1111,9 @@ validate() {
   codex_is_installed || fail "Codex CLI is required"
   termscp_is_installed || fail "termscp is required"
   fresh_is_installed || fail "Fresh is required"
-  pyicloud_is_locked_version || fail "expected pyicloud $PYICLOUD_VERSION in ~/.venvs/pyicloud"
-  [[ -L "$HOME/.local/bin/icloud" && \
-    $(readlink "$HOME/.local/bin/icloud") == "$HOME/.venvs/pyicloud/bin/icloud" ]] || \
-    fail "pyicloud CLI link is missing"
+  node_supports_todoist_cli || fail "Todoist CLI requires Node.js 24 or newer"
+  npm_supports_todoist_cli || fail "Todoist CLI requires npm 11 or newer"
+  todoist_cli_is_locked_version || fail "expected Todoist CLI $TODOIST_CLI_VERSION"
   [[ ! -e "$HOME/.local/libexec/todo-reminders" ]] || \
     fail "obsolete Todo EventKit backend is still installed"
   [[ ! -e "$HOME/.local/bin/todo-bridge" && ! -L "$HOME/.local/bin/todo-bridge" ]] || \
@@ -1222,9 +1277,10 @@ main() {
   install_glow
   install_yazi
   install_pre_commit
+  install_node_for_todoist
   install_codex
   install_termscp
-  install_pyicloud
+  install_todoist_cli
   remove_legacy_todo_bridge
   uninstall_druk
   install_fresh
