@@ -1257,6 +1257,68 @@ def remember_account(api: Any, session_dir: Path) -> None:
     )
 
 
+def complete_two_factor(app: TodoApp, api: Any) -> bool:
+    security_key_names = list(getattr(api, "security_key_names", []) or [])
+    fido2_devices = list(getattr(api, "fido2_devices", []) or [])
+    if security_key_names or fido2_devices:
+        raise TodoError("当前账户要求使用安全密钥，服务器 Todo 暂不支持该认证方式")
+
+    delivery_method = getattr(api, "two_factor_delivery_method", "unknown")
+    delivery_notice = getattr(api, "two_factor_delivery_notice", None)
+    if not delivery_notice:
+        if delivery_method == "trusted_device":
+            delivery_notice = "验证码已发送到受信任设备。"
+        elif delivery_method == "sms":
+            delivery_notice = "验证码已发送到受信任手机号。"
+        else:
+            delivery_notice = "验证码已发送到受信任设备或手机号。"
+
+    invalid_attempts = 0
+    while invalid_attempts < 3:
+        code = app.prompt_input(
+            "验证码",
+            "",
+            instruction=f"{delivery_notice} 输入后按 Enter；输入 R 重新发送",
+            title="登录 iCloud · 双重认证",
+        )
+        if code is None:
+            return False
+        code = code.strip()
+        if code.lower() == "r":
+            try:
+                sent = api.request_2fa_code()
+            except Exception as error:
+                app.show_notice(
+                    "重新发送失败", str(error), error=True, wait=True
+                )
+                continue
+            if sent:
+                delivery_notice = (
+                    getattr(api, "two_factor_delivery_notice", None)
+                    or "新的验证码已经发送。"
+                )
+                app.show_notice("双重认证", delivery_notice, wait=True)
+            else:
+                app.show_notice(
+                    "重新发送失败",
+                    "当前认证方式无法重新发送，请使用已经收到的验证码。",
+                    error=True,
+                    wait=True,
+                )
+            continue
+        if api.validate_2fa_code(code):
+            return True
+        invalid_attempts += 1
+        remaining = 3 - invalid_attempts
+        app.show_notice(
+            "验证码错误",
+            f"验证码无效，还可以重试 {remaining} 次。",
+            error=True,
+            wait=True,
+        )
+    raise TodoError("双重认证失败")
+
+
 def visual_login(
     app: TodoApp,
     initial_username: Optional[str],
@@ -1317,41 +1379,8 @@ def visual_login(
 
         try:
             if api.requires_2fa:
-                fido2_devices = list(getattr(api, "fido2_devices", []) or [])
-                if fido2_devices:
-                    raise TodoError(
-                        "当前账户要求使用安全密钥，服务器 Todo 暂不支持该认证方式"
-                    )
-                if not api.request_2fa_code():
-                    raise TodoError("无法向受信任设备或手机号发送验证码")
-                notice = getattr(api, "two_factor_delivery_notice", None)
-                app.show_notice(
-                    "双重认证",
-                    notice or "验证码已发送到受信任设备或手机号。",
-                    wait=True,
-                )
-                verified = False
-                for attempt in range(3):
-                    code = app.prompt_input(
-                        "验证码",
-                        "",
-                        instruction="输入验证码后按 Enter",
-                        title="登录 iCloud · 双重认证",
-                    )
-                    if code is None:
-                        return None
-                    if api.validate_2fa_code(code.strip()):
-                        verified = True
-                        break
-                    remaining = 2 - attempt
-                    app.show_notice(
-                        "验证码错误",
-                        f"验证码无效，还可以重试 {remaining} 次。",
-                        error=True,
-                        wait=True,
-                    )
-                if not verified:
-                    raise TodoError("双重认证失败")
+                if not complete_two_factor(app, api):
+                    return None
             elif api.requires_2sa:
                 devices = list(api.trusted_devices or [])
                 if not devices:
