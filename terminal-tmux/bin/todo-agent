@@ -1010,6 +1010,96 @@ def cleanup_completed_runs(
     return failures
 
 
+ClaimedTask = Tuple[Project, Dict[str, Any], str, Path, Path]
+ActiveBatch = Tuple[
+    concurrent.futures.ThreadPoolExecutor,
+    List[concurrent.futures.Future[bool]],
+]
+
+
+def collect_ready_tasks(
+    projects: Sequence[Project],
+    todoist: Todoist,
+    store: RunStore,
+    git: str,
+    *,
+    dry_run: bool,
+) -> Tuple[int, int, List[ClaimedTask]]:
+    found = 0
+    failures = 0
+    claimed: List[ClaimedTask] = []
+    for project in projects:
+        repository = Path(project.repository)
+        if not repository.is_dir():
+            print(f"[{project.name}] 仓库不存在：{repository}", file=sys.stderr)
+            failures += 1
+            continue
+        verify_base_branch(git, repository, project.base_branch)
+        tasks = todoist.ready_tasks(project.todoist_project_id)
+        if not tasks:
+            print(f"[{project.name}] 没有 codex-ready 任务")
+            continue
+        found += len(tasks)
+        if dry_run:
+            for task in tasks:
+                print(f"[{project.name}] 将执行：{task.get('content', task['id'])}")
+            continue
+
+        for task in tasks:
+            task_id = str(task["id"])
+            branch, worktree, run_dir = branch_and_paths(store, project, task_id)
+            store.begin(project, task_id, branch, worktree, run_dir)
+            try:
+                todoist.transition(task_id, "codex-running")
+            except AgentError as error:
+                store.finish(task_id, "failed", str(error))
+                print(f"[{project.name}] 无法领取任务 {task_id}：{error}", file=sys.stderr)
+                failures += 1
+                continue
+            claimed.append((project, task, branch, worktree, run_dir))
+    return found, failures, claimed
+
+
+def submit_claimed_tasks(
+    claimed: Sequence[ClaimedTask],
+    todoist: Todoist,
+    store: RunStore,
+    git: str,
+    codex: str,
+    timeout_minutes: int,
+) -> Optional[ActiveBatch]:
+    if not claimed:
+        return None
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=len(claimed))
+    futures = [
+        executor.submit(
+            execute_task,
+            todoist,
+            store,
+            git,
+            codex,
+            project,
+            task,
+            branch,
+            worktree,
+            run_dir,
+            timeout_minutes,
+        )
+        for project, task, branch, worktree, run_dir in claimed
+    ]
+    return executor, futures
+
+
+def wait_for_batch(batch: Optional[ActiveBatch]) -> int:
+    if batch is None:
+        return 0
+    executor, futures = batch
+    try:
+        return sum(1 for future in futures if not future.result())
+    finally:
+        executor.shutdown(wait=True)
+
+
 def run_once(args: argparse.Namespace) -> int:
     projects = selected_projects(load_projects(), args.project)
     if not projects:
@@ -1022,10 +1112,9 @@ def run_once(args: argparse.Namespace) -> int:
     root = state_dir()
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     root.chmod(0o700)
-    lock_path = root / "dispatcher.lock"
     store = RunStore(root / "state.db")
 
-    with lock_path.open("a+", encoding="utf-8") as lock:
+    with (root / "dispatcher.lock").open("a+", encoding="utf-8") as lock:
         try:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as error:
@@ -1035,84 +1124,76 @@ def run_once(args: argparse.Namespace) -> int:
         if not args.dry_run:
             failures += cleanup_completed_runs(todoist, store, projects, git)
             recover_interrupted_runs(todoist, store)
+        found, scan_failures, claimed = collect_ready_tasks(
+            projects, todoist, store, git, dry_run=args.dry_run
+        )
+        failures += scan_failures
+        batch = submit_claimed_tasks(
+            claimed, todoist, store, git, codex, args.timeout_minutes
+        )
+        failures += wait_for_batch(batch)
 
-        found = 0
-        for project in projects:
-            repository = Path(project.repository)
-            if not repository.is_dir():
-                print(f"[{project.name}] 仓库不存在：{repository}", file=sys.stderr)
-                failures += 1
-                continue
-            verify_base_branch(git, repository, project.base_branch)
-            tasks = todoist.ready_tasks(project.todoist_project_id)
-            if not tasks:
-                print(f"[{project.name}] 没有 codex-ready 任务")
-                continue
-            found += len(tasks)
-            if args.dry_run:
-                for task in tasks:
-                    print(f"[{project.name}] 将执行：{task.get('content', task['id'])}")
-                continue
-
-            claimed: List[Tuple[Dict[str, Any], str, Path, Path]] = []
-            for task in tasks:
-                task_id = str(task["id"])
-                branch, worktree, run_dir = branch_and_paths(store, project, task_id)
-                store.begin(project, task_id, branch, worktree, run_dir)
-                try:
-                    todoist.transition(task_id, "codex-running")
-                except AgentError as error:
-                    store.finish(task_id, "failed", str(error))
-                    print(f"[{project.name}] 无法领取任务 {task_id}：{error}", file=sys.stderr)
-                    failures += 1
-                    continue
-                claimed.append((task, branch, worktree, run_dir))
-
-            if claimed:
-                # Every ready task gets its own worker. There is deliberately no
-                # per-project concurrency cap; the Todoist ready set is the
-                # complete batch for this scan.
-                with concurrent.futures.ThreadPoolExecutor(
-                    max_workers=len(claimed)
-                ) as executor:
-                    futures = [
-                        executor.submit(
-                            execute_task,
-                            todoist,
-                            store,
-                            git,
-                            codex,
-                            project,
-                            task,
-                            branch,
-                            worktree,
-                            run_dir,
-                            args.timeout_minutes,
-                        )
-                        for task, branch, worktree, run_dir in claimed
-                    ]
-                    failures += sum(1 for future in futures if not future.result())
-
-        if found == 0:
-            return 0
-        return 1 if failures else 0
+    if found == 0:
+        return 0
+    return 1 if failures else 0
 
 
 def command_watch(args: argparse.Namespace) -> int:
+    projects = selected_projects(load_projects(), args.project)
+    if not projects:
+        raise AgentError("没有启用的项目；请先运行 todo-agent project add")
+    todoist = Todoist(find_executable("TODOIST_CLI", "td"))
+    todoist.authenticate()
+    git = find_executable("GIT_CLI", "git")
+    codex = find_executable("CODEX_CLI", "codex")
+    root = state_dir()
+    root.mkdir(mode=0o700, parents=True, exist_ok=True)
+    root.chmod(0o700)
+    store = RunStore(root / "state.db")
+    active_batches: List[ActiveBatch] = []
+
     print(f"todo-agent 已启动，每 {args.interval} 秒检查一次", flush=True)
-    while True:
-        run_args = argparse.Namespace(
-            project=args.project,
-            dry_run=False,
-            timeout_minutes=args.timeout_minutes,
-        )
+    with (root / "dispatcher.lock").open("a+", encoding="utf-8") as lock:
         try:
-            run_once(run_args)
-        except AgentError as error:
-            print(f"todo-agent：{error}", file=sys.stderr, flush=True)
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            raise AgentError("另一个 todo-agent 正在运行") from error
+
+        cleanup_completed_runs(todoist, store, projects, git)
+        recover_interrupted_runs(todoist, store)
         try:
-            time.sleep(args.interval)
+            while True:
+                try:
+                    cleanup_completed_runs(todoist, store, projects, git)
+                    _, _, claimed = collect_ready_tasks(
+                        projects, todoist, store, git, dry_run=False
+                    )
+                    batch = submit_claimed_tasks(
+                        claimed, todoist, store, git, codex, args.timeout_minutes
+                    )
+                    if batch is not None:
+                        active_batches.append(batch)
+                except AgentError as error:
+                    print(f"todo-agent：{error}", file=sys.stderr, flush=True)
+
+                remaining: List[ActiveBatch] = []
+                for active in active_batches:
+                    executor, futures = active
+                    if all(future.done() for future in futures):
+                        for future in futures:
+                            try:
+                                future.result()
+                            except Exception as error:
+                                print(f"todo-agent：后台任务异常：{error}", file=sys.stderr)
+                        executor.shutdown(wait=False)
+                    else:
+                        remaining.append(active)
+                active_batches = remaining
+                time.sleep(args.interval)
         except KeyboardInterrupt:
+            print("todo-agent 正在等待运行中的 Agent 结束", flush=True)
+            for batch in active_batches:
+                wait_for_batch(batch)
             print("todo-agent 已停止")
             return 0
 
