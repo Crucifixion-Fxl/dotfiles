@@ -10,6 +10,7 @@ set -euo pipefail
 #
 # 可复现策略：
 #   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - pyicloud 安装在独立虚拟环境中，并由 versions.lock 锁定 2.6.x 版本。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 始终安装 npm 官方 latest；termscp 和 Fresh 使用各自官方通用
 #     安装脚本，不锁版本。
@@ -115,6 +116,25 @@ fresh_is_installed() {
     fresh --version 2>/dev/null | grep -Eq '^fresh [0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 }
 
+pyicloud_is_locked_version() {
+  local python="$HOME/.venvs/pyicloud/bin/python"
+  local icloud="$HOME/.venvs/pyicloud/bin/icloud"
+  [[ -x "$python" && -x "$icloud" ]] &&
+    [[ $("$python" -c 'import importlib.metadata; print(importlib.metadata.version("pyicloud"))' 2>/dev/null) == "$PYICLOUD_VERSION" ]]
+}
+
+find_supported_python() {
+  local candidate
+  for candidate in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+      "$candidate" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' 2>/dev/null; then
+      command -v "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
 druk_is_absent() {
   ! command -v druk >/dev/null 2>&1 &&
     [[ ! -e "$HOME/.druk/bin/druk" ]] &&
@@ -158,7 +178,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full passwd pkg-config poppler-utils python3 ripgrep tar unzip vim zsh
+      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
@@ -839,37 +859,36 @@ install_ghostty_config() {
   backup_and_link "$launcher" "$launcher_destination"
 }
 
-install_todo_reminders_backend() {
-  [[ "$PLATFORM_OS" == darwin ]] || return 0
+install_pyicloud() {
+  local python venv="$HOME/.venvs/pyicloud"
 
-  local source info_plist destination work
-  source="$DOTFILES_DIR/todo/TodoReminders.swift"
-  info_plist="$DOTFILES_DIR/todo/Info.plist"
-  destination="$HOME/.local/libexec/todo-reminders"
-  [[ -r "$source" ]] || fail "Todo EventKit source is missing: $source"
-  [[ -r "$info_plist" ]] || fail "Todo EventKit Info.plist is missing: $info_plist"
-  command -v swiftc >/dev/null 2>&1 || \
-    fail "Swift compiler is required for the macOS Todo bridge"
+  python=$(find_supported_python) || fail "pyicloud requires Python 3.10 or newer"
+  if [[ ! -x "$venv/bin/python" ]]; then
+    log "Creating pyicloud virtual environment"
+    mkdir -p "$HOME/.venvs"
+    "$python" -m venv "$venv"
+  fi
+  "$venv/bin/python" -c 'import sys; raise SystemExit(sys.version_info < (3, 10))' || \
+    fail "$venv was created with Python older than 3.10; recreate it and rerun bootstrap"
+  if ! pyicloud_is_locked_version; then
+    log "Installing pyicloud $PYICLOUD_VERSION with CLI support"
+    "$venv/bin/python" -m pip install --upgrade "pyicloud[cli]==$PYICLOUD_VERSION"
+  fi
+  backup_and_link "$venv/bin/icloud" "$HOME/.local/bin/icloud"
+}
 
-  work=$(mktemp -d)
-  log "Building the macOS iCloud Todo EventKit backend"
-  SWIFT_MODULECACHE_PATH="$work/swift-module-cache" \
-    CLANG_MODULE_CACHE_PATH="$work/clang-module-cache" \
-    swiftc \
-      -parse-as-library \
-      -framework EventKit \
-      -Xlinker -sectcreate \
-      -Xlinker __TEXT \
-      -Xlinker __info_plist \
-      -Xlinker "$info_plist" \
-      "$source" \
-      -o "$work/todo-reminders" || {
-        rm -rf "$work"
-        fail "failed to build the macOS Todo EventKit backend"
-      }
-  mkdir -p "$(dirname "$destination")"
-  install -m 0755 "$work/todo-reminders" "$destination"
-  rm -rf "$work"
+remove_legacy_todo_bridge() {
+  local bridge="$HOME/.local/bin/todo-bridge"
+  local backend="$HOME/.local/libexec/todo-reminders"
+
+  if [[ -L "$bridge" && $(readlink "$bridge") == "$DOTFILES_DIR/bin/todo-bridge" ]]; then
+    log "Removing obsolete Todo bridge link"
+    rm -f "$bridge"
+  fi
+  if [[ -f "$backend" ]]; then
+    log "Removing obsolete Todo EventKit backend"
+    rm -f "$backend"
+  fi
 }
 
 install_links() {
@@ -885,7 +904,6 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/termscp-bridge-relay" "$HOME/.local/bin/termscp-bridge-relay"
   backup_and_link "$DOTFILES_DIR/bin/termscp-key-authorizer" "$HOME/.local/bin/termscp-key-authorizer"
   backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"
-  backup_and_link "$DOTFILES_DIR/bin/todo-bridge" "$HOME/.local/bin/todo-bridge"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
@@ -1037,6 +1055,14 @@ validate() {
   codex_is_installed || fail "Codex CLI is required"
   termscp_is_installed || fail "termscp is required"
   fresh_is_installed || fail "Fresh is required"
+  pyicloud_is_locked_version || fail "expected pyicloud $PYICLOUD_VERSION in ~/.venvs/pyicloud"
+  [[ -L "$HOME/.local/bin/icloud" && \
+    $(readlink "$HOME/.local/bin/icloud") == "$HOME/.venvs/pyicloud/bin/icloud" ]] || \
+    fail "pyicloud CLI link is missing"
+  [[ ! -e "$HOME/.local/libexec/todo-reminders" ]] || \
+    fail "obsolete Todo EventKit backend is still installed"
+  [[ ! -e "$HOME/.local/bin/todo-bridge" && ! -L "$HOME/.local/bin/todo-bridge" ]] || \
+    fail "obsolete Todo bridge launcher is still installed"
   druk_is_absent || fail "Druk must be uninstalled after migration to Fresh"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
@@ -1061,11 +1087,8 @@ validate() {
   python3 "$DOTFILES_DIR/bin/termscp-bridge-relay" --help >/dev/null
   python3 "$DOTFILES_DIR/bin/termscp-key-authorizer" --help >/dev/null
   python3 "$DOTFILES_DIR/bin/todo" --help >/dev/null
-  python3 "$DOTFILES_DIR/bin/todo-bridge" --help >/dev/null
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' \
     "$DOTFILES_DIR/bin/todo"
-  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' \
-    "$DOTFILES_DIR/bin/todo-bridge"
   bash -n "$DOTFILES_DIR/bin/ghostty-dev"
   bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
@@ -1077,7 +1100,6 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
-  bash "$DOTFILES_DIR/tests/test-todo-bridge.sh"
   python3 "$DOTFILES_DIR/tests/test-todo-tui.py"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
@@ -1113,10 +1135,6 @@ validate() {
   grep -Fq 'yazi-rs/plugins:piper (' <<< "$yazi_package_list" || fail "piper.yazi is not managed by ya pkg"
 
   if [[ "$PLATFORM_OS" == darwin ]]; then
-    [[ -x "$HOME/.local/libexec/todo-reminders" ]] || \
-      fail "macOS Todo EventKit backend is missing"
-    plutil -lint "$DOTFILES_DIR/todo/Info.plist" >/dev/null || \
-      fail "invalid Todo EventKit Info.plist"
     iterm2_profile="$DOTFILES_DIR/iterm2/dev.json"
     iterm2_destination="$HOME/Library/Application Support/iTerm2/DynamicProfiles/dev.json"
     plutil -convert xml1 -o /dev/null "$iterm2_profile" || fail "invalid iTerm2 dynamic profile"
@@ -1206,6 +1224,8 @@ main() {
   install_pre_commit
   install_codex
   install_termscp
+  install_pyicloud
+  remove_legacy_todo_bridge
   uninstall_druk
   install_fresh
   install_oh_my_zsh
@@ -1213,7 +1233,6 @@ main() {
   install_plugin tmux-resurrect https://github.com/tmux-plugins/tmux-resurrect.git "$RESURRECT_COMMIT"
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
 
-  install_todo_reminders_backend
   install_links
   install_yazi_packages
   seed_zoxide_history
