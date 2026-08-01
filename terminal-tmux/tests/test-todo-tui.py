@@ -18,6 +18,7 @@ DemoClient = module["DemoClient"]
 PyiCloudClient = module["PyiCloudClient"]
 TodoApp = module["TodoApp"]
 authenticated_account = module["authenticated_account"]
+complete_two_factor = module["complete_two_factor"]
 ensure_pyicloud_runtime = module["ensure_pyicloud_runtime"]
 
 assert display_width("abc") == 3
@@ -197,6 +198,57 @@ try:
     ) is None
 finally:
     auth_globals["run_icloud_json"] = original_runner
+
+
+class FakeLoginApp:
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.prompts = []
+        self.notices = []
+
+    def prompt_input(self, *args, **kwargs):
+        self.prompts.append((args, kwargs))
+        return next(self.responses)
+
+    def show_notice(self, *args, **kwargs):
+        self.notices.append((args, kwargs))
+
+
+class FakeTwoFactorAPI:
+    security_key_names = []
+    fido2_devices = []
+    two_factor_delivery_method = "trusted_device"
+    two_factor_delivery_notice = None
+
+    def __init__(self, valid_code="123456"):
+        self.valid_code = valid_code
+        self.request_count = 0
+        self.validated_codes = []
+
+    def request_2fa_code(self):
+        self.request_count += 1
+        return True
+
+    def validate_2fa_code(self, code):
+        self.validated_codes.append(code)
+        return code == self.valid_code
+
+
+# PyiCloudService already sends the initial code while authenticating the
+# password. The TUI must prompt for that code without sending a second request.
+login_app = FakeLoginApp(["123456"])
+two_factor_api = FakeTwoFactorAPI()
+assert complete_two_factor(login_app, two_factor_api) is True
+assert two_factor_api.request_count == 0
+assert two_factor_api.validated_codes == ["123456"]
+assert "验证码已发送到受信任设备" in login_app.prompts[0][1]["instruction"]
+
+# A resend happens only when the user explicitly enters R.
+login_app = FakeLoginApp(["R", "654321"])
+two_factor_api = FakeTwoFactorAPI(valid_code="654321")
+assert complete_two_factor(login_app, two_factor_api) is True
+assert two_factor_api.request_count == 1
+assert two_factor_api.validated_codes == ["654321"]
 
 assert TodoApp.SMART_VIEWS == (
     ("today", "今天"),
