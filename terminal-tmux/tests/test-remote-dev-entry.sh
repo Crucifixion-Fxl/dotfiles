@@ -139,7 +139,6 @@ grep -Fq 'tmux set-environment -g LC_ALL "$LC_ALL"' "$ENTRY"
 grep -Fq 'tmux set-environment -g "$variable" "$value"' "$ENTRY"
 grep -Fq 'TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST' "$ENTRY"
 grep -Fq 'start_termscp_container_relay "$container_id"' "$ENTRY"
-grep -Fq 'start_todo_container_relay "$container_id"' "$ENTRY"
 grep -Fq 'authorize_termscp_container_key \' "$ENTRY"
 grep -Fq '"$container_id" "$container_name" 2>&1' "$ENTRY"
 grep -Fq 'public_key=$(docker exec "$container_id" sh -c' "$ENTRY"
@@ -157,9 +156,6 @@ grep -Fq '无法自动授权容器公钥' "$ENTRY"
 grep -Fq -- '-e "TERMSCP_MAC_USER=$TERMSCP_MAC_USER"' "$ENTRY"
 grep -Fq -- '-e "TERMSCP_REVERSE_PORT=${TERMSCP_REVERSE_PORT:-6022}"' "$ENTRY"
 grep -Fq -- '-e "TERMSCP_MAC_HOST=$termscp_mac_host"' "$ENTRY"
-grep -Fq -- '-e "TODO_BRIDGE_TOKEN=$TODO_BRIDGE_TOKEN"' "$ENTRY"
-grep -Fq -- '-e "TODO_BRIDGE_PORT=${TODO_BRIDGE_PORT:-6024}"' "$ENTRY"
-grep -Fq -- '-e "TODO_BRIDGE_HOST=$todo_bridge_host"' "$ENTRY"
 grep -Fq -- '-e "BASH_ENV=/dev/null"' "$ENTRY"
 grep -Fq -- '-e "ENV=/dev/null"' "$ENTRY"
 grep -Fq 'export BASH_ENV=/dev/null' "$ENTRY"
@@ -183,6 +179,10 @@ grep -Fq 'tmux new-window -d -P -F "#{pane_id}"' "$ENTRY"
 grep -Fq 'tmux select-window -t "$zsh_window"' "$ENTRY"
 grep -Fq 'tmux select-pane -t "$zsh_pane"' "$ENTRY"
 grep -Fq 'exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$tmux_session"' "$ENTRY"
+if grep -Fq 'TODO_BRIDGE' "$ENTRY"; then
+  printf '%s\n' 'remote entry must not inject a Mac Todo bridge into containers' >&2
+  exit 1
+fi
 if grep -Fq 'exec zsh -lic' "$ENTRY"; then
   printf '%s\n' 'container entry must not start interactive zsh outside tmux' >&2
   exit 1

@@ -30,11 +30,9 @@ fallback_ghostty_term() {
 
 sync_bridge_tmux_environment() {
   # 已存在的 tmux server 不会自动接收自定义 SSH 会话变量。把连接脚本传来的
-  # SFTP/Todo bridge 变量写入 tmux 全局环境，让已有 pane 也能读取。
+  # SFTP bridge 变量写入 tmux 全局环境，让已有 pane 也能读取。
   local variable value
-  for variable in \
-    TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST \
-    TODO_BRIDGE_TOKEN TODO_BRIDGE_PORT TODO_BRIDGE_HOST; do
+  for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST; do
     value=${!variable:-}
     [[ -n "$value" ]] || continue
     tmux set-environment -g "$variable" "$value" 2>/dev/null || true
@@ -163,16 +161,6 @@ start_termscp_container_relay() {
   termscp_mac_host=$bridge_relay_host
 }
 
-start_todo_container_relay() {
-  local container_id=$1 todo_port bridge_relay_host
-
-  [[ -n ${TODO_BRIDGE_TOKEN:-} ]] || return 0
-  todo_port=${TODO_BRIDGE_PORT:-6024}
-  valid_termscp_port "$todo_port" || fail "无效的 Todo 反向端口：$todo_port"
-  start_container_bridge_relay "$container_id" Todo "$todo_port" "$todo_port"
-  todo_bridge_host=$bridge_relay_host
-}
-
 enter_host_tmux() {
   # exec 会让 tmux 取代入口脚本，SSH 退出时不留额外进程。
   local zsh_path shell_command zsh_pane zsh_window pane_id pane_command
@@ -220,7 +208,7 @@ enter_host_tmux() {
 }
 
 enter_container_tmux() {
-  local container_id=$1 container_name=$2 termscp_mac_host todo_bridge_host authorization_output
+  local container_id=$1 container_name=$2 termscp_mac_host authorization_output
   local -a docker_environment
 
   if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
@@ -233,9 +221,7 @@ enter_container_tmux() {
   fi
 
   termscp_mac_host=127.0.0.1
-  todo_bridge_host=127.0.0.1
   start_termscp_container_relay "$container_id"
-  start_todo_container_relay "$container_id"
   # 容器镜像可能通过 BASH_ENV/ENV 注入 shell 初始化脚本（例如 Iris）。tmux
   # 状态栏的 #() helper 是非交互子 shell；继承这些脚本会把终端控制序列当作
   # 状态文本显示。显式指向无输出的 /dev/null，也能覆盖已有 tmux server
@@ -252,14 +238,6 @@ enter_container_tmux() {
       -e "TERMSCP_MAC_HOST=$termscp_mac_host"
     )
   fi
-  if [[ -n ${TODO_BRIDGE_TOKEN:-} ]]; then
-    docker_environment+=(
-      -e "TODO_BRIDGE_TOKEN=$TODO_BRIDGE_TOKEN"
-      -e "TODO_BRIDGE_PORT=${TODO_BRIDGE_PORT:-6024}"
-      -e "TODO_BRIDGE_HOST=$todo_bridge_host"
-    )
-  fi
-
   # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
   # 命令只会在容器内解析和启动。
   # 与公钥采集相同，这里必须使用非登录 shell。否则 ~/.profile 可能提前加载
@@ -318,9 +296,7 @@ enter_container_tmux() {
       # 初始化脚本，再重载受管 tmux 配置。
       tmux set-environment -g BASH_ENV /dev/null 2>/dev/null || true
       tmux set-environment -g ENV /dev/null 2>/dev/null || true
-      for variable in \
-        TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST \
-        TODO_BRIDGE_TOKEN TODO_BRIDGE_PORT TODO_BRIDGE_HOST; do
+      for variable in TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST; do
         eval "value=\${$variable:-}"
         [ -n "$value" ] || continue
         tmux set-environment -g "$variable" "$value" 2>/dev/null || true
