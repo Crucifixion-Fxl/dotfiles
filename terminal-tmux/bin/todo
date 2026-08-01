@@ -25,6 +25,7 @@ SUCCESS = 4
 ERROR = 5
 TEXT = 6
 BORDER = 7
+AUTO_REFRESH_INTERVAL_SECONDS = 10
 
 
 def display_width(value: str) -> int:
@@ -759,7 +760,7 @@ class TodoApp:
     def run(self) -> None:
         self.refresh()
         while self.running:
-            if time.monotonic() - self.last_refresh > 30:
+            if time.monotonic() - self.last_refresh > AUTO_REFRESH_INTERVAL_SECONDS:
                 self.refresh(quiet=True)
             self.render()
             try:
