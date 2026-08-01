@@ -298,6 +298,33 @@ raise SystemExit(exit_code)
     assert "保持现有 Node.js" in prompt
     assert "不推送远端" in prompt
 
+    task_run_root = root / "state" / "runs" / "task-1"
+    assert task_run_root.is_dir()
+    run(
+        ["git", "show-ref", "--verify", "refs/heads/codex/terminal-tmux/task-1"],
+        environment=environment,
+        cwd=repository,
+    )
+    state["tasks"][0]["checked"] = True
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    cleaned = run(
+        [sys.executable, str(TODO_AGENT), "run", "--once"],
+        environment=environment,
+    )
+    assert "已清理完成任务：task-1" in cleaned.stdout
+    assert not worktree.exists()
+    assert not task_run_root.exists()
+    run(
+        ["git", "show-ref", "--verify", "refs/heads/codex/terminal-tmux/task-1"],
+        environment=environment,
+        cwd=repository,
+        expected=128,
+    )
+    with sqlite3.connect(root / "state" / "state.db") as connection:
+        assert connection.execute(
+            "SELECT 1 FROM runs WHERE task_id = ?", ("task-1",)
+        ).fetchone() is None
+
     state["tasks"].append(
         {
             "id": "task-2",
