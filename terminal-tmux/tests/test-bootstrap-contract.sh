@@ -71,6 +71,11 @@ if grep -Eq '(^|[[:space:]])(fzf|zoxide)($|[[:space:]])' <<< "$prerequisite_func
   exit 1
 fi
 
+if grep -Eq '(^|[[:space:]])(nodejs|npm)($|[[:space:]])' <<< "$prerequisite_function"; then
+  printf '%s\n' 'Linux Node and npm must come from the pinned user-level runtime, not apt' >&2
+  exit 1
+fi
+
 if grep -q 'run_as_root apt-get install' "$BOOTSTRAP"; then
   printf '%s\n' 'all apt package installs must use the noninteractive debconf frontend' >&2
   exit 1
