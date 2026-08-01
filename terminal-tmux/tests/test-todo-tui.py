@@ -14,6 +14,7 @@ root = Path(__file__).resolve().parent.parent
 source = root / "bin" / "todo"
 module = runpy.run_path(str(source))
 
+AUTO_REFRESH_INTERVAL_SECONDS = module["AUTO_REFRESH_INTERVAL_SECONDS"]
 display_width = module["display_width"]
 truncate = module["truncate"]
 DemoClient = module["DemoClient"]
@@ -26,6 +27,7 @@ run_td_json = module["run_td_json"]
 save_token = module["save_token"]
 visual_login = module["visual_login"]
 
+assert AUTO_REFRESH_INTERVAL_SECONDS == 10
 assert display_width("abc") == 3
 assert display_width("工作") == 4
 assert display_width("a工") == 3

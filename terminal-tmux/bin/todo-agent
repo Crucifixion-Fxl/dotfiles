@@ -1231,7 +1231,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     watch = subcommands.add_parser("watch", help="常驻轮询并执行任务")
     watch.add_argument("--project", help="只监听指定的已注册项目")
-    watch.add_argument("--interval", type=int, default=30, help="轮询间隔秒数")
+    watch.add_argument("--interval", type=int, default=10, help="轮询间隔秒数")
     watch.add_argument("--timeout-minutes", type=int, default=120, help="单任务超时分钟数")
     watch.set_defaults(handler=command_watch)
     return parser

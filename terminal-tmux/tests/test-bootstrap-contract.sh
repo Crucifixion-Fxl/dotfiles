@@ -3,7 +3,9 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+README="$ROOT/../README.md"
 BOOTSTRAP="$ROOT/bootstrap.sh"
+WORKFLOW_IMAGE="$ROOT/assets/dotfiles-workflow.png"
 ITERM_PROFILE="$ROOT/iterm2/dev.json"
 GHOSTTY_CONFIG="$ROOT/ghostty/config.ghostty"
 GHOSTTY_LAUNCHER="$ROOT/bin/ghostty-dev"
@@ -18,6 +20,8 @@ VERSIONS="$ROOT/versions.lock"
 TMUX_CONFIG="$ROOT/tmux/tmux.conf"
 
 bash -n "$BOOTSTRAP"
+[[ -s "$WORKFLOW_IMAGE" ]]
+grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
@@ -69,7 +73,8 @@ grep -q '^restart_todo_agent_fallback()' "$BOOTSTRAP"
 grep -q '^todo_agent_background_running()' "$BOOTSTRAP"
 grep -Fq 'systemctl --user enable todo-agent.service' "$BOOTSTRAP"
 grep -Fq 'systemctl --user restart todo-agent.service' "$BOOTSTRAP"
-grep -Fq 'nohup "$HOME/.local/bin/todo-agent" watch --interval 30' "$BOOTSTRAP"
+grep -Fq 'nohup "$HOME/.local/bin/todo-agent" watch --interval 10' "$BOOTSTRAP"
+grep -Fq 'watch.add_argument("--interval", type=int, default=10' "$TODO_AGENT"
 grep -Fq 'python3-venv' "$BOOTSTRAP"
 grep -Fq '"@doist/todoist-cli@$TODOIST_CLI_VERSION"' "$BOOTSTRAP"
 grep -Eq '^TODOIST_CLI_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$VERSIONS"

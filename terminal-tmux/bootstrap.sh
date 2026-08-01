@@ -1057,7 +1057,7 @@ start_todo_agent_fallback() {
   fi
 
   log "Starting todo-agent fallback watcher in the background"
-  nohup "$HOME/.local/bin/todo-agent" watch --interval 30 \
+  nohup "$HOME/.local/bin/todo-agent" watch --interval 10 \
     >> "$log_file" 2>&1 < /dev/null &
   pid=$!
   printf '%s\n' "$pid" > "$pid_file"

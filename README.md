@@ -5,6 +5,14 @@ Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、la
 git-delta、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
 Codex 状态通知、Todoist TUI 和 zsh 交互环境。
 
+## 整体流程
+
+![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)
+
+仓库以 `bootstrap.sh` 为统一入口，将同一套 shell、tmux 和开发工具配置部署到
+macOS、Linux 服务器与容器；下方展示 Todoist 项目如何通过常驻 watcher 调度并行
+Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行记录。
+
 ## 目录结构
 
 ```text
@@ -13,6 +21,8 @@ Codex 状态通知、Todoist TUI 和 zsh 交互环境。
 └── terminal-tmux/
     ├── bootstrap.sh                 # 安装、链接和验证入口
     ├── versions.lock                # 工具版本、插件 commit 和 SHA256
+    ├── assets/
+    │   └── dotfiles-workflow.png    # README 整体工作流示意图
     ├── bin/
     │   ├── tmux-zsh                 # tmux pane 的统一 zsh 入口
     │   ├── lazygit-safe             # 信任当前仓库后启动 lazygit
@@ -390,7 +400,7 @@ todo
 已完成”和所有真实 Todoist 项目，中间显示当前项目的任务，宽终端还会显示右侧详情。
 任务保持 Todoist CLI 返回的顺序，搜索和刷新只过滤内容，不会再按到期时间或标题重新
 排列。TUI 启动和手动刷新时读取项目、全部未完成任务，以及最近 89 天的已完成任务；
-运行期间每 30 秒自动刷新一次。
+运行期间每 10 秒自动刷新一次。
 所有面板、输入框、确认框和按钮都使用紫色 Unicode 圆角矩形边界。可以用鼠标点击
 列表、任务复选框和按钮，用滚轮滚动；也可以用方向键或 `j/k` 导航，`n` 新建、
 `e`/`Enter` 编辑、`Space` 完成或恢复、`d` 删除、`/` 搜索。新建和编辑任务时都可以
@@ -441,7 +451,7 @@ todo-agent project add \
 ```
 
 同一项目中的所有 `codex-ready` 任务都会分别创建 Agent 并行执行，不设置项目并发
-上限。watcher 不会等待当前 Agent 结束，而是继续按轮询间隔领取运行期间新增的任务；
+上限。watcher 不会等待当前 Agent 结束，而是默认每 10 秒领取运行期间新增的任务；
 不同项目也会独立调度。
 
 检查映射和待执行任务：
