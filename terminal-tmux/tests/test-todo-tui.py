@@ -2,6 +2,8 @@
 
 from pathlib import Path
 import runpy
+import sys
+import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -16,11 +18,36 @@ DemoClient = module["DemoClient"]
 PyiCloudClient = module["PyiCloudClient"]
 TodoApp = module["TodoApp"]
 authenticated_account = module["authenticated_account"]
+ensure_pyicloud_runtime = module["ensure_pyicloud_runtime"]
 
 assert display_width("abc") == 3
 assert display_width("工作") == 4
 assert display_width("a工") == 3
 assert display_width(truncate("这是一个很长的标题", 7)) <= 7
+
+# A virtualenv's Python normally resolves to the same underlying system binary.
+# todo must still re-exec through the venv so its site-packages become active.
+with tempfile.TemporaryDirectory() as temp_dir:
+    venv_root = Path(temp_dir) / "pyicloud"
+    venv_bin = venv_root / "bin"
+    venv_bin.mkdir(parents=True)
+    icloud_cli = venv_bin / "icloud"
+    icloud_cli.write_text("#!/bin/sh\n", encoding="utf-8")
+    venv_python = venv_bin / "python"
+    venv_python.symlink_to(sys.executable)
+    with (
+        patch.object(sys, "prefix", str(Path(temp_dir) / "system")),
+        patch("os.execv", side_effect=RuntimeError("exec requested")) as execv,
+    ):
+        try:
+            ensure_pyicloud_runtime(str(icloud_cli))
+        except RuntimeError as error:
+            assert str(error) == "exec requested"
+        else:
+            raise AssertionError("todo did not switch to the pyicloud virtualenv")
+    expected_runtime = icloud_cli.resolve().with_name("python")
+    assert execv.call_args.args[0] == str(expected_runtime)
+    assert execv.call_args.args[1][0] == str(expected_runtime)
 
 client = DemoClient()
 snapshot = client.snapshot()

@@ -1193,7 +1193,11 @@ def todo_session_dir() -> Path:
 
 def ensure_pyicloud_runtime(executable: str) -> None:
     venv_python = Path(executable).resolve().with_name("python")
-    if venv_python.is_file() and Path(sys.executable).resolve() != venv_python.resolve():
+    venv_root = venv_python.parent.parent.resolve()
+    # A venv's bin/python is commonly a symlink to the system interpreter.
+    # Comparing the resolved executables therefore cannot tell whether Python
+    # has activated the venv and is using its site-packages. sys.prefix can.
+    if venv_python.is_file() and Path(sys.prefix).resolve() != venv_root:
         os.execv(
             str(venv_python),
             [str(venv_python), str(Path(__file__).resolve()), *sys.argv[1:]],
