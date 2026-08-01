@@ -1001,13 +1001,30 @@ todo_agent_systemd_available() {
     systemctl --user show-environment >/dev/null 2>&1
 }
 
+todo_agent_pid_running() {
+  local pid=$1 process_state
+  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
+  kill -0 "$pid" >/dev/null 2>&1 || return 1
+
+  # kill -0 also succeeds for zombies. This is common in development
+  # containers whose PID 1 does not reap orphaned children, but a zombie no
+  # longer watches Todoist or owns the dispatcher lock.
+  if [[ -r "/proc/$pid/stat" ]]; then
+    process_state=$(sed -n 's/^.*) \([A-Z]\) .*/\1/p' "/proc/$pid/stat")
+  else
+    process_state=$(ps -p "$pid" -o stat= 2>/dev/null | awk 'NR == 1 {print $1}')
+  fi
+  # If process inspection is restricted, retain kill -0 as the conservative
+  # fallback. A reported Z state is the only case that is definitely stopped.
+  [[ "$process_state" != Z* ]]
+}
+
 todo_agent_fallback_running() {
   local command_line pid pid_file
   pid_file="$HOME/.local/state/todoist-codex/watcher.pid"
   [[ -s "$pid_file" ]] || return 1
   IFS= read -r pid < "$pid_file"
-  [[ "$pid" =~ ^[0-9]+$ ]] || return 1
-  kill -0 "$pid" >/dev/null 2>&1 || return 1
+  todo_agent_pid_running "$pid" || return 1
 
   # Contract tests run in a restricted macOS sandbox where neither /proc nor
   # process command inspection is available. Production callers never set
@@ -1034,10 +1051,10 @@ stop_todo_agent_fallback() {
   log "Stopping todo-agent fallback watcher with PID $pid"
   kill "$pid"
   for attempt in {1..50}; do
-    kill -0 "$pid" >/dev/null 2>&1 || break
+    todo_agent_pid_running "$pid" || break
     sleep 0.1
   done
-  kill -0 "$pid" >/dev/null 2>&1 && \
+  todo_agent_pid_running "$pid" && \
     fail "todo-agent fallback watcher PID $pid did not stop"
   unlink "$pid_file"
 }
@@ -1063,7 +1080,7 @@ start_todo_agent_fallback() {
   printf '%s\n' "$pid" > "$pid_file"
   chmod 600 "$pid_file"
   sleep 1
-  kill -0 "$pid" >/dev/null 2>&1 || \
+  todo_agent_pid_running "$pid" || \
     fail "todo-agent fallback watcher failed to start; inspect $log_file"
   todo_agent_fallback_running || \
     fail "todo-agent fallback watcher PID verification failed"
