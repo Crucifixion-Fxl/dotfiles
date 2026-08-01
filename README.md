@@ -440,8 +440,9 @@ todo-agent project add \
   --base-branch main
 ```
 
-同一项目中一次扫描发现的所有 `codex-ready` 任务都会分别创建 Agent 并行执行，
-不设置项目并发上限。不同项目仍按注册顺序逐个调度。
+同一项目中的所有 `codex-ready` 任务都会分别创建 Agent 并行执行，不设置项目并发
+上限。watcher 不会等待当前 Agent 结束，而是继续按轮询间隔领取运行期间新增的任务；
+不同项目也会独立调度。
 
 检查映射和待执行任务：
 

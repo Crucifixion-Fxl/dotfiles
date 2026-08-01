@@ -12,6 +12,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +47,15 @@ def run(
         result.stderr,
     )
     return result
+
+
+def wait_until(predicate, timeout: float, interval: float = 0.05) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(interval)
+    return predicate()
 
 
 with tempfile.TemporaryDirectory() as temporary:
@@ -181,6 +191,18 @@ prompt = sys.stdin.read()
 (worktree / "agent-change.txt").write_text("changed\n", encoding="utf-8")
 (worktree / "received-prompt.txt").write_text(prompt, encoding="utf-8")
 result.write_text("已修改 agent-change.txt，并完成验证。\n", encoding="utf-8")
+control_value = os.environ.get("FAKE_CODEX_CONTROL_DIR")
+if control_value:
+    control_dir = Path(control_value)
+    control_dir.mkdir(parents=True, exist_ok=True)
+    (control_dir / f"{worktree.name}.started").write_text("started\n", encoding="utf-8")
+    if worktree.name == os.environ.get("FAKE_CODEX_BLOCK_TASK"):
+        deadline = time.monotonic() + 20
+        while not (control_dir / f"{worktree.name}.release").exists():
+            if time.monotonic() >= deadline:
+                print("fake codex release timed out", file=sys.stderr)
+                raise SystemExit(9)
+            time.sleep(0.05)
 expected_parallel = int(os.environ.get("FAKE_CODEX_EXPECTED_PARALLEL", "0"))
 if expected_parallel:
     parallel_dir = Path(os.environ["FAKE_CODEX_PARALLEL_DIR"])
@@ -398,6 +420,68 @@ raise SystemExit(exit_code)
         root / "worktrees" / "terminal-tmux" / "task-2" / "received-prompt.txt"
     ).read_text(encoding="utf-8")
     assert "请按反馈重试" in retry_prompt
+
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    state["tasks"].append(
+        {
+            "id": "task-live-1",
+            "projectId": "project-1",
+            "content": "长时间运行任务",
+            "description": "保持运行以验证持续扫描",
+            "labels": ["codex-ready"],
+        }
+    )
+    state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    control_dir = root / "live-control"
+    watch_environment = environment.copy()
+    watch_environment["FAKE_CODEX_CONTROL_DIR"] = str(control_dir)
+    watch_environment["FAKE_CODEX_BLOCK_TASK"] = "task-live-1"
+    watcher = subprocess.Popen(
+        [sys.executable, str(TODO_AGENT), "watch", "--interval", "5"],
+        env=watch_environment,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    try:
+        assert wait_until(lambda: (control_dir / "task-live-1.started").exists(), 5)
+        locked = run(
+            [sys.executable, str(TODO_AGENT), "run", "--once", "--dry-run"],
+            environment=environment,
+            expected=1,
+        )
+        assert "另一个 todo-agent 正在运行" in locked.stderr
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+        state["tasks"].append(
+            {
+                "id": "task-live-2",
+                "projectId": "project-1",
+                "content": "运行期间新增任务",
+                "description": "必须在第一个任务结束前启动",
+                "labels": ["codex-ready"],
+            }
+        )
+        state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+        assert wait_until(
+            lambda: (control_dir / "task-live-2.started").exists(), 7
+        ), "watcher did not start a newly-ready task while another task was running"
+    finally:
+        control_dir.mkdir(parents=True, exist_ok=True)
+        (control_dir / "task-live-1.release").write_text("release\n", encoding="utf-8")
+        wait_until(
+            lambda: all(
+                "codex-running" not in task["labels"]
+                for task in json.loads(state_path.read_text(encoding="utf-8"))["tasks"]
+            ),
+            12,
+        )
+        watcher.terminate()
+        try:
+            watcher.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            watcher.kill()
+            watcher.communicate()
 
     removed = run(
         [sys.executable, str(TODO_AGENT), "project", "remove", "terminal-tmux"],
