@@ -4,7 +4,7 @@ from pathlib import Path
 import runpy
 import sys
 import tempfile
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import patch
 
 
@@ -20,6 +20,8 @@ TodoApp = module["TodoApp"]
 authenticated_account = module["authenticated_account"]
 complete_two_factor = module["complete_two_factor"]
 ensure_pyicloud_runtime = module["ensure_pyicloud_runtime"]
+needs_two_factor_code = module["needs_two_factor_code"]
+visual_login = module["visual_login"]
 
 assert display_width("abc") == 3
 assert display_width("工作") == 4
@@ -249,6 +251,66 @@ two_factor_api = FakeTwoFactorAPI(valid_code="654321")
 assert complete_two_factor(login_app, two_factor_api) is True
 assert two_factor_api.request_count == 1
 assert two_factor_api.validated_codes == ["654321"]
+
+# Apple can omit the HSA version even though the fresh browser session is
+# untrusted and a code was sent. That state must still enter the 2FA prompt.
+assert needs_two_factor_code(
+    SimpleNamespace(requires_2fa=False, is_trusted_session=False),
+    requires_2sa=False,
+) is True
+assert needs_two_factor_code(
+    SimpleNamespace(requires_2fa=False, is_trusted_session=True),
+    requires_2sa=False,
+) is False
+assert needs_two_factor_code(
+    SimpleNamespace(requires_2fa=False, is_trusted_session=False),
+    requires_2sa=True,
+) is False
+
+# Exercise the complete visual-login branch for the exact Apple response that
+# sent a code but omitted the flag pyicloud normally exposes as requires_2fa.
+class FakeUntrustedAPI(FakeTwoFactorAPI):
+    account_name = "user@example.com"
+    requires_2fa = False
+    requires_2sa = False
+
+    def __init__(self):
+        super().__init__()
+        self.is_trusted_session = False
+        self.trust_count = 0
+
+    def validate_2fa_code(self, code):
+        valid = super().validate_2fa_code(code)
+        if valid:
+            self.is_trusted_session = True
+        return valid
+
+    def trust_session(self):
+        self.trust_count += 1
+        return False
+
+
+untrusted_api = FakeUntrustedAPI()
+login_app = FakeLoginApp(["user@example.com", "password", "123456"])
+fake_pyicloud = ModuleType("pyicloud")
+fake_pyicloud.PyiCloudService = lambda **_kwargs: untrusted_api
+fake_exceptions = ModuleType("pyicloud.exceptions")
+fake_exceptions.PyiCloudFailedLoginException = type(
+    "PyiCloudFailedLoginException", (Exception,), {}
+)
+visual_globals = visual_login.__globals__
+original_remember_account = visual_globals["remember_account"]
+try:
+    visual_globals["remember_account"] = lambda *_args: None
+    with patch.dict(
+        sys.modules,
+        {"pyicloud": fake_pyicloud, "pyicloud.exceptions": fake_exceptions},
+    ):
+        assert visual_login(login_app, None, Path("/tmp/session")) == "user@example.com"
+finally:
+    visual_globals["remember_account"] = original_remember_account
+assert [prompt[0][0] for prompt in login_app.prompts] == ["Apple ID", "密码", "验证码"]
+assert untrusted_api.trust_count == 0
 
 assert TodoApp.SMART_VIEWS == (
     ("today", "今天"),
