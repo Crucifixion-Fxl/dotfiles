@@ -66,6 +66,7 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"' "$BO
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"' "$BOOTSTRAP"
 grep -q '^install_todo_agent_service()' "$BOOTSTRAP"
 grep -q '^todo_agent_systemd_available()' "$BOOTSTRAP"
+grep -q '^todo_agent_pid_running()' "$BOOTSTRAP"
 grep -q '^todo_agent_fallback_running()' "$BOOTSTRAP"
 grep -q '^stop_todo_agent_fallback()' "$BOOTSTRAP"
 grep -q '^start_todo_agent_fallback()' "$BOOTSTRAP"
@@ -140,6 +141,27 @@ chmod +x "$FALLBACK_HOME/.local/bin/todo-agent"
   restart_todo_agent_fallback
   third_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
   [[ "$third_pid" != "$first_pid" ]]
+  stop_todo_agent_fallback
+  [[ ! -e "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid" ]]
+)
+
+# Some containers do not reap orphaned children. After bootstrap sends TERM,
+# the old watcher can therefore remain as a zombie: kill -0 still succeeds,
+# but the process no longer owns the dispatcher lock and must not block the
+# replacement watcher from starting.
+(
+  HOME=$FALLBACK_HOME
+  TODO_AGENT_SKIP_CMDLINE_CHECK=1
+  export TODO_AGENT_SKIP_CMDLINE_CHECK
+  zombie_pid=424242
+  kill() {
+    return 0
+  }
+  ps() {
+    printf '%s\n' Z
+  }
+  printf '%s\n' "$zombie_pid" \
+    > "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid"
   stop_todo_agent_fallback
   [[ ! -e "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid" ]]
 )
