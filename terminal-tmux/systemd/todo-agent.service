@@ -1,0 +1,13 @@
+[Unit]
+Description=Dispatch Todoist project tasks to Codex agents
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/todo-agent watch
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target

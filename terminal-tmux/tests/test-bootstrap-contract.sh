@@ -12,6 +12,8 @@ GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
 TERMSCP_LAUNCHER="$ROOT/bin/termscp-mac"
 TERMSCP_AUTHORIZER="$ROOT/bin/termscp-key-authorizer"
 TODO_TUI="$ROOT/bin/todo"
+TODO_AGENT="$ROOT/bin/todo-agent"
+TODO_AGENT_SERVICE="$ROOT/systemd/todo-agent.service"
 VERSIONS="$ROOT/versions.lock"
 TMUX_CONFIG="$ROOT/tmux/tmux.conf"
 
@@ -57,11 +59,15 @@ grep -q '^remind_ssh_key()' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
 grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"' "$BOOTSTRAP"
+grep -q '^install_todo_agent_service()' "$BOOTSTRAP"
 grep -Fq 'python3-venv' "$BOOTSTRAP"
 grep -Fq '"@doist/todoist-cli@$TODOIST_CLI_VERSION"' "$BOOTSTRAP"
 grep -Eq '^TODOIST_CLI_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$VERSIONS"
 grep -Eq '^NODE_VERSION=24\.[0-9]+\.[0-9]+$' "$VERSIONS"
 python3 "$TODO_TUI" --help >/dev/null
+python3 "$TODO_AGENT" --help >/dev/null
+grep -Fq 'ExecStart=%h/.local/bin/todo-agent watch' "$TODO_AGENT_SERVICE"
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 

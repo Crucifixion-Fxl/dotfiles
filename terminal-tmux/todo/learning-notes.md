@@ -31,6 +31,14 @@ CLI help output.
 - Move: `td task move id:ID --project id:PROJECT --no-section --no-parent`.
 - Complete/reopen: `td task complete id:ID` / `td task uncomplete id:ID`.
 - Delete: `td task delete id:ID --yes`.
+- Filter by project and label: `td task list --project id:PROJECT_ID --label NAME --all --json --full`.
+- Replace labels while preserving the task's non-state labels in the caller:
+  `td task update id:ID --labels a,b --json`.
+- List comments: `td comment list id:TASK_ID --all --json --full`.
+- Add a comment without putting its content in argv:
+  `td comment add id:TASK_ID --stdin --json`.
+- List and create dispatcher labels: `td label list --all --json --full` and
+  `td label create --name NAME --color COLOR --json`.
 - Descriptions are sent on stdin, including an empty string, so they do not
   leak through process arguments and can be cleared reliably.
 

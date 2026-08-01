@@ -960,6 +960,7 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/termscp-bridge-relay" "$HOME/.local/bin/termscp-bridge-relay"
   backup_and_link "$DOTFILES_DIR/bin/termscp-key-authorizer" "$HOME/.local/bin/termscp-key-authorizer"
   backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"
+  backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
@@ -970,6 +971,17 @@ install_links() {
   local lazygit_config_dir
   lazygit_config_dir=$(lazygit --print-config-dir)
   backup_and_link "$DOTFILES_DIR/lazygit/config.yml" "$lazygit_config_dir/config.yml"
+}
+
+install_todo_agent_service() {
+  [[ "$PLATFORM_OS" == linux ]] || return 0
+
+  backup_and_link \
+    "$DOTFILES_DIR/systemd/todo-agent.service" \
+    "$HOME/.config/systemd/user/todo-agent.service"
+  if command -v systemctl >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then
+    systemctl --user daemon-reload
+  fi
 }
 
 # --- Shell 持久环境 ---------------------------------------------------------
@@ -1094,6 +1106,7 @@ validate() {
   local ghostty_config ghostty_destination ghostty_launcher ghostty_launcher_destination
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
   local login_shell login_user zsh_path
+  local todo_agent_link todo_agent_service todo_agent_service_destination
   local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination yazi_package_list
@@ -1144,6 +1157,9 @@ validate() {
   python3 "$DOTFILES_DIR/bin/todo" --help >/dev/null
   python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' \
     "$DOTFILES_DIR/bin/todo"
+  python3 "$DOTFILES_DIR/bin/todo-agent" --help >/dev/null
+  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' \
+    "$DOTFILES_DIR/bin/todo-agent"
   bash -n "$DOTFILES_DIR/bin/ghostty-dev"
   bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
@@ -1156,6 +1172,7 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
   python3 "$DOTFILES_DIR/tests/test-todo-tui.py"
+  python3 "$DOTFILES_DIR/tests/test-todo-agent.py"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
@@ -1163,6 +1180,17 @@ validate() {
   pre_commit_link="$HOME/.local/bin/pre-commit"
   [[ -L "$pre_commit_link" && $(readlink "$pre_commit_link") == "$pre_commit_wrapper" ]] || \
     fail "pre-commit launcher link is missing"
+
+  todo_agent_link="$HOME/.local/bin/todo-agent"
+  [[ -L "$todo_agent_link" && $(readlink "$todo_agent_link") == "$DOTFILES_DIR/bin/todo-agent" ]] || \
+    fail "todo-agent launcher link is missing"
+  if [[ "$PLATFORM_OS" == linux ]]; then
+    todo_agent_service="$DOTFILES_DIR/systemd/todo-agent.service"
+    todo_agent_service_destination="$HOME/.config/systemd/user/todo-agent.service"
+    [[ -L "$todo_agent_service_destination" &&
+      $(readlink "$todo_agent_service_destination") == "$todo_agent_service" ]] || \
+      fail "todo-agent systemd service link is missing"
+  fi
 
   vim_config="$DOTFILES_DIR/vim/vimrc"
   vim_config_destination="$HOME/.vimrc"
@@ -1290,6 +1318,7 @@ main() {
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
 
   install_links
+  install_todo_agent_service
   install_yazi_packages
   seed_zoxide_history
   install_iterm2_profile
