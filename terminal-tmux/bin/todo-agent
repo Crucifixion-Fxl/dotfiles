@@ -47,7 +47,6 @@ class Project:
     todoist_project_id: str
     repository: str
     base_branch: str
-    max_agents: int = 1
     enabled: bool = True
 
 
@@ -357,6 +356,9 @@ def load_projects(path: Optional[Path] = None) -> List[Project]:
         for key in required:
             if not isinstance(record[key], str) or not record[key]:
                 raise AgentError(f"第 {index} 个项目的 {key} 必须是非空字符串")
+        # max_agents was written by the first dispatcher version. Keep
+        # accepting valid legacy values so existing server configs continue to
+        # load, but concurrency is now determined by the ready task count.
         max_agents = record.get("max_agents", 1)
         enabled = record.get("enabled", True)
         if isinstance(max_agents, bool) or not isinstance(max_agents, int):
@@ -368,10 +370,9 @@ def load_projects(path: Optional[Path] = None) -> List[Project]:
             todoist_project_id=str(record["todoist_project_id"]),
             repository=str(record["repository"]),
             base_branch=str(record["base_branch"]),
-            max_agents=max_agents,
             enabled=enabled,
         )
-        if project.max_agents < 1:
+        if max_agents < 1:
             raise AgentError(f"项目 {project.name} 的 max_agents 必须大于 0")
         projects.append(project)
 
@@ -399,7 +400,6 @@ def save_projects(projects: Iterable[Project], path: Optional[Path] = None) -> N
                 f"todoist_project_id = {toml_string(project.todoist_project_id)}",
                 f"repository = {toml_string(project.repository)}",
                 f"base_branch = {toml_string(project.base_branch)}",
-                f"max_agents = {project.max_agents}",
                 f"enabled = {'true' if project.enabled else 'false'}",
                 "",
             ]
@@ -572,7 +572,6 @@ def command_project_add(args: argparse.Namespace) -> int:
         todoist_project_id=str(row["id"]),
         repository=str(repository),
         base_branch=base_branch,
-        max_agents=args.max_agents,
         enabled=True,
     )
     projects = load_projects()
@@ -612,7 +611,7 @@ def command_project_list(_args: argparse.Namespace) -> int:
         state = "enabled" if project.enabled else "disabled"
         print(
             f"{project.name}\t{project.todoist_project_id}\t{project.repository}"
-            f"\t{project.base_branch}\tmax={project.max_agents}\t{state}"
+            f"\t{project.base_branch}\t{state}"
         )
     return 0
 
@@ -945,7 +944,6 @@ def run_once(args: argparse.Namespace) -> int:
             if not tasks:
                 print(f"[{project.name}] 没有 codex-ready 任务")
                 continue
-            tasks = tasks[: project.max_agents]
             found += len(tasks)
             if args.dry_run:
                 for task in tasks:
@@ -966,26 +964,30 @@ def run_once(args: argparse.Namespace) -> int:
                     continue
                 claimed.append((task, branch, worktree, run_dir))
 
-            with concurrent.futures.ThreadPoolExecutor(
-                max_workers=project.max_agents
-            ) as executor:
-                futures = [
-                    executor.submit(
-                        execute_task,
-                        todoist,
-                        store,
-                        git,
-                        codex,
-                        project,
-                        task,
-                        branch,
-                        worktree,
-                        run_dir,
-                        args.timeout_minutes,
-                    )
-                    for task, branch, worktree, run_dir in claimed
-                ]
-                failures += sum(1 for future in futures if not future.result())
+            if claimed:
+                # Every ready task gets its own worker. There is deliberately no
+                # per-project concurrency cap; the Todoist ready set is the
+                # complete batch for this scan.
+                with concurrent.futures.ThreadPoolExecutor(
+                    max_workers=len(claimed)
+                ) as executor:
+                    futures = [
+                        executor.submit(
+                            execute_task,
+                            todoist,
+                            store,
+                            git,
+                            codex,
+                            project,
+                            task,
+                            branch,
+                            worktree,
+                            run_dir,
+                            args.timeout_minutes,
+                        )
+                        for task, branch, worktree, run_dir in claimed
+                    ]
+                    failures += sum(1 for future in futures if not future.result())
 
         if found == 0:
             return 0
@@ -1025,7 +1027,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--repository", default=".", help="服务器 Git 仓库，默认使用当前目录"
     )
     add.add_argument("--base-branch", help="基础分支，默认使用当前分支")
-    add.add_argument("--max-agents", type=int, default=1, help="项目最大并发 Agent 数")
+    add.add_argument("--max-agents", type=int, help=argparse.SUPPRESS)
     add.set_defaults(handler=command_project_add)
 
     list_command = project_commands.add_parser("list", help="列出已注册项目")
@@ -1053,7 +1055,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    if getattr(args, "max_agents", 1) < 1:
+    if getattr(args, "max_agents", None) is not None and args.max_agents < 1:
         parser.error("--max-agents 必须大于 0")
     if getattr(args, "timeout_minutes", 1) < 1:
         parser.error("--timeout-minutes 必须大于 0")

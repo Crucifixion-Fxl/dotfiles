@@ -61,6 +61,15 @@ grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"' "$BOOTSTRAP"
 grep -q '^install_todo_agent_service()' "$BOOTSTRAP"
+grep -q '^todo_agent_systemd_available()' "$BOOTSTRAP"
+grep -q '^todo_agent_fallback_running()' "$BOOTSTRAP"
+grep -q '^stop_todo_agent_fallback()' "$BOOTSTRAP"
+grep -q '^start_todo_agent_fallback()' "$BOOTSTRAP"
+grep -q '^restart_todo_agent_fallback()' "$BOOTSTRAP"
+grep -q '^todo_agent_background_running()' "$BOOTSTRAP"
+grep -Fq 'systemctl --user enable todo-agent.service' "$BOOTSTRAP"
+grep -Fq 'systemctl --user restart todo-agent.service' "$BOOTSTRAP"
+grep -Fq 'nohup "$HOME/.local/bin/todo-agent" watch --interval 30' "$BOOTSTRAP"
 grep -Fq 'python3-venv' "$BOOTSTRAP"
 grep -Fq '"@doist/todoist-cli@$TODOIST_CLI_VERSION"' "$BOOTSTRAP"
 grep -Eq '^TODOIST_CLI_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$VERSIONS"
@@ -68,6 +77,7 @@ grep -Eq '^NODE_VERSION=24\.[0-9]+\.[0-9]+$' "$VERSIONS"
 python3 "$TODO_TUI" --help >/dev/null
 python3 "$TODO_AGENT" --help >/dev/null
 grep -Fq 'ExecStart=%h/.local/bin/todo-agent watch' "$TODO_AGENT_SERVICE"
+grep -Fq 'Restart=always' "$TODO_AGENT_SERVICE"
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
@@ -96,11 +106,38 @@ fi
 # before applying its assignments, so dependent values must be assigned on a
 # later line.
 TEST_HOME=$(mktemp -d)
-trap 'rm -rf "$TEST_HOME"' EXIT
+FALLBACK_HOME=$(mktemp -d)
+trap 'rm -rf "$TEST_HOME" "$FALLBACK_HOME"' EXIT
 TEST_PLUGIN_COMMIT=0123456789abcdef
 
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
+
+# Linux containers without a user systemd manager receive one persistent nohup
+# watcher. Starting is idempotent, while restarting replaces the old process so
+# a repeated bootstrap loads the current dispatcher code.
+mkdir -p "$FALLBACK_HOME/.local/bin"
+printf '%s\n' \
+  '#!/usr/bin/env bash' \
+  'while :; do sleep 60; done' \
+  > "$FALLBACK_HOME/.local/bin/todo-agent"
+chmod +x "$FALLBACK_HOME/.local/bin/todo-agent"
+(
+  HOME=$FALLBACK_HOME
+  TODO_AGENT_SKIP_CMDLINE_CHECK=1
+  export TODO_AGENT_SKIP_CMDLINE_CHECK
+  start_todo_agent_fallback
+  todo_agent_fallback_running
+  first_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
+  start_todo_agent_fallback
+  second_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
+  [[ "$first_pid" == "$second_pid" ]]
+  restart_todo_agent_fallback
+  third_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
+  [[ "$third_pid" != "$first_pid" ]]
+  stop_todo_agent_fallback
+  [[ ! -e "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid" ]]
+)
 
 git() {
   if [[ $1 == clone ]]; then

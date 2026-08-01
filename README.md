@@ -431,15 +431,17 @@ todo-agent project add --todoist-project terminal-tmux
 ~/.config/todoist-codex/projects.toml
 ```
 
-可以明确指定仓库、基础分支和该项目的最大并发数：
+可以明确指定仓库和基础分支：
 
 ```bash
 todo-agent project add \
   --todoist-project terminal-tmux \
   --repository /srv/repos/terminal-tmux \
-  --base-branch main \
-  --max-agents 1
+  --base-branch main
 ```
+
+同一项目中一次扫描发现的所有 `codex-ready` 任务都会分别创建 Agent 并行执行，
+不设置项目并发上限。不同项目仍按注册顺序逐个调度。
 
 检查映射和待执行任务：
 
@@ -461,8 +463,12 @@ todo-agent run --once
 任务评论。审核后可直接完成任务；需要继续修改时，在 App 中追加评论并重新添加
 `codex-ready`，调度器会复用原分支和 worktree。
 
-bootstrap 会在 Linux 上安装用户级 service 文件，但不会自动启用。手动验证通过后再
-启动常驻轮询：
+bootstrap 会在 Linux 上自动启动常驻轮询：存在可用的 user systemd 时启用并立即
+启动 `todo-agent.service`；容器没有 user systemd 时自动使用 `nohup` watcher，PID
+和日志分别写入 `~/.local/state/todoist-codex/watcher.pid` 与 `watcher.log`。重复运行
+bootstrap 会停止旧 watcher 并启动当前代码对应的新 watcher，不会留下多个进程。
+
+systemd 环境可以查看状态和日志：
 
 ```bash
 systemctl --user enable --now todo-agent.service
@@ -470,10 +476,11 @@ systemctl --user status todo-agent.service
 journalctl --user -u todo-agent.service -f
 ```
 
-没有 systemd 的容器可以直接在 tmux 中运行：
+没有 systemd 的容器可以查看自动启动的 watcher：
 
 ```bash
-todo-agent watch --interval 30
+cat ~/.local/state/todoist-codex/watcher.pid
+tail -f ~/.local/state/todoist-codex/watcher.log
 ```
 
 运行状态、SQLite 去重记录、Codex 事件和结果分别保存在
