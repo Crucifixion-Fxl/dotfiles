@@ -188,7 +188,7 @@ install_prerequisites() {
     run_as_root apt-get update
     packages=(
       bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
-      ncurses-base ncurses-bin nodejs npm openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip xz-utils vim zsh
+      ncurses-base ncurses-bin openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip xz-utils vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
     for optional_package in resvg; do
