@@ -778,6 +778,8 @@ def run_codex(
         codex,
         "-a",
         "never",
+        "-c",
+        "sandbox_workspace_write.network_access=true",
         "exec",
         "--sandbox",
         "workspace-write",
@@ -1216,6 +1218,9 @@ def command_watch(args: argparse.Namespace) -> int:
         try:
             while True:
                 try:
+                    projects = selected_projects(load_projects(), args.project)
+                    if not projects:
+                        raise AgentError("没有启用的项目；请先运行 todo-agent project add")
                     cleanup_completed_runs(todoist, store, projects, git)
                     _, _, claimed = collect_ready_tasks(
                         projects, todoist, store, git, dry_run=False
