@@ -24,7 +24,8 @@ Codex 状态通知、Todoist TUI 和 zsh 交互环境。
     │   ├── termscp-mac              # 在服务器/容器浏览并传输 Mac 文件
     │   ├── termscp-bridge-relay     # Docker bridge 到宿主机隧道的临时中继
     │   ├── termscp-key-authorizer   # Mac 侧受限 SFTP 公钥自动授权
-    │   └── todo                     # 基于官方 Todoist CLI 的交互式 TUI
+    │   ├── todo                     # 基于官方 Todoist CLI 的交互式 TUI
+    │   └── todo-agent               # Todoist 项目到 Codex worktree 的调度器
     ├── tmux/
     │   ├── tmux.conf                # 本地与远端共用的 tmux 主配置
     │   └── session-status-counts.sh # session 选择器的 Codex 状态统计
@@ -39,11 +40,14 @@ Codex 状态通知、Todoist TUI 和 zsh 交互环境。
     │   ├── test-termscp-bridge-relay.sh # Docker bridge 中继检查
     │   ├── test-termscp-key-authorizer.sh # 容器公钥自动授权检查
     │   ├── test-todo-tui.py          # TUI 数据、中文宽度和视觉契约检查
+    │   ├── test-todo-agent.py        # Agent 注册、状态、worktree 和重试检查
     │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
     │   └── test-lazygit-safe.sh       # Git safe.directory 回归检查
     ├── codex/
     │   ├── hooks.json               # Codex 生命周期 hook 注册
     │   └── notify-tmux.sh           # 🔄、❓、✅ 状态写入 tmux
+    ├── systemd/
+    │   └── todo-agent.service       # Linux 用户级常驻调度服务
     ├── lazygit/
     │   └── config.yml               # 使用 git-delta 渲染 diff
     ├── yazi/
@@ -398,6 +402,85 @@ Token 失效时，下一次运行 `todo` 会自动重新显示同一套可视化
 
 需要改用单独的 Token 文件时，可以设置 `TODOIST_TOKEN_FILE`；需要覆盖 `td` 路径时，
 可以设置 `TODOIST_CLI`。
+
+### 用 Todoist 项目调度 Codex Agent
+
+`todo-agent` 以 Todoist 项目作为仓库管理粒度，以全局标签表示任务状态：
+
+```text
+codex-ready    等待领取
+codex-running  正在执行
+codex-review   等待人工审核
+codex-failed   执行失败
+```
+
+在 Todoist App 中创建代码任务时，只需把任务放到对应项目；需求准备好后添加
+`codex-ready`。没有 `codex-*` 标签的任务不会被调度。
+
+每个仓库只需在服务器上注册一次。先 clone 仓库并停留在希望使用的基础分支：
+
+```bash
+cd /srv/repos/terminal-tmux
+todo-agent project add --todoist-project terminal-tmux
+```
+
+注册命令会通过已登录的官方 `td` CLI 解析稳定的 Todoist Project ID，校验当前 Git
+仓库和基础分支，创建缺失的四个状态标签，然后以 `0600` 权限写入服务器本地配置：
+
+```text
+~/.config/todoist-codex/projects.toml
+```
+
+可以明确指定仓库、基础分支和该项目的最大并发数：
+
+```bash
+todo-agent project add \
+  --todoist-project terminal-tmux \
+  --repository /srv/repos/terminal-tmux \
+  --base-branch main \
+  --max-agents 1
+```
+
+检查映射和待执行任务：
+
+```bash
+todo-agent project list
+todo-agent run --once --dry-run
+```
+
+手动执行一轮：
+
+```bash
+todo-agent run --once
+```
+
+领取任务时，调度器会保留任务上的普通标签，只把 Codex 状态切换为
+`codex-running`。每个任务使用独立的本地分支和 Git worktree；Codex 在
+`workspace-write` 沙箱中执行，不会自动提交、推送、部署或创建 PR。成功后任务改为
+`codex-review`，失败后改为 `codex-failed`，结果摘要和服务器 worktree 路径会写入
+任务评论。审核后可直接完成任务；需要继续修改时，在 App 中追加评论并重新添加
+`codex-ready`，调度器会复用原分支和 worktree。
+
+bootstrap 会在 Linux 上安装用户级 service 文件，但不会自动启用。手动验证通过后再
+启动常驻轮询：
+
+```bash
+systemctl --user enable --now todo-agent.service
+systemctl --user status todo-agent.service
+journalctl --user -u todo-agent.service -f
+```
+
+没有 systemd 的容器可以直接在 tmux 中运行：
+
+```bash
+todo-agent watch --interval 30
+```
+
+运行状态、SQLite 去重记录、Codex 事件和结果分别保存在
+`~/.local/state/todoist-codex/`；worktree 默认保存在
+`~/.local/share/todoist-codex/worktrees/`。同一服务器只允许一个 Dispatcher
+进程领取任务；进程被意外终止后，下一次启动会把遗留的 `codex-running` 任务标记为
+`codex-failed`，保留 worktree 供检查和重试。
 
 ### 在 SSH 服务器中打开 Mac ↔ 服务器文件传输
 
