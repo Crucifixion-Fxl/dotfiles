@@ -470,9 +470,11 @@ todo-agent run --once
 领取任务时，调度器会保留任务上的普通标签，只把 Codex 状态切换为
 `codex-running`。每个任务使用独立的本地分支和 Git worktree；Codex 在
 `workspace-write` 沙箱中执行，不会自动提交、推送、部署或创建 PR。成功后任务改为
-`codex-review`，失败后改为 `codex-failed`，结果摘要和服务器 worktree 路径会写入
-任务评论。审核后可直接完成任务；需要继续修改时，在 App 中追加评论并重新添加
-`codex-ready`，调度器会复用原分支和 worktree。
+`codex-review`，失败后改为 `codex-failed`。成功评论固定先说明“任务是什么”、
+“做了哪些工作”、“怎么做的”和“最终结论是什么”，分支、服务器 worktree 与执行
+记录统一放在评论末尾，避免执行路径抢占结果摘要。审核后可直接完成任务；需要继续
+修改时，在 App 中追加评论并重新添加 `codex-ready`，调度器会复用原分支和
+worktree。
 
 用户在 Todoist 中完成任务后，watcher 会把它视为审核结束：自动删除对应的服务器
 worktree、本地 `codex/...` 分支、该任务的运行日志目录和 SQLite 运行记录。仍处于

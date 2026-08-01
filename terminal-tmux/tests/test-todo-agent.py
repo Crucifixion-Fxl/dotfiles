@@ -190,7 +190,20 @@ result = Path(args[args.index("--output-last-message") + 1])
 prompt = sys.stdin.read()
 (worktree / "agent-change.txt").write_text("changed\n", encoding="utf-8")
 (worktree / "received-prompt.txt").write_text(prompt, encoding="utf-8")
-result.write_text("已修改 agent-change.txt，并完成验证。\n", encoding="utf-8")
+if os.environ.get("FAKE_CODEX_UNSTRUCTURED"):
+    result.write_text("已修改 agent-change.txt，并完成验证。\n", encoding="utf-8")
+else:
+    result.write_text(
+        "## 1. 任务是什么\n\n"
+        "修复 bootstrap。\n\n"
+        "## 2. 做了哪些工作\n\n"
+        "已修改 agent-change.txt，并完成验证。\n\n"
+        "## 3. 怎么做的\n\n"
+        "在任务专用 worktree 中修改文件并检查结果。\n\n"
+        "## 4. 最终结论是什么\n\n"
+        "任务已完成，验证通过。\n",
+        encoding="utf-8",
+    )
 control_value = os.environ.get("FAKE_CODEX_CONTROL_DIR")
 if control_value:
     control_dir = Path(control_value)
@@ -312,13 +325,27 @@ raise SystemExit(exit_code)
     assert state["tasks"][0]["labels"] == ["bug", "codex-review"]
     assert all("codex-review" in task["labels"] for task in state["tasks"])
     assert len(list((root / "parallel").iterdir())) == 3
-    assert "已修改 agent-change.txt" in state["comments"][0]["content"]
+    comment = state["comments"][0]["content"]
+    headings = [
+        "## 1. 任务是什么",
+        "## 2. 做了哪些工作",
+        "## 3. 怎么做的",
+        "## 4. 最终结论是什么",
+    ]
+    heading_positions = [comment.index(heading) for heading in headings]
+    assert heading_positions == sorted(heading_positions)
+    assert "已修改 agent-change.txt" in comment
+    assert "## 执行信息" in comment
+    assert comment.index("## 执行信息") > heading_positions[-1]
     worktree = root / "worktrees" / "terminal-tmux" / "task-1"
     assert (worktree / "agent-change.txt").read_text(encoding="utf-8") == "changed\n"
     prompt = (worktree / "received-prompt.txt").read_text(encoding="utf-8")
     assert "修复 bootstrap" in prompt
     assert "保持现有 Node.js" in prompt
     assert "不推送远端" in prompt
+    assert "最终回答必须简洁" in prompt
+    for heading in headings:
+        assert heading in prompt
 
     task_run_root = root / "state" / "runs" / "task-1"
     assert task_run_root.is_dir()
@@ -411,17 +438,27 @@ raise SystemExit(exit_code)
         {"id": "feedback", "taskId": "task-2", "content": "请按反馈重试"}
     )
     state_path.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    retry_environment = environment.copy()
+    retry_environment["FAKE_CODEX_UNSTRUCTURED"] = "1"
     retried = run(
         [sys.executable, str(TODO_AGENT), "run", "--once"],
-        environment=environment,
+        environment=retry_environment,
     )
     assert "等待审核：失败任务" in retried.stdout
     retry_prompt = (
         root / "worktrees" / "terminal-tmux" / "task-2" / "received-prompt.txt"
     ).read_text(encoding="utf-8")
     assert "请按反馈重试" in retry_prompt
-
     state = json.loads(state_path.read_text(encoding="utf-8"))
+    retry_comment = next(
+        comment["content"]
+        for comment in reversed(state["comments"])
+        if comment["taskId"] == "task-2"
+    )
+    retry_heading_positions = [retry_comment.index(heading) for heading in headings]
+    assert retry_heading_positions == sorted(retry_heading_positions)
+    assert "## 执行信息" in retry_comment
+
     state["tasks"].append(
         {
             "id": "task-live-1",

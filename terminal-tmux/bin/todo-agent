@@ -721,7 +721,16 @@ def task_prompt(
 - 不读取或输出 Todoist Token、SSH 密钥、环境凭据或其他项目的文件。
 - 不降低沙箱权限，不执行部署，不推送远端，不创建或合并 PR，不修改 main。
 - 在结束前运行与改动相称的检查；如果检查无法运行，要在最终结果中明确说明。
-- 不要提交 Git commit。最终回答说明修改内容、验证结果和仍存在的风险。
+- 不要提交 Git commit。
+- 最终回答必须简洁，只使用下面四个二级标题，顺序固定，不添加开场白或重复的执行信息：
+  ## 1. 任务是什么
+  用一两句话复述目标和验收点。
+  ## 2. 做了哪些工作
+  列出实际完成的改动和检查，不写过程流水账。
+  ## 3. 怎么做的
+  说明关键实现方式、涉及的文件或组件，以及运行过的验证命令。
+  ## 4. 最终结论是什么
+  明确说明是否完成、测试是否通过，以及仍存在的风险或待人工确认项。
 
 注册项目：{project.name}
 Todoist Project ID：{project.todoist_project_id}
@@ -829,6 +838,56 @@ def safe_comment(todoist: Todoist, task_id: str, content: str) -> Optional[str]:
         return str(error)
 
 
+RESULT_HEADINGS = (
+    "## 1. 任务是什么",
+    "## 2. 做了哪些工作",
+    "## 3. 怎么做的",
+    "## 4. 最终结论是什么",
+)
+
+
+def has_structured_result(result: str) -> bool:
+    positions = [result.find(heading) for heading in RESULT_HEADINGS]
+    return all(position >= 0 for position in positions) and positions == sorted(
+        positions
+    )
+
+
+def success_comment(
+    task: Dict[str, Any],
+    result: str,
+    branch: str,
+    worktree: Path,
+    run_dir: Path,
+) -> str:
+    result = result.strip()
+    if has_structured_result(result):
+        summary = result
+    else:
+        title = str(task.get("content") or task["id"])
+        description = str(task.get("description") or "").strip()
+        task_summary = title
+        if description:
+            task_summary = f"{task_summary}\n\n{description}"
+        summary = (
+            f"{RESULT_HEADINGS[0]}\n\n"
+            f"{task_summary}\n\n"
+            f"{RESULT_HEADINGS[1]}\n\n"
+            f"{result or 'Codex 已正常结束，但没有返回工作摘要。'}\n\n"
+            f"{RESULT_HEADINGS[2]}\n\n"
+            "在任务专用的隔离 worktree 中执行；具体过程可查看下方执行记录。\n\n"
+            f"{RESULT_HEADINGS[3]}\n\n"
+            "任务执行成功，已进入人工审核。"
+        )
+    return (
+        f"{summary}\n\n"
+        "## 执行信息\n\n"
+        f"- 分支：`{branch}`\n"
+        f"- 服务器 worktree：`{worktree}`\n"
+        f"- 执行记录：`{run_dir}`"
+    )
+
+
 def execute_task(
     todoist: Todoist,
     store: RunStore,
@@ -854,14 +913,7 @@ def execute_task(
 
     if succeeded:
         transition_error = safe_transition(todoist, task_id, "codex-review")
-        comment = (
-            "Codex Agent 执行完成，等待审核。\n\n"
-            f"分支：`{branch}`\n\n"
-            f"服务器工作树：`{worktree}`\n\n"
-            f"执行记录：`{run_dir}`\n\n"
-            "结果摘要：\n\n"
-            f"{result}"
-        )
+        comment = success_comment(task, result, branch, worktree, run_dir)
         comment_error = safe_comment(todoist, task_id, comment)
         if transition_error:
             result = f"代码执行成功，但更新 codex-review 失败：{transition_error}"
