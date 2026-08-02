@@ -187,7 +187,7 @@ install_prerequisites() {
     log "Installing Debian/Ubuntu prerequisites with apt"
     run_as_root apt-get update
     packages=(
-      bash bison bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
+      bash bison btop bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
       ncurses-base ncurses-bin openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip xz-utils vim zsh
       libevent-dev libncurses-dev libutf8proc-dev
     )
@@ -202,7 +202,7 @@ install_prerequisites() {
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
     packages=(
-      bash bison curl git libevent ncurses node pkgconf python utf8proc zsh
+      bash bison btop curl git libevent ncurses node pkgconf python utf8proc zsh
       yazi glow ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
@@ -1250,6 +1250,7 @@ validate() {
   druk_is_absent || fail "Druk must be uninstalled after migration to Fresh"
   command -v zsh >/dev/null 2>&1 || fail "zsh is required"
   command -v bash >/dev/null 2>&1 || fail "bash is required"
+  command -v btop >/dev/null 2>&1 || fail "btop is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
   command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen is required"
   command -v vi >/dev/null 2>&1 || fail "vi is required"
