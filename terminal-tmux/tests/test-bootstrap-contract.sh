@@ -24,6 +24,7 @@ bash -n "$BOOTSTRAP"
 grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
+grep -q 'btop' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
 grep -q 'locales' "$BOOTSTRAP"
 grep -q 'fd-find' "$BOOTSTRAP"
@@ -88,6 +89,8 @@ grep -Fq 'Restart=always' "$TODO_AGENT_SERVICE"
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 
 prerequisite_function=$(sed -n '/^install_prerequisites()/,/^}/p' "$BOOTSTRAP")
+[[ $(grep -Eoc '(^|[[:space:]])btop($|[[:space:]])' <<< "$prerequisite_function") -eq 2 ]]
+grep -Fq 'command -v btop >/dev/null 2>&1 || fail "btop is required"' "$BOOTSTRAP"
 if grep -Eq '(^|[[:space:]])(fzf|zoxide)($|[[:space:]])' <<< "$prerequisite_function"; then
   printf '%s\n' 'fzf and zoxide must come from pinned official releases, not apt or Homebrew' >&2
   exit 1

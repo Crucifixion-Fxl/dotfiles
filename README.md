@@ -2,7 +2,7 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
-git-delta、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
+git-delta、btop、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
 Codex 状态通知、Todoist TUI 和 zsh 交互环境。
 
 ## 整体流程
@@ -155,6 +155,7 @@ Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 - Python 3.10+（用于运行官方 pre-commit zipapp）
 - `gcc`、`make`、`pkg-config`、`bison`
 - `bubblewrap`（Linux 的非特权进程沙箱工具，提供 `bwrap` 命令）
+- `btop`（终端资源监视器）
 - Yazi 所需的 `file`、`unzip`，以及预览/搜索依赖 `ffmpeg`、`p7zip-full`、
   `jq`、`poppler-utils`、`fd-find`、`ripgrep`、`resvg`、
   `imagemagick`
@@ -196,7 +197,7 @@ Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk 
 缓存，再安装和验证 `fresh` 命令。Oh My Zsh 及第三方插件通过 Git
 安装到用户目录。apt 安装需要 root 或 sudo 权限。
 
-macOS 会先执行 `brew update`，再安装 Yazi、Glow、预览/搜索依赖、
+macOS 会先执行 `brew update`，再安装 btop、Yazi、Glow、预览/搜索依赖、
 Maple Mono NF CN 与 Symbols Nerd Font，并通过官方文档列出的
 `brew install --cask ghostty` 安装 Ghostty 稳定版，最后强制链接
 `ffmpeg-full` 与 `imagemagick-full`。如果 Homebrew
@@ -342,7 +343,7 @@ bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 
 
 - pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、termscp、Codex CLI、Fresh 版本
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
-- bash、zsh、git、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
+- bash、zsh、git、btop、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
 - Ghostty 应用、iTerm2 Dynamic Profile、Ghostty 配置和 `ghostty-dev` 启动参数
 - 三个 tmux 插件以及 Oh My Zsh、zsh-syntax-highlighting 的 commit
