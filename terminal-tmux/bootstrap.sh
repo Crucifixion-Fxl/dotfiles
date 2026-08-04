@@ -331,6 +331,22 @@ ensure_tmux_terminfo() {
     fail "tmux-256color terminfo is missing after installing ncurses prerequisites"
 }
 
+ensure_ghostty_terminfo() {
+  local source_file="$DOTFILES_DIR/terminfo/xterm-ghostty.terminfo"
+
+  if infocmp xterm-ghostty >/dev/null 2>&1; then
+    return 0
+  fi
+
+  command -v tic >/dev/null 2>&1 || fail "tic is required to install xterm-ghostty terminfo"
+  [[ -r "$source_file" ]] || fail "Ghostty terminfo source is missing: $source_file"
+  log "Installing xterm-ghostty terminfo into $HOME/.terminfo"
+  mkdir -p "$HOME/.terminfo"
+  tic -x -o "$HOME/.terminfo" "$source_file"
+  infocmp xterm-ghostty >/dev/null 2>&1 || \
+    fail "xterm-ghostty terminfo is missing after user-level installation"
+}
+
 lazygit_asset() {
   case "$PLATFORM_OS/$PLATFORM_ARCH" in
     darwin/arm64)
@@ -1256,6 +1272,7 @@ validate() {
   command -v vi >/dev/null 2>&1 || fail "vi is required"
   vi --version 2>/dev/null | grep -Eq '\+mouse([[:space:]]|$)' || fail "vi must support mouse input"
   infocmp tmux-256color >/dev/null 2>&1 || fail "tmux-256color terminfo is missing"
+  infocmp xterm-ghostty >/dev/null 2>&1 || fail "xterm-ghostty terminfo is missing"
   LC_ALL=zh_CN.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "zh_CN.UTF-8 locale is required"
   login_user=$(id -un)
   zsh_path=$(command -v zsh)
@@ -1375,7 +1392,7 @@ validate() {
     fail "managed tmux default-terminal was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv mouse) == on ]] || \
     fail "managed tmux mouse setting was not preserved"
-  [[ $(tmux -L terminal-tmux-check show-options -gqv history-limit) == 100000 ]] || \
+  [[ $(tmux -L terminal-tmux-check show-options -gqv history-limit) == 50000 ]] || \
     fail "managed tmux history limit was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv @continuum-restore) == off ]] || fail "tmux config validation failed"
   prefix_bindings=$(tmux -L terminal-tmux-check list-keys -T prefix)
@@ -1415,6 +1432,7 @@ main() {
   configure_locale
   install_tmux
   ensure_tmux_terminfo
+  ensure_ghostty_terminfo
   install_lazygit
   install_delta
   install_fzf

@@ -8,6 +8,7 @@ BOOTSTRAP="$ROOT/bootstrap.sh"
 WORKFLOW_IMAGE="$ROOT/assets/dotfiles-workflow.png"
 ITERM_PROFILE="$ROOT/iterm2/dev.json"
 GHOSTTY_CONFIG="$ROOT/ghostty/config.ghostty"
+GHOSTTY_TERMINFO="$ROOT/terminfo/xterm-ghostty.terminfo"
 GHOSTTY_LAUNCHER="$ROOT/bin/ghostty-dev"
 GHOSTTY_APPLESCRIPT="$ROOT/ghostty/open-tab.applescript"
 GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
@@ -41,6 +42,7 @@ grep -q 'pkgconf python utf8proc' "$BOOTSTRAP"
 grep -q 'vim zsh' "$BOOTSTRAP"
 grep -q 'font-maple-mono-nf-cn' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
+grep -q '^ensure_ghostty_terminfo()' "$BOOTSTRAP"
 grep -q '^configure_locale()' "$BOOTSTRAP"
 grep -q '^current_login_shell()' "$BOOTSTRAP"
 grep -q '^configure_login_shell()' "$BOOTSTRAP"
@@ -110,6 +112,18 @@ if grep -q 'tmux\.terminfo' "$BOOTSTRAP"; then
   printf '%s\n' 'bootstrap must not expect tmux.terminfo in the tmux release tarball' >&2
   exit 1
 fi
+
+# Direct Ghostty SSH sessions keep TERM=xterm-ghostty, so bootstrap must install
+# the matching entry without requiring root access.
+[[ -s "$GHOSTTY_TERMINFO" ]]
+grep -Eq '^xterm-ghostty\|ghostty\|Ghostty terminal emulator,' "$GHOSTTY_TERMINFO"
+grep -Fq 'tic -x -o "$HOME/.terminfo" "$source_file"' "$BOOTSTRAP"
+(
+  ghostty_terminfo_home=$(mktemp -d)
+  trap 'rm -rf "$ghostty_terminfo_home"' EXIT
+  TERMINFO="$ghostty_terminfo_home" tic -x -o "$ghostty_terminfo_home" "$GHOSTTY_TERMINFO"
+  TERMINFO="$ghostty_terminfo_home" infocmp xterm-ghostty >/dev/null
+)
 
 # Exercise install_plugin under set -u. Bash expands a whole `local` command
 # before applying its assignments, so dependent values must be assigned on a
