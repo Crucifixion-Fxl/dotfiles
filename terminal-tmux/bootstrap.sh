@@ -9,7 +9,7 @@ set -euo pipefail
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
 #
 # 可复现策略：
-#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - pre-commit/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 与 Iris 始终跟随官方最新稳定版；termscp 和 Fresh 使用各自官方
@@ -74,6 +74,11 @@ tmux_is_locked_version() {
 
 lazygit_is_locked_version() {
   command -v lazygit >/dev/null 2>&1 && lazygit --version 2>/dev/null | grep -q "version=$LAZYGIT_VERSION"
+}
+
+glab_is_locked_version() {
+  command -v glab >/dev/null 2>&1 &&
+    [[ $(glab --version 2>/dev/null | awk 'NR == 1 {print $2}') == "$GLAB_VERSION" ]]
 }
 
 delta_is_locked_version() {
@@ -419,6 +424,52 @@ install_lazygit() {
   trap - RETURN
   rm -rf "$work"
   lazygit_is_locked_version || fail "lazygit $LAZYGIT_VERSION installation verification failed"
+}
+
+glab_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="glab_${GLAB_VERSION}_darwin_arm64.tar.gz"
+      ASSET_SHA256=$GLAB_SHA256_DARWIN_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="glab_${GLAB_VERSION}_darwin_amd64.tar.gz"
+      ASSET_SHA256=$GLAB_SHA256_DARWIN_X86_64
+      ;;
+    linux/arm64)
+      ASSET="glab_${GLAB_VERSION}_linux_arm64.tar.gz"
+      ASSET_SHA256=$GLAB_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="glab_${GLAB_VERSION}_linux_amd64.tar.gz"
+      ASSET_SHA256=$GLAB_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_glab() {
+  glab_is_locked_version && return 0
+
+  local work archive binary
+  glab_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing GitLab CLI $GLAB_VERSION into $HOME/.local/bin"
+  download \
+    "https://gitlab.com/gitlab-org/cli/-/releases/v$GLAB_VERSION/downloads/$ASSET" \
+    "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xzf "$archive" -C "$work"
+  binary=$(find "$work" -type f -name glab -perm -u+x | head -1)
+  [[ -n "$binary" ]] || fail "glab binary not found in $ASSET"
+  install -m 0755 "$binary" "$HOME/.local/bin/glab"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  glab_is_locked_version || fail "GitLab CLI $GLAB_VERSION installation verification failed"
 }
 
 delta_asset() {
@@ -1089,6 +1140,17 @@ install_todo_agent_service() {
     "$DOTFILES_DIR/systemd/todo-agent.service" \
     "$HOME/.config/systemd/user/todo-agent.service"
 
+  if ! todo_agent_has_enabled_projects; then
+    if todo_agent_fallback_running; then
+      stop_todo_agent_fallback
+    fi
+    if todo_agent_systemd_available; then
+      systemctl --user disable --now todo-agent.service >/dev/null 2>&1 || true
+    fi
+    log "Skipping todo-agent watcher because no enabled projects are configured"
+    return 0
+  fi
+
   if todo_agent_systemd_available; then
     systemctl --user daemon-reload
     systemctl --user enable todo-agent.service
@@ -1103,6 +1165,14 @@ install_todo_agent_service() {
   fi
 
   restart_todo_agent_fallback
+}
+
+todo_agent_has_enabled_projects() {
+  local output
+  if ! output=$("$HOME/.local/bin/todo-agent" project list 2>&1); then
+    fail "cannot read todo-agent project configuration: $output"
+  fi
+  grep -Eq $'\tenabled$' <<< "$output"
 }
 
 todo_agent_systemd_available() {
@@ -1297,6 +1367,13 @@ configure_git_identity() {
   [[ -n "$git_email" ]] || printf '%s\n' '  git config --global user.email "you@example.com"'
 }
 
+remind_gitlab_auth() {
+  log "GitLab token authentication reminder"
+  printf '%s\n' 'Authenticate GitLab when needed with:'
+  printf '%s\n' '  glab auth login --hostname gitlab.addx.ai'
+  printf '%s\n' 'Paste a GitLab token with api scope only into the interactive prompt; do not put it in shell history.'
+}
+
 remind_ssh_key() {
   local candidate public_key= git_email
   for candidate in \
@@ -1339,6 +1416,7 @@ validate() {
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
   lazygit_is_locked_version || fail "expected lazygit $LAZYGIT_VERSION"
+  glab_is_locked_version || fail "expected GitLab CLI $GLAB_VERSION"
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
   fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
   zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
@@ -1418,7 +1496,9 @@ validate() {
     [[ -L "$todo_agent_service_destination" &&
       $(readlink "$todo_agent_service_destination") == "$todo_agent_service" ]] || \
       fail "todo-agent systemd service link is missing"
-    todo_agent_background_running || fail "todo-agent background watcher is not running"
+    if todo_agent_has_enabled_projects; then
+      todo_agent_background_running || fail "todo-agent background watcher is not running"
+    fi
   fi
 
   vim_config="$DOTFILES_DIR/vim/vimrc"
@@ -1530,6 +1610,7 @@ main() {
   ensure_tmux_terminfo
   ensure_ghostty_terminfo
   install_lazygit
+  install_glab
   install_delta
   install_fzf
   install_zoxide
@@ -1568,6 +1649,7 @@ main() {
   printf '%s\n' 'Transfer between the SSH server and this Mac: termscp-mac'
   printf '%s\n' 'Ghostty stable app and managed config are ready on macOS'
   printf '%s\n' 'Choose an SSH host and open the remote menu in Ghostty: ghostty-dev'
+  remind_gitlab_auth
   remind_ssh_key
 }
 

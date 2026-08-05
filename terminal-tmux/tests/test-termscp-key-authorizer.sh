@@ -14,7 +14,7 @@ cleanup() {
 trap cleanup EXIT
 
 file_mode() {
-  stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1"
+  stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
 ssh_key="$TEST_DIRECTORY/id_ed25519"

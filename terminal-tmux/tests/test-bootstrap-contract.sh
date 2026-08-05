@@ -130,11 +130,24 @@ grep -Fq 'tic -x -o "$HOME/.terminfo" "$source_file"' "$BOOTSTRAP"
 # later line.
 TEST_HOME=$(mktemp -d)
 FALLBACK_HOME=$(mktemp -d)
-trap 'rm -rf "$TEST_HOME" "$FALLBACK_HOME"' EXIT
+UNCONFIGURED_HOME=$(mktemp -d)
+trap 'rm -rf "$TEST_HOME" "$FALLBACK_HOME" "$UNCONFIGURED_HOME"' EXIT
 TEST_PLUGIN_COMMIT=0123456789abcdef
 
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
+
+# A fresh container has no Todoist project mapping or token yet. Bootstrap
+# must still complete instead of starting a watcher that exits immediately.
+mkdir -p "$UNCONFIGURED_HOME/.local/bin"
+ln -s "$TODO_AGENT" "$UNCONFIGURED_HOME/.local/bin/todo-agent"
+(
+  HOME=$UNCONFIGURED_HOME
+  PLATFORM_OS=linux
+  ! todo_agent_has_enabled_projects
+  install_todo_agent_service
+  ! todo_agent_background_running
+)
 
 # Linux containers without a user systemd manager receive one persistent nohup
 # watcher. Starting is idempotent, while restarting replaces the old process so
@@ -353,6 +366,9 @@ zoxide() {
 glow() {
   printf 'glow version %s\n' "$GLOW_VERSION"
 }
+glab() {
+  printf 'glab %s (test)\n' "$GLAB_VERSION"
+}
 iris() {
   case "${1:-}" in
     version) printf '%s\n' 'iris 0.4.21' ;;
@@ -362,7 +378,8 @@ fzf_is_locked_version
 zoxide_is_locked_version
 iris_is_installed
 glow_is_locked_version
-unset -f fzf zoxide iris glow
+glab_is_locked_version
+unset -f fzf zoxide iris glow glab
 
 yazi() {
   printf 'Yazi %s (test)\n' "$YAZI_VERSION"
@@ -403,6 +420,11 @@ for version_variable in \
   FZF_SHA256_DARWIN_X86_64 \
   FZF_SHA256_LINUX_ARM64 \
   FZF_SHA256_LINUX_X86_64 \
+  GLAB_VERSION \
+  GLAB_SHA256_DARWIN_ARM64 \
+  GLAB_SHA256_DARWIN_X86_64 \
+  GLAB_SHA256_LINUX_ARM64 \
+  GLAB_SHA256_LINUX_X86_64 \
   ZOXIDE_VERSION \
   ZOXIDE_SHA256_DARWIN_ARM64 \
   ZOXIDE_SHA256_DARWIN_X86_64 \
@@ -436,6 +458,15 @@ PLATFORM_OS=linux PLATFORM_ARCH=arm64 fzf_asset
 [[ $ASSET == "fzf-${FZF_VERSION}-linux_arm64.tar.gz" ]]
 PLATFORM_OS=linux PLATFORM_ARCH=x86_64 fzf_asset
 [[ $ASSET == "fzf-${FZF_VERSION}-linux_amd64.tar.gz" ]]
+
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 glab_asset
+[[ $ASSET == "glab_${GLAB_VERSION}_darwin_arm64.tar.gz" ]]
+PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 glab_asset
+[[ $ASSET == "glab_${GLAB_VERSION}_darwin_amd64.tar.gz" ]]
+PLATFORM_OS=linux PLATFORM_ARCH=arm64 glab_asset
+[[ $ASSET == "glab_${GLAB_VERSION}_linux_arm64.tar.gz" ]]
+PLATFORM_OS=linux PLATFORM_ARCH=x86_64 glab_asset
+[[ $ASSET == "glab_${GLAB_VERSION}_linux_amd64.tar.gz" ]]
 
 PLATFORM_OS=darwin PLATFORM_ARCH=arm64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-aarch64-apple-darwin.tar.gz" ]]
@@ -638,6 +669,10 @@ grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
 grep -Fq '  install_iterm2_profile' "$BOOTSTRAP"
 grep -Fq '  install_ghostty' "$BOOTSTRAP"
 grep -Fq '  install_ghostty_config' "$BOOTSTRAP"
+grep -Fq '  install_glab' "$BOOTSTRAP"
+grep -Fq '  remind_gitlab_auth' "$BOOTSTRAP"
+grep -Fq 'glab auth login --hostname gitlab.addx.ai' "$BOOTSTRAP"
+grep -Fq 'GitLab token with api scope' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
 grep -Fq '  install_iris' "$BOOTSTRAP"
