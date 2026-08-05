@@ -85,7 +85,7 @@ main() {
   local payload relay_payload authorizer_payload remote_command
   local mac_user reverse_port mac_ssh_port authorization_reverse_port forced_command
   local mac_user_quoted reverse_port_quoted authorization_reverse_port_quoted
-  local authorizer_token authorizer_local_port authorizer_token_quoted
+  local authorizer_token authorizer_local_port authorizer_token_quoted host_quoted
 
   [[ $# -eq 1 ]] || fail "用法：connect-remote-dev <ssh-host>"
   host=$1
@@ -130,6 +130,7 @@ main() {
   printf -v reverse_port_quoted '%q' "$reverse_port"
   printf -v authorization_reverse_port_quoted '%q' "$authorization_reverse_port"
   printf -v authorizer_token_quoted '%q' "$authorizer_token"
+  printf -v host_quoted '%q' "$host"
   remote_command='set -eu
 command -v base64 >/dev/null 2>&1 || {
   printf "%s\n" "connect-remote-dev：远端未安装 base64" >&2
@@ -162,8 +163,9 @@ TERMSCP_REVERSE_PORT='"$reverse_port_quoted"'
 TERMSCP_MAC_HOST=127.0.0.1
 TERMSCP_AUTH_TOKEN='"$authorizer_token_quoted"'
 TERMSCP_AUTH_REVERSE_PORT='"$authorization_reverse_port_quoted"'
+TERMSCP_REMOTE_HOST='"$host_quoted"'
 export TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST
-export TERMSCP_AUTH_TOKEN TERMSCP_AUTH_REVERSE_PORT
+export TERMSCP_AUTH_TOKEN TERMSCP_AUTH_REVERSE_PORT TERMSCP_REMOTE_HOST
 exec "$directory/remote-dev-entry"'
 
   run_ssh "$host" "$remote_command" "$reverse_port" "$mac_ssh_port" \

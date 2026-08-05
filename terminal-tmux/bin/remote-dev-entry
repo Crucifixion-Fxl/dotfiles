@@ -46,7 +46,8 @@ valid_termscp_port() {
 }
 
 authorize_termscp_container_key() {
-  local container_id=$1 container_name=$2 authorization_port public_key
+  local container_id=$1 container_name=$2 mac_host=$3 authorization_port public_key
+  local authorization_label remote_host
 
   [[ -n ${TERMSCP_AUTH_TOKEN:-} ]] || return 0
   authorization_port=${TERMSCP_AUTH_REVERSE_PORT:-6023}
@@ -59,28 +60,113 @@ authorize_termscp_container_key() {
     return 1
   }
 
-  # 只从最终选择的容器导出公钥。这里不能使用登录 shell：部分容器的
-  # /etc/profile 会向 stdout 输出提示或 ANSI 控制码，混入 ssh-keygen 的结果后
-  # 会被 Mac 误判成公钥类型。私钥文件始终留在容器文件系统中。
+  # 新旧容器都使用独立的 termscp 身份。首次进入时自动生成密钥，并维护一个
+  # 专用 SSH Host；绝不读取、覆盖或删除容器已有的 ~/.ssh/id_ed25519。
+  # 这里不能使用登录 shell：部分容器的 /etc/profile 会向 stdout 输出提示或
+  # ANSI 控制码，混入 ssh-keygen 的结果后会被 Mac 误判成公钥类型。
   public_key=$(docker exec "$container_id" sh -c '
-    key_path=${TERMSCP_MAC_KEY_PATH:-"$HOME/.ssh/id_ed25519"}
+    mac_host=$1
+    mac_port=$2
+    mac_user=$3
+    ssh_directory="$HOME/.ssh"
+    key_path="$ssh_directory/termscp_mac_ed25519"
+    config_path="$ssh_directory/config"
+    begin_marker="# BEGIN dotfiles termscp-mac"
+    end_marker="# END dotfiles termscp-mac"
+
     command -v ssh-keygen >/dev/null 2>&1 || {
       printf "%s\n" "容器内未安装 ssh-keygen" >&2
       exit 127
     }
-    [ -r "$key_path" ] || {
-      printf "找不到容器 SSH 私钥：%s\n" "$key_path" >&2
+    command -v awk >/dev/null 2>&1 || {
+      printf "%s\n" "容器内未安装 awk" >&2
+      exit 127
+    }
+    [ ! -L "$ssh_directory" ] && [ ! -L "$key_path" ] && [ ! -L "$config_path" ] || {
+      printf "%s\n" "拒绝通过符号链接写入容器 SSH 配置" >&2
       exit 1
     }
-    ssh-keygen -y -f "$key_path"
-  ') || return 1
 
+    umask 077
+    mkdir -p "$ssh_directory"
+    chmod 700 "$ssh_directory"
+    if [ ! -e "$key_path" ]; then
+      ssh-keygen -q -t ed25519 -N "" -C "termscp-mac" -f "$key_path" || {
+        printf "%s\n" "无法生成容器 termscp 专用密钥" >&2
+        exit 1
+      }
+    fi
+    [ -f "$key_path" ] && [ -r "$key_path" ] || {
+      printf "容器 termscp 私钥不可读：%s\n" "$key_path" >&2
+      exit 1
+    }
+    chmod 600 "$key_path"
+
+    config_temporary=$(mktemp "$ssh_directory/.termscp-config.XXXXXX") || {
+      printf "%s\n" "无法创建临时 SSH 配置" >&2
+      exit 1
+    }
+    config_final=$(mktemp "$ssh_directory/.termscp-config.XXXXXX") || {
+      rm -f "$config_temporary"
+      printf "%s\n" "无法创建最终 SSH 配置" >&2
+      exit 1
+    }
+    trap '\''rm -f "$config_temporary" "$config_final"'\'' 0 1 2 15
+    if [ -e "$config_path" ]; then
+      [ -f "$config_path" ] && [ -r "$config_path" ] || {
+        printf "容器 SSH 配置不可读：%s\n" "$config_path" >&2
+        exit 1
+      }
+      awk -v begin="$begin_marker" -v end="$end_marker" '\''
+        $0 == begin {
+          if (managed) exit 42
+          managed = 1
+          next
+        }
+        $0 == end {
+          if (!managed) exit 43
+          managed = 0
+          next
+        }
+        !managed { print }
+        END { if (managed) exit 44 }
+      '\'' "$config_path" > "$config_temporary" || {
+        printf "%s\n" "容器 SSH 配置中的 termscp 受管区块不完整" >&2
+        exit 1
+      }
+    fi
+    # OpenSSH 对大多数参数采用“第一个获得的值”。专用 Host 必须放在原有
+    # `Host *` 等通配规则之前，才能保证 IdentityFile 不被通用配置抢先覆盖。
+    {
+      printf "%s\n" "$begin_marker"
+      printf "%s\n" "Host dotfiles-termscp-mac"
+      printf "    HostName %s\n" "$mac_host"
+      printf "    Port %s\n" "$mac_port"
+      printf "    User %s\n" "$mac_user"
+      printf "    IdentityFile %s\n" "$key_path"
+      printf "%s\n" "    IdentitiesOnly yes"
+      printf "%s\n" "$end_marker"
+      if [ -s "$config_temporary" ]; then
+        printf "\n"
+        cat "$config_temporary"
+      fi
+    } > "$config_final"
+    chmod 600 "$config_final"
+    mv -f "$config_final" "$config_path"
+    rm -f "$config_temporary"
+    trap - 0 1 2 15
+
+    ssh-keygen -y -f "$key_path"
+  ' sh "$mac_host" "${TERMSCP_REVERSE_PORT:-6022}" "$TERMSCP_MAC_USER") || return 1
+
+  remote_host=${TERMSCP_REMOTE_HOST:-remote}
+  authorization_label="$remote_host/$container_name"
   termscp-key-authorizer request \
     --host 127.0.0.1 \
     --port "$authorization_port" \
     --token "$TERMSCP_AUTH_TOKEN" \
     --public-key "$public_key" \
-    --label "$container_name"
+    --label "$authorization_label"
 }
 
 start_container_bridge_relay() {
@@ -211,17 +297,19 @@ enter_container_tmux() {
   local container_id=$1 container_name=$2 termscp_mac_host authorization_output
   local -a docker_environment
 
+  termscp_mac_host=127.0.0.1
+  start_termscp_container_relay "$container_id"
+
   if [[ -n ${TERMSCP_MAC_USER:-} ]]; then
     if ! authorization_output=$(authorize_termscp_container_key \
-      "$container_id" "$container_name" 2>&1); then
+      "$container_id" "$container_name" "$termscp_mac_host" 2>&1); then
       printf 'remote-dev-entry：无法自动授权容器公钥：%s\n' \
         "$authorization_output" >&2
       printf '%s\n' '仍会进入容器，但 termscp-mac 可能需要手动配置认证。' >&2
     fi
+    # 即使授权服务暂时失败，也保持专用 Host，绝不回退读取普通 SSH 身份。
+    termscp_mac_host=dotfiles-termscp-mac
   fi
-
-  termscp_mac_host=127.0.0.1
-  start_termscp_container_relay "$container_id"
   # 容器镜像可能通过 BASH_ENV/ENV 注入 shell 初始化脚本（例如 Iris）。tmux
   # 状态栏的 #() helper 是非交互子 shell；继承这些脚本会把终端控制序列当作
   # 状态文本显示。显式指向无输出的 /dev/null，也能覆盖已有 tmux server

@@ -322,9 +322,9 @@ GHOSTTY_LAUNCHER_DESTINATION="$TEST_HOME/.local/bin/ghostty-dev"
 [[ $(readlink "$GHOSTTY_LAUNCHER_DESTINATION") == "$GHOSTTY_LAUNCHER" ]]
 grep -Fq 'font-family = "Maple Mono NF CN"' "$GHOSTTY_CONFIG"
 grep -Fq 'font-size = 16' "$GHOSTTY_CONFIG"
-grep -Fq 'theme = "light:Catppuccin Latte,dark:Catppuccin Mocha"' "$GHOSTTY_CONFIG"
-grep -Fq 'background-opacity = 0.75' "$GHOSTTY_CONFIG"
-grep -Fq 'background-blur-radius = 30' "$GHOSTTY_CONFIG"
+grep -Fq 'theme = "12-bit Rainbow"' "$GHOSTTY_CONFIG"
+grep -Fq 'background-opacity = 1' "$GHOSTTY_CONFIG"
+grep -Fq 'background-blur-radius = 0' "$GHOSTTY_CONFIG"
 grep -Fq 'macos-titlebar-style = tabs' "$GHOSTTY_CONFIG"
 grep -Fq 'window-new-tab-position = current' "$GHOSTTY_CONFIG"
 grep -Fq 'wait-after-command = false' "$GHOSTTY_CONFIG"
@@ -354,11 +354,13 @@ glow() {
   printf 'glow version %s\n' "$GLOW_VERSION"
 }
 iris() {
-  printf 'iris v%s\n' "$IRIS_VERSION"
+  case "${1:-}" in
+    version) printf '%s\n' 'iris 0.4.21' ;;
+  esac
 }
 fzf_is_locked_version
 zoxide_is_locked_version
-iris_is_locked_version
+iris_is_installed
 glow_is_locked_version
 unset -f fzf zoxide iris glow
 
@@ -406,11 +408,6 @@ for version_variable in \
   ZOXIDE_SHA256_DARWIN_X86_64 \
   ZOXIDE_SHA256_LINUX_ARM64 \
   ZOXIDE_SHA256_LINUX_X86_64 \
-  IRIS_VERSION \
-  IRIS_SHA256_DARWIN_ARM64 \
-  IRIS_SHA256_DARWIN_X86_64 \
-  IRIS_SHA256_LINUX_ARM64 \
-  IRIS_SHA256_LINUX_X86_64 \
   GLOW_VERSION \
   GLOW_SHA256_DARWIN_ARM64 \
   GLOW_SHA256_DARWIN_X86_64 \
@@ -425,6 +422,11 @@ for version_variable in \
   PRE_COMMIT_SHA256; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
 done
+
+if grep -Eq '^IRIS_(VERSION|SHA256_)' "$ROOT/versions.lock"; then
+  printf '%s\n' 'Iris must follow the official latest stable release instead of versions.lock' >&2
+  exit 1
+fi
 
 PLATFORM_OS=darwin PLATFORM_ARCH=arm64 fzf_asset
 [[ $ASSET == "fzf-${FZF_VERSION}-darwin_arm64.tar.gz" ]]
@@ -639,6 +641,7 @@ grep -Fq '  install_ghostty_config' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
 grep -Fq '  install_iris' "$BOOTSTRAP"
+grep -Fq 'tests/test-iris-update.sh' "$BOOTSTRAP"
 grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"

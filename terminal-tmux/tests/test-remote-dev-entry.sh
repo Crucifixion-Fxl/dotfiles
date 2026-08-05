@@ -24,6 +24,49 @@ TERMINFO_TEST_MODE=missing fallback_ghostty_term
 unset -f infocmp
 TERM=xterm-256color
 
+# A newly selected container gets a dedicated termscp identity and a managed
+# SSH Host without touching its ordinary SSH key or unrelated config entries.
+identity_home=$(mktemp -d)
+identity_request="$identity_home/authorization-request"
+mkdir -p "$identity_home/.ssh"
+printf '%s\n' 'Host *' '    IdentityFile ~/.ssh/id_ed25519' \
+  'Host existing-host' '    HostName example.invalid' \
+  > "$identity_home/.ssh/config"
+ssh-keygen -q -t ed25519 -N '' -f "$identity_home/.ssh/id_ed25519"
+ordinary_key_fingerprint=$(ssh-keygen -lf "$identity_home/.ssh/id_ed25519" | awk '{print $2}')
+(
+  TERMSCP_MAC_USER=mac-user
+  TERMSCP_REVERSE_PORT=16022
+  TERMSCP_AUTH_TOKEN=test-token
+  TERMSCP_AUTH_REVERSE_PORT=16023
+  TERMSCP_REMOTE_HOST=dev-4090
+  docker() {
+    [[ $1 == exec ]]
+    shift 2
+    HOME=$identity_home "$@"
+  }
+  termscp-key-authorizer() {
+    printf '%s\n' "$*" > "$identity_request"
+    printf '%s\n' 'AUTHORIZED SHA256:test added'
+  }
+  authorize_termscp_container_key abc123 api-dev 172.17.0.1 >/dev/null
+  authorize_termscp_container_key abc123 api-dev 172.18.0.1 >/dev/null
+)
+[[ -f "$identity_home/.ssh/termscp_mac_ed25519" ]]
+[[ $(ssh-keygen -lf "$identity_home/.ssh/id_ed25519" | awk '{print $2}') == \
+  "$ordinary_key_fingerprint" ]]
+grep -Fq 'Host existing-host' "$identity_home/.ssh/config"
+[[ $(grep -Fc '# BEGIN dotfiles termscp-mac' "$identity_home/.ssh/config") -eq 1 ]]
+grep -Fq 'Host dotfiles-termscp-mac' "$identity_home/.ssh/config"
+managed_host_line=$(grep -n '^Host dotfiles-termscp-mac$' "$identity_home/.ssh/config" | cut -d: -f1)
+wildcard_host_line=$(grep -n '^Host \*$' "$identity_home/.ssh/config" | cut -d: -f1)
+(( managed_host_line < wildcard_host_line ))
+grep -Fq '    HostName 172.18.0.1' "$identity_home/.ssh/config"
+grep -Fq "    IdentityFile $identity_home/.ssh/termscp_mac_ed25519" \
+  "$identity_home/.ssh/config"
+grep -Fq -- '--label dev-4090/api-dev' "$identity_request"
+rm -rf "$identity_home"
+
 docker() {
   if [[ $1 == ps ]]; then
     case "${DOCKER_TEST_MODE:-running}" in
@@ -140,9 +183,12 @@ grep -Fq 'tmux set-environment -g "$variable" "$value"' "$ENTRY"
 grep -Fq 'TERMSCP_MAC_USER TERMSCP_REVERSE_PORT TERMSCP_MAC_HOST' "$ENTRY"
 grep -Fq 'start_termscp_container_relay "$container_id"' "$ENTRY"
 grep -Fq 'authorize_termscp_container_key \' "$ENTRY"
-grep -Fq '"$container_id" "$container_name" 2>&1' "$ENTRY"
+grep -Fq '"$container_id" "$container_name" "$termscp_mac_host" 2>&1' "$ENTRY"
 grep -Fq 'public_key=$(docker exec "$container_id" sh -c' "$ENTRY"
+grep -Fq 'key_path="$ssh_directory/termscp_mac_ed25519"' "$ENTRY"
+grep -Fq 'ssh-keygen -q -t ed25519 -N ""' "$ENTRY"
 grep -Fq 'ssh-keygen -y -f "$key_path"' "$ENTRY"
+grep -Fq 'Host dotfiles-termscp-mac' "$ENTRY"
 grep -Fq 'termscp-key-authorizer request' "$ENTRY"
 if grep -Fq 'Mac SFTP 公钥授权：' "$ENTRY"; then
   printf '%s\n' 'successful container key authorization must stay silent' >&2
