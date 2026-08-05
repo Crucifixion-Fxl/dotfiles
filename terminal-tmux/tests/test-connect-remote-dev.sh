@@ -41,6 +41,7 @@ grep -Fq 'TERMSCP_REVERSE_PORT=16022' <<< "$output"
 grep -Fq 'TERMSCP_MAC_HOST=127.0.0.1' <<< "$output"
 grep -Fq 'TERMSCP_AUTH_TOKEN=test-token' <<< "$output"
 grep -Fq 'TERMSCP_AUTH_REVERSE_PORT=16023' <<< "$output"
+grep -Fq 'TERMSCP_REMOTE_HOST=dev-4090' <<< "$output"
 grep -Fq 'exec "$directory/remote-dev-entry"' <<< "$output"
 
 payload=$(sed -n "s/^payload='\\(.*\\)'$/\\1/p" <<< "$output")

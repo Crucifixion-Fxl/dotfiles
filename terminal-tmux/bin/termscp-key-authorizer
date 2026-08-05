@@ -107,6 +107,11 @@ def sanitize_label(label: str) -> str:
     return sanitized[:80] or "container"
 
 
+def managed_comment(label: str) -> str:
+    identity = hashlib.sha256(label.encode("utf-8")).hexdigest()[:16]
+    return f"termscp-{sanitize_label(label)}-{identity}"
+
+
 def restricted_entry(
     key_type: str, encoded_key: str, forced_command: str, label: str
 ) -> str:
@@ -114,13 +119,18 @@ def restricted_entry(
         raise ValueError("forced command contains unsupported characters")
     return (
         f'from="{AUTHORIZED_SOURCE}",restrict,command="{forced_command}" '
-        f"{key_type} {encoded_key} termscp-{sanitize_label(label)}"
+        f"{key_type} {encoded_key} {managed_comment(label)}"
     )
 
 
 def line_has_key(line: str, key_type: str, encoded_key: str) -> bool:
     fields = line.strip().split()
     return key_type in fields and encoded_key in fields
+
+
+def line_has_identity(line: str, comment: str) -> bool:
+    fields = line.strip().split()
+    return bool(fields) and fields[-1] == comment
 
 
 def line_is_restricted(line: str, forced_command: str) -> bool:
@@ -137,6 +147,7 @@ def install_authorized_key(
 ) -> tuple[str, str]:
     key_type, encoded_key, fingerprint = normalized_public_key(public_key)
     entry = restricted_entry(key_type, encoded_key, forced_command, label)
+    comment = managed_comment(label)
     ssh_directory = authorized_keys.parent
 
     if ssh_directory.is_symlink() or authorized_keys.is_symlink():
@@ -149,22 +160,39 @@ def install_authorized_key(
         fcntl.flock(stream.fileno(), fcntl.LOCK_EX)
         os.fchmod(stream.fileno(), 0o600)
         contents = stream.read()
-        for line in contents.splitlines():
-            if not line_has_key(line, key_type, encoded_key):
+        lines = contents.splitlines()
+        exact_entry_present = False
+        replacement_needed = False
+        retained_lines: list[str] = []
+        for line in lines:
+            same_key = line_has_key(line, key_type, encoded_key)
+            same_identity = line_has_identity(line, comment)
+            if not same_key and not same_identity:
+                retained_lines.append(line)
                 continue
             if not line_is_restricted(line, forced_command):
                 raise ValueError(
-                    "the public key already exists without the required SFTP restrictions"
+                    "the managed identity or public key already exists without the required SFTP restrictions"
                 )
-            return fingerprint, "existing"
+            if same_key and same_identity:
+                if exact_entry_present:
+                    replacement_needed = True
+                    continue
+                exact_entry_present = True
+                retained_lines.append(line)
+                continue
+            replacement_needed = True
 
-        stream.seek(0, os.SEEK_END)
-        if contents and not contents.endswith("\n"):
-            stream.write("\n")
-        stream.write(entry + "\n")
+        if exact_entry_present and not replacement_needed:
+            return fingerprint, "existing"
+        if not exact_entry_present:
+            retained_lines.append(entry)
+        stream.seek(0)
+        stream.truncate()
+        stream.write("\n".join(retained_lines) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
-    return fingerprint, "added"
+    return fingerprint, "replaced" if replacement_needed else "added"
 
 
 def receive_request(connection: socket.socket) -> dict[str, object]:

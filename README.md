@@ -49,6 +49,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
     │   ├── test-termscp-mac.sh        # Mac SFTP 入口参数检查
     │   ├── test-termscp-bridge-relay.sh # Docker bridge 中继检查
     │   ├── test-termscp-key-authorizer.sh # 容器公钥自动授权检查
+    │   ├── test-iris-update.sh         # Iris 最新稳定版安装与容错检查
     │   ├── test-todo-tui.py          # TUI 数据、中文宽度和视觉契约检查
     │   ├── test-todo-agent.py        # Agent 注册、状态、worktree 和重试检查
     │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
@@ -114,7 +115,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - git-delta `0.19.2`
 - fzf `0.74.0`
 - zoxide `0.10.0`
-- Iris `0.4.8`
+- Iris：每次正常运行 bootstrap 时自动更新到官方最新稳定版（不锁版本）
 - Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
@@ -125,13 +126,13 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
 
-pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi 的官方
+pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 的官方
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
-避免覆盖用户改动。Ghostty、Codex CLI、termscp 和 Fresh 是例外：Ghostty 跟随
-Homebrew cask 的稳定版，Codex 始终安装 `@openai/codex@latest`，termscp 与
-Fresh 分别使用各自的官方通用安装脚本。
+避免覆盖用户改动。Ghostty、Codex CLI、Iris、termscp 和 Fresh 是例外：Ghostty
+跟随 Homebrew cask 的稳定版，Codex 始终安装 `@openai/codex@latest`，Iris
+跟随官方最新稳定版，termscp 与 Fresh 分别使用各自的官方通用安装脚本。
 
 ## 安装
 
@@ -181,7 +182,7 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 文字最终仍由本机 iTerm2 或 Ghostty 字体渲染。
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
-`~/.local`。lazygit、git-delta、fzf、zoxide、Iris、Glow 和 Yazi 使用与操作系统、CPU 架构
+`~/.local`。lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 使用与操作系统、CPU 架构
 匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。pre-commit 使用
 macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10+。Yazi 的
 `yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
@@ -204,9 +205,13 @@ Maple Mono NF CN 与 Symbols Nerd Font，并通过官方文档列出的
 中的 Yazi、Glow、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
 版本安装到 `~/.local/bin`。
 
-Iris 使用同一份托管 `zshrc` 在本地、SSH 和 tmux 中初始化。bootstrap 会安装
-锁定的 Iris 官方 Release 到 `~/.local/bin`；不会执行会自行改写 shell 配置的
-`iris setup`。旧的 `zsh-autosuggestions` 目录即使还留在某台机器上也不会被加载。
+Iris 使用同一份托管 `zshrc` 在本地、SSH 和 tmux 中初始化。首次 bootstrap 会把
+官方最新稳定 Release 安装到 `~/.local/bin`；以后每次正常运行 bootstrap 都检查
+官方 `releases/latest` 稳定资产，只有版本更高时才原子替换，只会升级、不会按仓库
+版本降级。已有可用 Iris 遇到网络或更新失败时会保留当前版本并警告；首次安装失败
+则停止。`--check` 只验证 Iris 可用，不会联网更新。bootstrap 不会执行会自行改写
+shell 配置的 `iris setup`。旧的
+`zsh-autosuggestions` 目录即使还留在某台机器上也不会被加载。
 
 zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
 存在的 `~/Documents` 和 `~/.dotfiles` 加入数据库，避免 Yazi 中按大写 `Z` 时
@@ -341,7 +346,7 @@ bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Iris、Glow、Yazi/`ya`、termscp、Codex CLI、Fresh 版本
+- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow、Yazi/`ya` 的锁定版本，以及 Iris、termscp、Codex CLI、Fresh 可用性
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、btop、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
@@ -534,13 +539,18 @@ termscp 左侧的本地文件系统是当前服务器宿主机或容器，右侧
 `termscp-mac [服务器或容器目录]` 可以指定左侧起始目录，默认使用当前目录。
 
 反向转发只复用网络通道，不会复用当前 SSH 登录的身份。选择 Docker 容器后，
-`remote-dev-entry` 在容器内运行 `ssh-keygen -y`，只导出默认
-`~/.ssh/id_ed25519` 对应的公钥，再通过令牌保护的 `127.0.0.1:6023` 转发交给
-Mac。Mac 会幂等写入 `~/.ssh/authorized_keys`，规则限定来源只能是
-`127.0.0.1/::1`、强制运行 SFTP server，并由 `restrict` 禁止 PTY、Agent/X11
-和端口转发。容器私钥不会离开容器，也不会写入 dotfiles；随机令牌和本机授权服务
-都会随当前 SSH 进程退出。如果容器没有 Ed25519 默认密钥，入口只显示警告并继续
-进入容器，不会自动创建或替换身份文件。
+`remote-dev-entry` 会在首次进入时自动生成无口令的容器专用密钥
+`~/.ssh/termscp_mac_ed25519`，并在 `~/.ssh/config` 维护
+`Host dotfiles-termscp-mac` 受管区块，让 termscp 只使用这把密钥。容器已有的
+`~/.ssh/id_ed25519` 等普通 SSH/Git 身份不会被读取、覆盖或删除。入口只把专用公钥
+通过令牌保护的 `127.0.0.1:6023` 转发交给 Mac；私钥始终留在容器文件系统中。
+
+Mac 会把授权身份记为“SSH 主机别名 + 容器名”，幂等写入
+`~/.ssh/authorized_keys`。同一服务器上的同名容器重建并生成新钥匙时，只替换该
+身份以前由 termscp 管理的条目，不全局清理其他容器授权，也不修改普通 SSH/Git
+公钥。授权规则限定来源只能是 `127.0.0.1/::1`、强制运行 SFTP server，并由
+`restrict` 禁止 PTY、Agent/X11 和端口转发。随机令牌和本机授权服务都会随当前
+SSH 进程退出。若密钥生成或授权因异常失败，入口会显示具体错误但仍允许进入容器。
 
 直接进入服务器宿主机时不会自动授权宿主机密钥，仍需单独配置密码或公钥。连接变量
 由 `connect-remote-dev` 自动传入；Mac 用户名默认为本机 `id -un`，两个服务器

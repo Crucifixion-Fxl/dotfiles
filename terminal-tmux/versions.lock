@@ -3,8 +3,8 @@
 #
 # bootstrap.sh 会 source 此文件。升级 Release 时必须同时更新对应平台的
 # SHA256，不要只改版本号。插件使用完整 Git commit，避免上游分支漂移。
-# Codex CLI 始终安装 npm 官方 latest；termscp 和 Fresh 由各自官方通用安装脚本
-# 管理，三者均不在此锁定。
+# Codex CLI 与 Iris 始终跟随官方最新稳定版；termscp 和 Fresh 由各自官方通用
+# 安装脚本管理，这些工具均不在此锁定。
 # =============================================================================
 
 # --- Todoist CLI 及其最低 Node.js LTS 运行时 ------------------------------
@@ -47,13 +47,6 @@ ZOXIDE_SHA256_DARWIN_ARM64=b55ae6f2f5f23d0a6ccb3bd4eeb2af9c7e0a6556e5255c82100e4
 ZOXIDE_SHA256_DARWIN_X86_64=18ab7ae2633ad6e2ab79a4e665cbba1e95b7c872d44523326efb793202451dad
 ZOXIDE_SHA256_LINUX_ARM64=f1f16c5d6298d63dee467eedea1cdcd8490e43e493bea43acd416dc9033ef641
 ZOXIDE_SHA256_LINUX_X86_64=2d93385b99f3e82cf2701609a1bffcad863fbeb75aa3fe7eb6be4d29be68b1ae
-
-# --- Iris official Release ----------------------------------------------
-IRIS_VERSION=0.4.8
-IRIS_SHA256_DARWIN_ARM64=0bec287193575d41f93104e183bc6bc4defd9d1f42db1187eca80eb052d068eb
-IRIS_SHA256_DARWIN_X86_64=4189c52ac53b391e42c65c7d5c4e72522980d106a6ee8a257b833815eb70ca18
-IRIS_SHA256_LINUX_ARM64=d5046e14fd5d630d3e11cb6b1021186940408e99d1b7ca31b7639aaad18e45e7
-IRIS_SHA256_LINUX_X86_64=11290bb5453df24d68f17feb03a073c5fc1f2be1fd6e42d2078f77a81a53d658
 
 # --- Glow 官方 Release ---------------------------------------------------
 GLOW_VERSION=2.1.2

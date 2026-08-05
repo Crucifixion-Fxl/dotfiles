@@ -9,17 +9,18 @@ set -euo pipefail
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
 #
 # 可复现策略：
-#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Iris/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - pre-commit/tmux/lazygit/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 始终安装 npm 官方 latest；termscp 和 Fresh 使用各自官方通用
-#     安装脚本，不锁版本。
+#   - Codex CLI 与 Iris 始终跟随官方最新稳定版；termscp 和 Fresh 使用各自官方
+#     通用安装脚本，这些工具均不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
 DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
 TERMSCP_INSTALL_URL=https://termscp.rs/install.sh
+IRIS_LATEST_RELEASE_URL=https://github.com/versenilvis/iris/releases/latest/download
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
 
@@ -27,6 +28,10 @@ export PATH="$HOME/.local/bin:$PATH"
 
 log() {
   printf '==> %s\n' "$*"
+}
+
+warn() {
+  printf 'terminal-tmux: warning: %s\n' "$*" >&2
 }
 
 fail() {
@@ -85,9 +90,35 @@ zoxide_is_locked_version() {
     [[ $(zoxide --version 2>/dev/null | awk '{print $2}') == "$ZOXIDE_VERSION" ]]
 }
 
-iris_is_locked_version() {
+iris_is_installed() {
   command -v iris >/dev/null 2>&1 &&
-    [[ $(iris version 2>/dev/null | awk '{print $2}') == "v$IRIS_VERSION" ]]
+    iris version 2>/dev/null | grep -Eq '^iris v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
+}
+
+iris_version() {
+  iris version 2>/dev/null | awk 'NR == 1 {sub(/^v/, "", $2); print $2}'
+}
+
+iris_version_is_newer() {
+  local current=${1#v} candidate=${2#v}
+  local current_major current_minor current_patch candidate_major candidate_minor candidate_patch
+
+  [[ $current =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)([-.][0-9A-Za-z.-]+)?$ ]] || return 1
+  current_major=${BASH_REMATCH[1]}
+  current_minor=${BASH_REMATCH[2]}
+  current_patch=${BASH_REMATCH[3]}
+  [[ $candidate =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)([-.][0-9A-Za-z.-]+)?$ ]] || return 1
+  candidate_major=${BASH_REMATCH[1]}
+  candidate_minor=${BASH_REMATCH[2]}
+  candidate_patch=${BASH_REMATCH[3]}
+
+  (( 10#$candidate_major > 10#$current_major )) && return 0
+  (( 10#$candidate_major < 10#$current_major )) && return 1
+  (( 10#$candidate_minor > 10#$current_minor )) && return 0
+  (( 10#$candidate_minor < 10#$current_minor )) && return 1
+  (( 10#$candidate_patch > 10#$current_patch )) && return 0
+  (( 10#$candidate_patch < 10#$current_patch )) && return 1
+  [[ $current == *-* && $candidate != *-* ]]
 }
 
 glow_is_locked_version() {
@@ -524,44 +555,106 @@ iris_asset() {
   case "$PLATFORM_OS/$PLATFORM_ARCH" in
     darwin/arm64)
       ASSET="iris_darwin_arm64.tar.gz"
-      ASSET_SHA256=$IRIS_SHA256_DARWIN_ARM64
       ;;
     darwin/x86_64)
       ASSET="iris_darwin_amd64.tar.gz"
-      ASSET_SHA256=$IRIS_SHA256_DARWIN_X86_64
       ;;
     linux/arm64)
       ASSET="iris_linux_arm64.tar.gz"
-      ASSET_SHA256=$IRIS_SHA256_LINUX_ARM64
       ;;
     linux/x86_64)
       ASSET="iris_linux_amd64.tar.gz"
-      ASSET_SHA256=$IRIS_SHA256_LINUX_X86_64
       ;;
   esac
 }
 
 install_iris() {
-  iris_is_locked_version && return 0
+  local current_version existing_iris=0
+  if iris_is_installed; then
+    existing_iris=1
+    current_version=$(iris_version)
+  fi
 
-  local work archive binary
+  local work archive binary candidate_version destination
   iris_asset
-  work=$(mktemp -d)
+  if ! work=$(mktemp -d); then
+    if (( existing_iris )); then
+      warn "Iris update could not create a temporary directory; keeping the usable installed version: $current_version"
+      return 0
+    fi
+    fail "cannot create a temporary directory for Iris installation"
+  fi
   archive="$work/$ASSET"
   trap 'rm -rf "$work"' RETURN
 
-  log "Installing Iris $IRIS_VERSION into $HOME/.local/bin"
-  download "https://github.com/versenilvis/iris/releases/download/v$IRIS_VERSION/$ASSET" "$archive"
-  verify_sha256 "$archive" "$ASSET_SHA256"
-  tar -xzf "$archive" -C "$work"
+  log "Checking the official latest stable Iris Release${current_version:+ from $current_version}"
+  if ! download "$IRIS_LATEST_RELEASE_URL/$ASSET" "$archive"; then
+    trap - RETURN
+    rm -rf "$work"
+    if (( existing_iris )); then
+      warn "Iris stable update check failed; keeping the usable installed version: $current_version"
+      return 0
+    fi
+    fail "latest stable Iris download failed"
+  fi
+  if ! tar -xzf "$archive" -C "$work"; then
+    trap - RETURN
+    rm -rf "$work"
+    if (( existing_iris )); then
+      warn "Iris stable archive is invalid; keeping the usable installed version: $current_version"
+      return 0
+    fi
+    fail "latest stable Iris archive is invalid"
+  fi
   binary=$(find "$work" -type f -name iris -perm -u+x | head -1)
-  [[ -n "$binary" ]] || fail "Iris binary not found in $ASSET"
-  install -m 0755 "$binary" "$HOME/.local/bin/iris"
+  if [[ -z "$binary" ]] || ! candidate_version=$("$binary" version 2>/dev/null | \
+    awk 'NR == 1 && $1 == "iris" {sub(/^v/, "", $2); print $2}'); then
+    candidate_version=
+  fi
+  if [[ ! $candidate_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    trap - RETURN
+    rm -rf "$work"
+    if (( existing_iris )); then
+      warn "Iris stable asset has an invalid binary; keeping the usable installed version: $current_version"
+      return 0
+    fi
+    fail "latest stable Iris binary is invalid"
+  fi
+  if (( existing_iris )) && ! iris_version_is_newer "$current_version" "$candidate_version"; then
+    trap - RETURN
+    rm -rf "$work"
+    log "Iris is already at the newest stable version allowed without downgrade: $current_version"
+    return 0
+  fi
+
+  if ! mkdir -p "$HOME/.local/bin"; then
+    trap - RETURN
+    rm -rf "$work"
+    if (( existing_iris )); then
+      warn "Iris update cannot write $HOME/.local/bin; keeping the usable installed version: $current_version"
+      return 0
+    fi
+    fail "cannot create $HOME/.local/bin for Iris installation"
+  fi
+  destination="$HOME/.local/bin/.iris.$$"
+  if ! install -m 0755 "$binary" "$destination" || \
+    ! "$destination" version >/dev/null 2>&1 || \
+    ! mv -f "$destination" "$HOME/.local/bin/iris"; then
+    rm -f "$destination"
+    trap - RETURN
+    rm -rf "$work"
+    if (( existing_iris )); then
+      warn "Iris stable update could not be installed; keeping the usable installed version: $current_version"
+      return 0
+    fi
+    fail "latest stable Iris installation failed"
+  fi
   hash -r
 
   trap - RETURN
   rm -rf "$work"
-  iris_is_locked_version || fail "Iris $IRIS_VERSION installation verification failed"
+  iris_is_installed || fail "latest stable Iris installation verification failed"
+  log "Installed Iris stable $candidate_version"
 }
 
 glow_asset() {
@@ -1249,7 +1342,7 @@ validate() {
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
   fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
   zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
-  iris_is_locked_version || fail "expected Iris $IRIS_VERSION"
+  iris_is_installed || fail "Iris is required"
   glow_is_locked_version || fail "expected Glow $GLOW_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
@@ -1305,6 +1398,7 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
+  bash "$DOTFILES_DIR/tests/test-iris-update.sh"
   python3 "$DOTFILES_DIR/tests/test-todo-tui.py"
   python3 "$DOTFILES_DIR/tests/test-todo-agent.py"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"

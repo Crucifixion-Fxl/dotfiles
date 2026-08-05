@@ -68,7 +68,7 @@ response=$(python3 "$AUTHORIZER" request \
 grep -Eq '^AUTHORIZED SHA256:.* added$' <<< "$response"
 [[ $(file_mode "$TEST_DIRECTORY/.ssh") == 700 ]]
 [[ $(file_mode "$authorized_keys") == 600 ]]
-grep -Eq '^from="127\.0\.0\.1,::1",restrict,command="/usr/libexec/sftp-server" ssh-ed25519 [A-Za-z0-9+/=]+ termscp-test-container$' \
+grep -Eq '^from="127\.0\.0\.1,::1",restrict,command="/usr/libexec/sftp-server" ssh-ed25519 [A-Za-z0-9+/=]+ termscp-test-container-[0-9a-f]{16}$' \
   "$authorized_keys"
 
 response=$(python3 "$AUTHORIZER" request \
@@ -78,6 +78,23 @@ response=$(python3 "$AUTHORIZER" request \
   --public-key "$public_key" \
   --label test-container)
 grep -Eq '^AUTHORIZED SHA256:.* existing$' <<< "$response"
+[[ $(wc -l < "$authorized_keys" | tr -d ' ') == 1 ]]
+
+replacement_key="$TEST_DIRECTORY/replacement_ed25519"
+ssh-keygen -q -t ed25519 -N '' -f "$replacement_key"
+replacement_public_key=$(<"$replacement_key.pub")
+response=$(python3 "$AUTHORIZER" request \
+  --host 127.0.0.1 \
+  --port "$server_port" \
+  --token "$token" \
+  --public-key "$replacement_public_key" \
+  --label test-container)
+grep -Eq '^AUTHORIZED SHA256:.* replaced$' <<< "$response"
+grep -Fq "$(awk '{print $2}' <<< "$replacement_public_key")" "$authorized_keys"
+if grep -Fq "$(awk '{print $2}' <<< "$public_key")" "$authorized_keys"; then
+  printf '%s\n' 'authorizer must replace the previous key for the same managed identity' >&2
+  exit 1
+fi
 [[ $(wc -l < "$authorized_keys" | tr -d ' ') == 1 ]]
 
 printf '%s\n' "$public_key unrestricted-test" > "$authorized_keys"
