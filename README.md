@@ -2,7 +2,7 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
-git-delta、btop、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
+git-delta、GitLab CLI、btop、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
 Codex 状态通知、Todoist TUI 和 zsh 交互环境。
 
 ## 整体流程
@@ -112,6 +112,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 
 - tmux `3.7b`
 - lazygit `0.63.0`
+- GitLab CLI (`glab`) `1.109.0`
 - git-delta `0.19.2`
 - fzf `0.74.0`
 - zoxide `0.10.0`
@@ -126,7 +127,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
 
-pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 的官方
+pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow 和 Yazi 的官方
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
@@ -182,8 +183,10 @@ zsh 建议执行 `exec zsh -l`。`fonts-noto-cjk` 用于容器内的服务端渲
 文字最终仍由本机 iTerm2 或 Ghostty 字体渲染。
 
 如果 apt 中的 tmux 版本不同，bootstrap 会从官方源码构建锁定的 tmux，并安装到
-`~/.local`。lazygit、git-delta、fzf、zoxide、Glow 和 Yazi 使用与操作系统、CPU 架构
-匹配的官方 Release 包；Ubuntu 不接入非官方 Yazi apt 仓库。pre-commit 使用
+`~/.local`。lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow 和 Yazi 使用与操作系统、CPU 架构
+匹配的官方 Release 包；GitLab CLI 安装不要求认证，需要访问 GitLab 时再执行
+`glab auth login --hostname gitlab.addx.ai`，并在交互提示中粘贴具有 `api` scope 的
+GitLab Token，不要把 Token 直接写进命令或 shell 历史。Ubuntu 不接入非官方 Yazi apt 仓库。pre-commit 使用
 macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10+。Yazi 的
 `yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
 `piper.yazi`。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
@@ -346,7 +349,7 @@ bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、git-delta、fzf、zoxide、Glow、Yazi/`ya` 的锁定版本，以及 Iris、termscp、Codex CLI、Fresh 可用性
+- pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow、Yazi/`ya` 的锁定版本，以及 Iris、termscp、Codex CLI、Fresh 可用性
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、btop、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
