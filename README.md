@@ -3,7 +3,7 @@
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
 git-delta、GitLab CLI、btop、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
-Codex 状态通知、Todoist TUI 和 zsh 交互环境。
+Codex 状态通知、Todoist TUI 和 zsh 交互环境；以及 `agent-skills/`：统一恢复个人使用的 Agent Skills。
 
 ## 整体流程
 
@@ -18,6 +18,13 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 ```text
 .
 ├── README.md
+├── agent-skills/
+│   ├── sync.sh                      # 外部来源、原生 Skills 与事务安装入口
+│   ├── lib.sh                       # 安装器共用的复制、前缀改写与验证函数
+│   ├── native/                      # 直接由 dotfiles 维护的 Skills
+│   └── sources/<name>/
+│       ├── source.conf              # Git URL 与 required 配置
+│       └── install.sh               # 该仓库专属的 Bash 安装规则
 └── terminal-tmux/
     ├── bootstrap.sh                 # 安装、链接和验证入口
     ├── versions.lock                # 工具版本、插件 commit 和 SHA256
@@ -234,6 +241,38 @@ git -C ~/.dotfiles pull --ff-only
 bash ~/.dotfiles/terminal-tmux/bootstrap.sh
 exec zsh -l
 ```
+
+## Agent Skills
+
+所有用户级 Agent Skills 统一安装到 `~/.agents/skills`。这个目录是 dotfiles
+生成的完整结果，不应手工修改；Codex 自带的 `~/.codex/skills/.system` 不在管理范围内。
+
+当前外部来源均为必需来源，并始终跟随远程默认分支的最新内容：
+
+- `company`：`git@gitlab.addx.ai:engineering/skills.git`，安装为 `company-*`。
+- `matt`：`mattpocock/skills` 的 `skills/engineering/` 及其 6 个明确依赖，安装为 `matt-*`。
+- `kkkkhazix`：`KKKKhazix/human-writing`，安装为 `kkkkhazix-human-writing`。
+- `agents365`：`Agents365-ai/drawio-skill`，安装为 `agents365-drawio-skill`。
+
+外部仓库只克隆到本次同步的临时目录，安装结束后立即删除。每个来源的
+`install.sh` 将 Skill 复制到扁平暂存目录，添加来源前缀并改写显式的 `/skill`
+和 `$skill` 引用。暂存结果必须包含有效且名称一致的 `SKILL.md`，不得包含软链接；
+所有来源都成功后才整体替换 `~/.agents/skills`。
+
+完整 bootstrap 会自动同步 Skills。也可以只执行这一部分：
+
+```bash
+bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only
+```
+
+只读检查不会联网，也不会判断远程是否已有更新：
+
+```bash
+bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only --check
+```
+
+更新完成后需要启动新的 Agent 会话，才能加载新的 Skills。Git 认证使用当前机器
+已有的 SSH Key、SSH Agent 或 credential helper；凭据不会写入 dotfiles。
 
 如果 Oh My Zsh 或插件目录存在未提交的本地修改，bootstrap 会停止，
 不会覆盖。
