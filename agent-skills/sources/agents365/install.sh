@@ -12,9 +12,9 @@ if [[ "$INSTALLER_ACTION" == check ]]; then
   exit
 fi
 
-skill_md="$INSTALLER_SOURCE/skills/drawio-skill/SKILL.md"
-[[ -f "$skill_md" ]] || agent_skills_fail "skills/drawio-skill/SKILL.md is missing"
+skill_root="$INSTALLER_SOURCE/skills/drawio-skill"
+[[ -f "$skill_root/SKILL.md" ]] || agent_skills_fail "skills/drawio-skill/SKILL.md is missing"
 list_file=$(mktemp "${TMPDIR:-/tmp}/agents365-skills.XXXXXX")
 trap 'rm -f "$list_file"' EXIT
-printf '%s\n' "$skill_md" > "$list_file"
+find "$skill_root" -name SKILL.md -type f -print | LC_ALL=C sort > "$list_file"
 install_prefixed_skill_list "$INSTALLER_SOURCE" "$INSTALLER_TARGET" "$INSTALLER_PREFIX" "$list_file"

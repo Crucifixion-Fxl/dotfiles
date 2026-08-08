@@ -37,9 +37,25 @@ skill_frontmatter_value() {
   ' "$skill_md"
 }
 
+openai_display_name() {
+  local metadata=$1
+  awk '
+    /^[[:space:]]*display_name:[[:space:]]*/ {
+      value = $0
+      sub(/^[[:space:]]*display_name:[[:space:]]*/, "", value)
+      sub(/[[:space:]]*$/, "", value)
+      if (value ~ /^".*"$/ || value ~ /^'"'"'.*'"'"'$/) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$metadata"
+}
+
 validate_skill_directory() {
   local skill_dir=$1 expected_prefix=${2:-}
-  local directory_name description name
+  local directory_name description display_name metadata name nested_skill
 
   [[ -d "$skill_dir" ]] || agent_skills_fail "skill is not a directory: $skill_dir"
   [[ -f "$skill_dir/SKILL.md" ]] || agent_skills_fail "SKILL.md is missing: $skill_dir"
@@ -56,6 +72,15 @@ validate_skill_directory() {
   (( ${#name} <= 64 )) || agent_skills_fail "skill name exceeds 64 characters: $name"
   [[ "$name" == "$directory_name" ]] || \
     agent_skills_fail "skill directory $directory_name does not match frontmatter name $name"
+  nested_skill=$(find "$skill_dir" -mindepth 2 -name SKILL.md -type f -print -quit)
+  [[ -z "$nested_skill" ]] || \
+    agent_skills_fail "installed Skill contains a nested Skill: $nested_skill"
+  metadata="$skill_dir/agents/openai.yaml"
+  if [[ -f "$metadata" ]] && grep -Eq '^[[:space:]]*display_name:[[:space:]]*' "$metadata"; then
+    display_name=$(openai_display_name "$metadata")
+    [[ "$display_name" == "$name" ]] || \
+      agent_skills_fail "OpenAI display_name $display_name does not match skill name $name"
+  fi
   if [[ -n "$expected_prefix" ]]; then
     [[ "$name" == "$expected_prefix-"* ]] || \
       agent_skills_fail "skill $name does not use required prefix $expected_prefix-"
@@ -130,6 +155,155 @@ rewrite_frontmatter_name() {
   mv "$temporary" "$skill_md"
 }
 
+rewrite_openai_display_name() {
+  local metadata=$1 new_name=$2 temporary
+  [[ -f "$metadata" ]] || return 0
+  grep -Eq '^[[:space:]]*display_name:[[:space:]]*' "$metadata" || return 0
+  temporary="$metadata.tmp.$$"
+  awk -v new_name="$new_name" '
+    !changed && /^[[:space:]]*display_name:[[:space:]]*/ {
+      match($0, /^[[:space:]]*/)
+      indentation = substr($0, 1, RLENGTH)
+      print indentation "display_name: \"" new_name "\""
+      changed = 1
+      next
+    }
+    { print }
+    END { if (!changed) exit 2 }
+  ' "$metadata" > "$temporary" || {
+    rm -f "$temporary"
+    agent_skills_fail "unable to rewrite OpenAI display_name: $metadata"
+  }
+  mv "$temporary" "$metadata"
+}
+
+rewrite_exact_literal_mappings() {
+  local file=$1 mappings=$2 temporary
+  temporary="$file.tmp.$$"
+  awk -v mappings="$mappings" '
+    function replace_literal(value, needle, replacement, before, position) {
+      before = ""
+      while ((position = index(value, needle)) != 0) {
+        before = before substr(value, 1, position - 1) replacement
+        value = substr(value, position + length(needle))
+      }
+      return before value
+    }
+    BEGIN {
+      while ((getline mapping < mappings) > 0) {
+        split(mapping, fields, "\t")
+        old_values[++mapping_count] = fields[1]
+        new_values[mapping_count] = fields[2]
+      }
+      close(mappings)
+    }
+    {
+      line = $0
+      for (mapping_index = 1; mapping_index <= mapping_count; mapping_index++) {
+        line = replace_literal(line, old_values[mapping_index], new_values[mapping_index])
+      }
+      print line
+    }
+  ' "$file" > "$temporary"
+  mv "$temporary" "$file"
+}
+
+rewrite_exact_references() {
+  local target=$1 mappings=$2 file
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    [[ "$file" == "$mappings" ]] && continue
+    if LC_ALL=C grep -Iq . "$file"; then
+      rewrite_exact_literal_mappings "$file" "$mappings"
+    fi
+  done < <(find "$target" -type f -print)
+}
+
+rewrite_token_mappings() {
+  local file=$1 mappings=$2 temporary
+  temporary="$file.tmp.$$"
+  awk -v mappings="$mappings" '
+    function replace_token(value, old_value, new_value, pattern, matched, old_position, result) {
+      result = ""
+      pattern = "(^|[^a-z0-9-])" old_value "([^a-z0-9-]|$)"
+      while (match(value, pattern)) {
+        matched = substr(value, RSTART, RLENGTH)
+        old_position = index(matched, old_value)
+        result = result substr(value, 1, RSTART - 1) \
+          substr(matched, 1, old_position - 1) new_value \
+          substr(matched, old_position + length(old_value))
+        value = substr(value, RSTART + RLENGTH)
+      }
+      return result value
+    }
+    BEGIN {
+      while ((getline mapping < mappings) > 0) {
+        split(mapping, fields, "\t")
+        old_values[++mapping_count] = fields[1]
+        new_values[mapping_count] = fields[2]
+      }
+      close(mappings)
+    }
+    {
+      line = $0
+      for (mapping_index = 1; mapping_index <= mapping_count; mapping_index++) {
+        line = replace_token(line, old_values[mapping_index], new_values[mapping_index])
+      }
+      print line
+    }
+  ' "$file" > "$temporary"
+  mv "$temporary" "$file"
+}
+
+rewrite_token_references() {
+  local target=$1 mappings=$2 file
+  while IFS= read -r file; do
+    [[ -n "$file" ]] || continue
+    [[ "$file" == "$mappings" ]] && continue
+    if LC_ALL=C grep -Iq . "$file"; then
+      rewrite_token_mappings "$file" "$mappings"
+    fi
+  done < <(find "$target" -type f -print)
+}
+
+flatten_nested_skills() {
+  local target=$1 prefix=$2 source_skill_dir=$3 list_file=$4
+  local path_mappings name_mappings removals
+  local nested nested_dir old_name relative source_nested
+  path_mappings=$(mktemp "${target%/}/.nested-paths.XXXXXX")
+  name_mappings=$(mktemp "${target%/}/.nested-names.XXXXXX")
+  removals=$(mktemp "${target%/}/.nested-removals.XXXXXX")
+  while IFS= read -r nested; do
+    [[ -n "$nested" ]] || continue
+    relative=${nested#"$target/"}
+    source_nested="$source_skill_dir/$relative"
+    grep -Fqx -- "$source_nested" "$list_file" || \
+      agent_skills_fail "nested Skill is not selected for flat installation: $source_nested"
+    old_name=$(skill_frontmatter_value "$nested" name) || \
+      agent_skills_fail "invalid nested Skill frontmatter: $nested"
+    [[ "$old_name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || \
+      agent_skills_fail "invalid nested Skill name: $old_name"
+    nested_dir=${nested%/SKILL.md}
+    case "$nested_dir" in
+      "$target"/*) ;;
+      *) agent_skills_fail "nested Skill escaped parent: $nested_dir" ;;
+    esac
+    printf '%s\t../%s-%s/SKILL.md\n' "$relative" "$prefix" "$old_name" \
+      >> "$path_mappings"
+    printf '%s\t%s-%s\n' "$old_name" "$prefix" "$old_name" >> "$name_mappings"
+    printf '%s\n' "$nested_dir" >> "$removals"
+  done < <(find "$target" -depth -mindepth 2 -name SKILL.md -type f -print)
+  if [[ -s "$removals" ]]; then
+    while IFS= read -r nested_dir; do
+      [[ -n "$nested_dir" ]] || continue
+      rm -rf -- "$nested_dir"
+    done < "$removals"
+    rewrite_exact_references "$target" "$path_mappings"
+    rewrite_token_references "$target" "$name_mappings"
+  fi
+  rm -f "$path_mappings" "$name_mappings" "$removals"
+}
+
 rewrite_literal_references() {
   local file=$1 mappings=$2 temporary
   temporary="$file.tmp.$$"
@@ -195,7 +369,9 @@ install_prefixed_skill_list() {
       agent_skills_fail "duplicate installed skill name: $new_name"
     validate_source_symlinks "$source_root" "$skill_dir"
     cp -RL "$skill_dir" "$destination"
+    flatten_nested_skills "$destination" "$prefix" "$skill_dir" "$list_file"
     rewrite_frontmatter_name "$destination/SKILL.md" "$new_name"
+    rewrite_openai_display_name "$destination/agents/openai.yaml" "$new_name"
     printf '%s\t%s\n' "$old_name" "$new_name" >> "$mappings"
   done < "$list_file"
 
