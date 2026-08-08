@@ -46,6 +46,9 @@ company_repo="$REPOSITORIES/company"
 mkdir -p "$company_repo"
 write_skill "$company_repo/skills/code-review" code-review 'Run /architect and $architect.'
 write_skill "$company_repo/skills/architect" architect 'Architecture workflow.'
+write_skill "$company_repo/skills/code-review/helper" helper \
+  'Nested helper installed separately.'
+printf '%s\n' '[Helper](helper/SKILL.md)' >> "$company_repo/skills/code-review/SKILL.md"
 printf '%s\n' 'reference body' > "$company_repo/skills/code-review/reference.md"
 ln -s reference.md "$company_repo/skills/code-review/reference-link.md"
 commit_repository "$company_repo"
@@ -54,6 +57,13 @@ matt_repo="$REPOSITORIES/matt"
 mkdir -p "$matt_repo"
 write_skill "$matt_repo/skills/engineering/grill-with-docs" grill-with-docs \
   'Run /grilling with /domain-modeling.'
+write_skill "$matt_repo/skills/engineering/grill-with-docs/grill-helper" grill-helper \
+  'Nested Matt helper installed separately.'
+printf '%s\n' '[Helper](grill-helper/SKILL.md)' \
+  >> "$matt_repo/skills/engineering/grill-with-docs/SKILL.md"
+mkdir -p "$matt_repo/skills/engineering/grill-with-docs/agents"
+printf '%s\n' 'interface:' '  display_name: "Grill with Docs"' \
+  > "$matt_repo/skills/engineering/grill-with-docs/agents/openai.yaml"
 write_skill "$matt_repo/skills/engineering/domain-modeling" domain-modeling 'Domain workflow.'
 for dependency in grilling grill-me handoff teach to-questionnaire writing-for-agents; do
   write_skill "$matt_repo/skills/productivity/$dependency" "$dependency" 'Productivity dependency.'
@@ -92,20 +102,30 @@ run_sync sync
 [[ ! -e "$INSTALL_DIR/old-skill" ]]
 [[ -d "$INSTALL_DIR/company-code-review" ]]
 [[ -d "$INSTALL_DIR/company-architect" ]]
+[[ -d "$INSTALL_DIR/company-helper" ]]
 [[ -d "$INSTALL_DIR/matt-grill-with-docs" ]]
+[[ -d "$INSTALL_DIR/matt-grill-helper" ]]
 [[ -d "$INSTALL_DIR/matt-grilling" ]]
 [[ ! -e "$INSTALL_DIR/matt-not-installed" ]]
 [[ -d "$INSTALL_DIR/kkkkhazix-human-writing" ]]
 [[ -d "$INSTALL_DIR/agents365-drawio-skill" ]]
 [[ -d "$INSTALL_DIR/native-example" ]]
-[[ $(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') -eq 13 ]]
+[[ $(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') -eq 15 ]]
 [[ -f "$INSTALL_DIR/company-code-review/reference-link.md" ]]
 [[ ! -L "$INSTALL_DIR/company-code-review/reference-link.md" ]]
+[[ ! -e "$INSTALL_DIR/company-code-review/helper" ]]
+grep -Fq '../company-helper/SKILL.md' "$INSTALL_DIR/company-code-review/SKILL.md"
+grep -Fq 'company-helper' "$INSTALL_DIR/company-code-review/SKILL.md"
+[[ -z $(find "$INSTALL_DIR" -mindepth 3 -name SKILL.md -type f -print -quit) ]]
 [[ -z $(find "$INSTALL_DIR" -type l -print -quit) ]]
 grep -Fq 'name: company-code-review' "$INSTALL_DIR/company-code-review/SKILL.md"
 grep -Fq '/company-architect' "$INSTALL_DIR/company-code-review/SKILL.md"
 grep -Fq '$company-architect' "$INSTALL_DIR/company-code-review/SKILL.md"
 grep -Fq 'name: matt-grill-with-docs' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
+[[ ! -e "$INSTALL_DIR/matt-grill-with-docs/grill-helper" ]]
+grep -Fq '../matt-grill-helper/SKILL.md' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
+grep -Fq 'display_name: "matt-grill-with-docs"' \
+  "$INSTALL_DIR/matt-grill-with-docs/agents/openai.yaml"
 grep -Fq '/matt-grilling' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
 grep -Fq '/matt-domain-modeling' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
 grep -Fq 'name: kkkkhazix-human-writing' "$INSTALL_DIR/kkkkhazix-human-writing/SKILL.md"

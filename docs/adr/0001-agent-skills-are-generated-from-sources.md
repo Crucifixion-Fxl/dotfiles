@@ -1,3 +1,0 @@
-# Generate Agent Skills from complete sources
-
-Agent Skills installed in `~/.agents/skills` are a generated, fully managed result. Each external repository has a unique prefix and a repository-specific Bash installer; bootstrap clones the latest default branch into temporary storage, builds every source plus any native Skills into one flat validated staging directory, and replaces the installed directory only after the complete build succeeds. This avoids duplicate-name precedence, stale unmanaged Skills, persistent source clones, and partially updated installations while allowing upstream repositories to evolve independently.

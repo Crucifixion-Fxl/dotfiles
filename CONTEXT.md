@@ -45,11 +45,11 @@ _Avoid_: POSIX sh script, discovery rule, upstream installer, generic installer
 _Avoid_: Source skill, managed source
 
 **Staged Skill**:
-位于扁平暂存根目录的直接子目录中、正在等待完成名称修正、内部引用更新和验证的自包含 Skill；它不得含有软链接，只有完整通过后才能成为 Installed Skill。
+位于扁平暂存根目录的直接子目录中、正在等待完成名称修正、内部引用更新和验证的自包含 Skill；上游的嵌套父子 Skills 必须拆成平级 Staged Skills。它不得含有软链接或嵌套 `SKILL.md`，只有完整通过后才能成为 Installed Skill。
 _Avoid_: Source checkout, installed skill, symlink
 
 **Installed Projection**:
-Source Installer 从 External Skill Source 自动生成的安装副本；它为 Skill 名称和内部引用添加 Source Prefix，但不修改上游仓库。
+Source Installer 从 External Skill Source 自动生成的安装副本；它为 Skill 名称、显示名称和内部引用添加 Source Prefix，但不修改上游仓库。
 _Avoid_: Vendored copy, source checkout, renamed symlink
 
 **Managed Skill**:
