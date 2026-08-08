@@ -7,6 +7,7 @@ set -euo pipefail
 #
 # 默认模式：安装系统依赖、锁定版本工具/插件、刷新配置链接，最后验证。
 # --check 模式：只读验证现有安装，不修改文件或安装软件。
+# --skills-only 模式：只同步 Agent Skills，不安装或更新其他工具。
 #
 # 可复现策略：
 #   - pre-commit/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
@@ -18,6 +19,7 @@ set -euo pipefail
 # =============================================================================
 
 DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+AGENT_SKILLS_SYNC="$DOTFILES_DIR/../agent-skills/sync.sh"
 FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
 TERMSCP_INSTALL_URL=https://termscp.rs/install.sh
 IRIS_LATEST_RELEASE_URL=https://github.com/versenilvis/iris/releases/latest/download
@@ -37,6 +39,16 @@ warn() {
 fail() {
   printf 'terminal-tmux: %s\n' "$*" >&2
   exit 1
+}
+
+install_agent_skills() {
+  [[ -x "$AGENT_SKILLS_SYNC" ]] || fail "Agent Skills sync script is missing or not executable"
+  bash "$AGENT_SKILLS_SYNC" sync
+}
+
+check_agent_skills() {
+  [[ -x "$AGENT_SKILLS_SYNC" ]] || fail "Agent Skills sync script is missing or not executable"
+  bash "$AGENT_SKILLS_SYNC" check
 }
 
 sha256_file() {
@@ -1439,6 +1451,7 @@ validate() {
   command -v bash >/dev/null 2>&1 || fail "bash is required"
   command -v btop >/dev/null 2>&1 || fail "btop is required"
   command -v git >/dev/null 2>&1 || fail "git is required"
+  check_agent_skills
   command -v ssh-keygen >/dev/null 2>&1 || fail "ssh-keygen is required"
   command -v vi >/dev/null 2>&1 || fail "vi is required"
   vi --version 2>/dev/null | grep -Eq '\+mouse([[:space:]]|$)' || fail "vi must support mouse input"
@@ -1589,9 +1602,28 @@ validate() {
 }
 
 main() {
-  detect_platform
+  local argument check_only=0 skills_only=0
+  for argument in "$@"; do
+    case "$argument" in
+      --check) check_only=1 ;;
+      --skills-only) skills_only=1 ;;
+      *) fail "usage: bootstrap.sh [--check] [--skills-only]" ;;
+    esac
+  done
 
-  if [[ ${1:-} == --check ]]; then
+  if (( skills_only == 1 )); then
+    command -v bash >/dev/null 2>&1 || fail "bash is required for --skills-only"
+    command -v git >/dev/null 2>&1 || fail "git is required for --skills-only"
+    if (( check_only == 1 )); then
+      check_agent_skills
+    else
+      install_agent_skills
+    fi
+    return
+  fi
+
+  detect_platform
+  if (( check_only == 1 )); then
     validate
     return
   fi
@@ -1629,6 +1661,7 @@ main() {
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
   install_plugin tmux-resurrect https://github.com/tmux-plugins/tmux-resurrect.git "$RESURRECT_COMMIT"
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
+  install_agent_skills
 
   install_links
   install_todo_agent_service

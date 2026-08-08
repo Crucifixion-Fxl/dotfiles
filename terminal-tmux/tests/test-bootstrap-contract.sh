@@ -19,6 +19,8 @@ TODO_AGENT="$ROOT/bin/todo-agent"
 TODO_AGENT_SERVICE="$ROOT/systemd/todo-agent.service"
 VERSIONS="$ROOT/versions.lock"
 TMUX_CONFIG="$ROOT/tmux/tmux.conf"
+AGENT_SKILLS_ROOT="$ROOT/../agent-skills"
+AGENT_SKILLS_SYNC="$AGENT_SKILLS_ROOT/sync.sh"
 
 bash -n "$BOOTSTRAP"
 [[ -s "$WORKFLOW_IMAGE" ]]
@@ -62,6 +64,11 @@ grep -q '^install_node_for_todoist()' "$BOOTSTRAP"
 grep -q '^install_todoist_cli()' "$BOOTSTRAP"
 grep -q '^remove_legacy_todo_bridge()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
+grep -q '^install_agent_skills()' "$BOOTSTRAP"
+grep -q '^check_agent_skills()' "$BOOTSTRAP"
+grep -Fq 'install_agent_skills' "$BOOTSTRAP"
+grep -Fq 'check_agent_skills' "$BOOTSTRAP"
+grep -Fq -- '--skills-only' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
 grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
@@ -700,6 +707,7 @@ bash -n "$ROOT/bin/pre-commit"
 sh -n "$ROOT/bin/lazygit-safe"
 bash "$ROOT/tests/test-ghostty-dev.sh"
 bash "$ROOT/tests/test-termscp-mac.sh"
+bash "$AGENT_SKILLS_ROOT/tests/test-sync.sh"
 
 # Git identity setup is machine-local: preserve existing values and never
 # prompt or write placeholders when the bootstrap runs without a terminal.
