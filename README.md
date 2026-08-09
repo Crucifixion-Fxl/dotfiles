@@ -152,9 +152,10 @@ git clone https://github.com/Crucifixion-Fxl/dotfiles ~/.dotfiles
 ~/.dotfiles/terminal-tmux/bootstrap.sh
 ```
 
-在一台新 Mac 上，先准备 Homebrew 和该私有仓库的读取权限，然后只需运行上面的
-bootstrap 一次。脚本会安装 Ghostty 稳定版与 Maple Mono NF CN 字体、链接托管
-配置并用 Ghostty 自带解析器验证；无需再手动复制 Ghostty 设置。
+在一台新的 Apple Silicon Mac 上，先安装 Homebrew、按安装器提示让 `brew` 进入
+`PATH`，并准备该私有仓库的读取权限，然后只需运行上面的 bootstrap 一次。脚本会
+使用系统自带的 `/bin/zsh` 作为登录 shell，安装 Ghostty 稳定版与 Maple Mono NF
+CN 字体、链接托管配置并用 Ghostty 自带解析器验证；无需再手动复制 Ghostty 设置。
 
 Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
 
@@ -208,8 +209,11 @@ Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk 
 缓存，再安装和验证 `fresh` 命令。Oh My Zsh 及第三方插件通过 Git
 安装到用户目录。apt 安装需要 root 或 sudo 权限。
 
-macOS 会先执行 `brew update`，再安装 btop、Yazi、Glow、预览/搜索依赖、
-Maple Mono NF CN 与 Symbols Nerd Font，并通过官方文档列出的
+macOS 不会自动执行 `brew update`；bootstrap 和托管 zshrc 都设置
+`HOMEBREW_NO_AUTO_UPDATE=1`，因此脚本自身、日常 `brew install` 以及脚本调用的
+官方安装器都不会隐式刷新 Homebrew 元数据。需要刷新时手动执行 `brew update`。
+bootstrap 会安装 btop、Yazi、Glow、预览/搜索依赖、Maple Mono NF CN 与 Symbols
+Nerd Font，并通过官方文档列出的
 `brew install --cask ghostty` 安装 Ghostty 稳定版，最后强制链接
 `ffmpeg-full` 与 `imagemagick-full`。如果 Homebrew
 中的 Yazi、Glow、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定

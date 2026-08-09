@@ -27,6 +27,9 @@ IRIS_LATEST_RELEASE_URL=https://github.com/versenilvis/iris/releases/latest/down
 source "$DOTFILES_DIR/versions.lock"
 
 export PATH="$HOME/.local/bin:$PATH"
+# Homebrew 元数据只在用户显式执行 `brew update` 时刷新。该变量也会传递给
+# termscp/Fresh 的官方安装器，避免它们内部的 brew 调用触发自动更新。
+export HOMEBREW_NO_AUTO_UPDATE=1
 
 log() {
   printf '==> %s\n' "$*"
@@ -254,8 +257,6 @@ install_prerequisites() {
       yazi glow ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
-    log "Updating Homebrew"
-    brew update
     log "Installing macOS prerequisites with Homebrew"
     brew install "${packages[@]}"
     brew link ffmpeg-full imagemagick-full -f --overwrite
@@ -312,10 +313,22 @@ current_login_shell() {
   fi
 }
 
+managed_login_shell_path() {
+  if [[ "$PLATFORM_OS" == darwin ]]; then
+    # 新 Mac 的 Homebrew shellenv 通常把 /opt/homebrew/bin 放在 /bin 前面。
+    # bootstrap 又会安装 Homebrew zsh，但该路径默认不在 /etc/shells；macOS
+    # 自带的 /bin/zsh 已满足配置需求，也是系统默认允许的登录 shell。
+    [[ -x /bin/zsh ]] || fail "/bin/zsh is required on macOS"
+    printf '%s\n' /bin/zsh
+  else
+    command -v zsh
+  fi
+}
+
 configure_login_shell() {
   local user zsh_path login_shell
   user=$(id -un)
-  zsh_path=$(command -v zsh)
+  zsh_path=$(managed_login_shell_path)
   [[ -n "$zsh_path" ]] || fail "zsh is required"
   login_shell=$(current_login_shell "$user")
   [[ -n "$login_shell" ]] || fail "unable to determine the login shell for $user"
@@ -1459,7 +1472,7 @@ validate() {
   infocmp xterm-ghostty >/dev/null 2>&1 || fail "xterm-ghostty terminfo is missing"
   LC_ALL=zh_CN.UTF-8 locale charmap 2>/dev/null | grep -qi 'UTF-8' || fail "zh_CN.UTF-8 locale is required"
   login_user=$(id -un)
-  zsh_path=$(command -v zsh)
+  zsh_path=$(managed_login_shell_path)
   login_shell=$(current_login_shell "$login_user")
   [[ "$login_shell" == "$zsh_path" ]] || \
     fail "login shell for $login_user must be $zsh_path, got $login_shell"
