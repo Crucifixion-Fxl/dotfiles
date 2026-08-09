@@ -1184,10 +1184,6 @@ remove_legacy_todo_bridge() {
 
 install_links() {
   backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
-  backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
-  backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
-  backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
-  backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"
@@ -1206,12 +1202,16 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/lazygit/config.yml" "$lazygit_config_dir/config.yml"
 }
 
-# zsh 是新机器继续运行 bootstrap 和排查中断的基础入口。这两个
-# 链接必须早于任何网络安装，避免 Iris 已安装但 ~/.zshrc 仍是临时
-# PATH/locale 文件的半配置状态。
+# zsh 和 tmux 是新机器继续运行 bootstrap 和排查中断的基础入口。
+# 这些链接必须早于任何网络安装，避免 Iris 或 tmux 已安装，但启动
+# 入口、快捷键及其辅助脚本仍处于半配置状态。
 install_shell_links() {
   backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
   backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
+  backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
+  backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
+  backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
+  backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
 }
 
 install_todo_agent_service() {
