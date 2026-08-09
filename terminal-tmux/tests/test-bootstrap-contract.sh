@@ -481,8 +481,14 @@ PRE_COMMIT_SHA256=$ORIGINAL_PRE_COMMIT_SHA256
 # releases. A second run must be a no-op once the locked command is present.
 COLORLS_TEST_HOME="$TEST_HOME/colorls"
 COLORLS_FAKE_BIN="$COLORLS_TEST_HOME/fake-bin"
+COLORLS_OLD_GEM_BIN="$COLORLS_TEST_HOME/old-gem-bin"
 COLORLS_GEM_CALLS_FILE="$COLORLS_TEST_HOME/gem-calls"
-mkdir -p "$COLORLS_FAKE_BIN" "$COLORLS_TEST_HOME/.local/bin"
+mkdir -p "$COLORLS_FAKE_BIN" "$COLORLS_OLD_GEM_BIN" "$COLORLS_TEST_HOME/.local/bin"
+cat > "$COLORLS_OLD_GEM_BIN/colorls" <<SH
+#!/usr/bin/env bash
+printf '%s\n' '$COLORLS_VERSION'
+SH
+chmod +x "$COLORLS_OLD_GEM_BIN/colorls"
 cat > "$COLORLS_FAKE_BIN/gem" <<'SH'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >> "$COLORLS_GEM_CALLS_FILE"
@@ -498,7 +504,10 @@ esac
 SH
 chmod +x "$COLORLS_FAKE_BIN/gem"
 export COLORLS_GEM_CALLS_FILE COLORLS_VERSION
-PATH="$COLORLS_TEST_HOME/.local/bin:$COLORLS_FAKE_BIN:/usr/bin:/bin" \
+# An existing machine can expose the locked colorls from a Ruby/Gem PATH that
+# disappears when the managed zshrc replaces its old shell setup. That command
+# must not make bootstrap skip the managed ~/.local/bin installation.
+PATH="$COLORLS_TEST_HOME/.local/bin:$COLORLS_OLD_GEM_BIN:$COLORLS_FAKE_BIN:/usr/bin:/bin" \
   HOME=$COLORLS_TEST_HOME PLATFORM_OS=linux install_colorls
 grep -Fq "manpages --version $COLORLS_MANPAGES_VERSION" "$COLORLS_GEM_CALLS_FILE"
 grep -Fq "public_suffix --version $COLORLS_PUBLIC_SUFFIX_VERSION" "$COLORLS_GEM_CALLS_FILE"

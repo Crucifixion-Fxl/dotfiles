@@ -216,8 +216,9 @@ pre_commit_is_locked_version() {
 }
 
 colorls_is_locked_version() {
-  command -v colorls >/dev/null 2>&1 &&
-    [[ $(colorls --version 2>/dev/null) == "$COLORLS_VERSION" ]]
+  local managed_colorls="$HOME/.local/bin/colorls"
+  [[ -x "$managed_colorls" ]] &&
+    [[ $("$managed_colorls" --version 2>/dev/null) == "$COLORLS_VERSION" ]]
 }
 
 # --- 平台检测与系统依赖 -------------------------------------------------
