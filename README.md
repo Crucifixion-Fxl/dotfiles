@@ -157,11 +157,35 @@ git clone https://github.com/Crucifixion-Fxl/dotfiles ~/.dotfiles
 使用系统自带的 `/bin/zsh` 作为登录 shell，安装 Ghostty 稳定版与 Maple Mono NF
 CN 字体、链接托管配置并用 Ghostty 自带解析器验证；无需再手动复制 Ghostty 设置。
 
-Debian/Ubuntu 使用 `apt` 安装以下类型的前置依赖：
+### 平台安装边界
+
+| 类别 | macOS 本机 | Debian/Ubuntu 服务器或容器 |
+| --- | --- | --- |
+| 系统包管理器 | 必须预先安装 Homebrew；bootstrap 不自动执行 `brew update` | 使用 `apt`，需要 root 或 `sudo` |
+| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、Codex、Todoist CLI、termscp、Fresh、btop | 安装同一组工具；锁定工具使用对应 Linux Release |
+| termscp | 首次通过官方 Homebrew tap 安装，会拉取其 macOS 运行时依赖；以后检测到可用版本就跳过 | 通过官方安装器下载 `.deb`；实际在服务器/容器中运行 `termscp-mac` |
+| Node.js | Homebrew `node` | bootstrap 安装经过校验的用户级 Node.js 24 LTS，不使用 apt 中可能过旧的版本 |
+| 图形终端与字体 | 安装 Ghostty、Maple Mono NF CN、Symbols Nerd Font，并链接 Ghostty 与 iTerm2 配置 | 不安装 Ghostty/iTerm2；只安装服务端 CJK 字体和 terminfo |
+| Todo Agent 后台服务 | 只安装 `todo`/`todo-agent` 命令，不启动 watcher 服务 | 有启用项目时使用 user systemd；不可用时使用持久 nohup watcher |
+| 托管配置 | zsh、tmux、Vim、Yazi、Lazygit、Codex hooks 和 Agent Skills | 链接同一套共享配置，不包含 macOS GUI 配置 |
+
+macOS 通过 Homebrew 安装以下前置包：
+
+- shell/构建：`bash`、`zsh`、`bison`、`git`、`curl`、`pkgconf`、`python`、
+  `node`、`libevent`、`ncurses`、`utf8proc`
+- 终端/预览：`btop`、`yazi`、`glow`、`ffmpeg-full`、`sevenzip`、`jq`、
+  `poppler`、`fd`、`ripgrep`、`resvg`、`imagemagick-full`
+- 字体：`font-maple-mono-nf-cn`、`font-symbols-only-nerd-font`
+- GUI：单独执行 `brew install --cask ghostty`
+- termscp：单独通过官方 `veeso/termscp` tap 安装；这是新 Mac 第一次运行时
+  依赖数量较多、耗时最明显的一步
+
+Debian/Ubuntu 使用 `apt` 安装以下前置依赖：
 
 - `bash`、`zsh`、`git`、`curl`
 - `locales`、`fonts-noto-cjk`（中文 locale 和服务端 CJK 字体）
-- `nodejs`、`npm`（用于安装最新 Codex CLI）
+- Node.js 与 npm 不使用 apt；bootstrap 随后安装用户级 Node.js 24 LTS，用于
+  Codex 和 Todoist CLI
 - Python 3.10+（用于运行官方 pre-commit zipapp）
 - `gcc`、`make`、`pkg-config`、`bison`
 - `bubblewrap`（Linux 的非特权进程沙箱工具，提供 `bwrap` 命令）
@@ -200,8 +224,10 @@ macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10
 `piper.yazi`。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
 bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
 `@openai/codex@latest` 安装到 `~/.local/bin`。termscp 使用官方
-`https://termscp.rs/install.sh`：macOS 走官方 Homebrew tap，Debian/Ubuntu 下载
-官方 `.deb`。安装器使用非交互 `--yes`，因此在服务器或容器中运行 bootstrap
+`https://termscp.rs/install.sh`：macOS 首次安装通过官方 Homebrew tap 拉取
+termscp 及其运行时依赖，Debian/Ubuntu 下载官方 `.deb`。已安装且版本可用时，
+bootstrap 会直接跳过 termscp 安装器，避免它显式执行 `brew update`；需要升级时
+再由用户主动执行。安装器使用非交互 `--yes`，因此在服务器或容器中运行 bootstrap
 不会等待确认。Fresh 通过
 `sinelaw/fresh` 官方通用安装脚本安装：macOS 使用 Homebrew 的 `fresh-editor`，
 Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk npm 包并
