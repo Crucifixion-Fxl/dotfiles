@@ -5,6 +5,7 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 README="$ROOT/../README.md"
 BOOTSTRAP="$ROOT/bootstrap.sh"
+ZSH_CONFIG="$ROOT/shell/zshrc"
 WORKFLOW_IMAGE="$ROOT/assets/dotfiles-workflow.png"
 ITERM_PROFILE="$ROOT/iterm2/dev.json"
 GHOSTTY_CONFIG="$ROOT/ghostty/config.ghostty"
@@ -48,6 +49,7 @@ grep -q '^ensure_ghostty_terminfo()' "$BOOTSTRAP"
 grep -q '^configure_locale()' "$BOOTSTRAP"
 grep -q '^current_login_shell()' "$BOOTSTRAP"
 grep -q '^configure_login_shell()' "$BOOTSTRAP"
+grep -q '^managed_login_shell_path()' "$BOOTSTRAP"
 grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
@@ -96,6 +98,12 @@ grep -Fq 'ExecStart=%h/.local/bin/todo-agent watch' "$TODO_AGENT_SERVICE"
 grep -Fq 'Restart=always' "$TODO_AGENT_SERVICE"
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
+grep -Fqx 'export HOMEBREW_NO_AUTO_UPDATE=1' "$BOOTSTRAP"
+grep -Fqx 'export HOMEBREW_NO_AUTO_UPDATE=1' "$ZSH_CONFIG"
+if grep -Eq '^[[:space:]]*brew[[:space:]]+update([[:space:]]|$)' "$BOOTSTRAP"; then
+  printf '%s\n' 'bootstrap must not update Homebrew automatically' >&2
+  exit 1
+fi
 
 prerequisite_function=$(sed -n '/^install_prerequisites()/,/^}/p' "$BOOTSTRAP")
 [[ $(grep -Eoc '(^|[[:space:]])btop($|[[:space:]])' <<< "$prerequisite_function") -eq 2 ]]
@@ -143,6 +151,21 @@ TEST_PLUGIN_COMMIT=0123456789abcdef
 
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
+
+# Every Homebrew call made by bootstrap inherits the opt-out, including calls
+# delegated to child installers through the exported environment.
+(
+  BREW_CALLS=
+  brew() {
+    [[ ${HOMEBREW_NO_AUTO_UPDATE:-} == 1 ]]
+    BREW_CALLS+="$*"$'\n'
+  }
+  PLATFORM_OS=darwin
+  install_prerequisites
+  [[ $BREW_CALLS == *'install bash bison btop '* ]]
+  [[ $BREW_CALLS == *'link ffmpeg-full imagemagick-full -f --overwrite'* ]]
+  [[ $BREW_CALLS != *'update'* ]]
+)
 
 # A fresh container has no Todoist project mapping or token yet. Bootstrap
 # must still complete instead of starting a watcher that exits immediately.
@@ -247,6 +270,20 @@ login_shell_noop=$(
   )
 )
 [[ -z "$login_shell_noop" ]]
+
+# Homebrew shellenv can put /opt/homebrew/bin before /bin on a new Apple
+# Silicon Mac. Keep the system-approved /bin/zsh as the macOS login shell even
+# after the Homebrew zsh formula is installed.
+macos_login_shell_noop=$(
+  (
+    PLATFORM_OS=darwin
+    current_login_shell() { printf '%s\n' /bin/zsh; }
+    run_as_root() { printf '%s\n' 'unexpected root call'; return 1; }
+    configure_login_shell
+  )
+)
+[[ -z "$macos_login_shell_noop" ]]
+[[ $(PLATFORM_OS=darwin managed_login_shell_path) == /bin/zsh ]]
 
 # A fresh zoxide database receives useful initial entries exactly once. This
 # prevents Yazi's zoxide picker from starting with an empty-history error while

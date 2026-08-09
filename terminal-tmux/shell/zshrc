@@ -10,6 +10,10 @@
 # bootstrap 安装的 tmux/Yazi/lazygit/Codex 等用户级工具位于 ~/.local/bin。
 export PATH="$HOME/.local/bin:$PATH"
 
+# 禁止 `brew install` 等命令隐式刷新 Homebrew 元数据；需要更新时手动运行
+# `brew update`，这样普通 shell 启动和工具安装不会被自动更新打断。
+export HOMEBREW_NO_AUTO_UPDATE=1
+
 # --- Iris --------------------------------------------------------------------
 # Iris 取代 zsh-autosuggestions，提供本地、SSH 和 tmux 共用的补全界面。
 # bootstrap 会安装锁定版本；条件判断让配置在安装尚未完成时仍可正常加载。
