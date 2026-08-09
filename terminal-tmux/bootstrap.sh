@@ -218,6 +218,17 @@ detect_platform() {
   esac
 }
 
+raise_bootstrap_open_file_limit() {
+  local current target=4096
+  [[ "$PLATFORM_OS" == darwin ]] || return 0
+  current=$(ulimit -S -n)
+  [[ "$current" == unlimited ]] && return 0
+  if (( current < target )); then
+    ulimit -S -n "$target" || \
+      fail "unable to raise bootstrap open-file limit from $current to $target"
+  fi
+}
+
 brew_package_is_installed() {
   local package=$1
   brew list --formula --versions "$package" >/dev/null 2>&1 ||
@@ -1699,6 +1710,9 @@ main() {
     esac
   done
 
+  detect_platform
+  raise_bootstrap_open_file_limit
+
   if (( skills_only == 1 )); then
     command -v bash >/dev/null 2>&1 || fail "bash is required for --skills-only"
     command -v git >/dev/null 2>&1 || fail "git is required for --skills-only"
@@ -1710,7 +1724,6 @@ main() {
     return
   fi
 
-  detect_platform
   if (( check_only == 1 )); then
     validate
     return

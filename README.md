@@ -328,6 +328,11 @@ Skill 结构或校验失败，同步仍会中止并保留完整的旧安装。
 
 完整 bootstrap 会自动同步 Skills。也可以只执行这一部分：
 
+macOS 执行 bootstrap 时，会仅在当前 bootstrap 进程及其子进程中把 soft `nofile`
+下限提高到 4096，避免大量 Skills 和安装步骤触发 `Too many open files`。该设置会在
+bootstrap 退出后自动失效，不修改 launchd、系统全局限制或 zsh 配置，也不影响 Linux；
+已经运行的 Codex GUI 进程不会继承这个限制。
+
 ```bash
 bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only
 ```
