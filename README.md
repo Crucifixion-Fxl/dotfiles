@@ -298,7 +298,7 @@ exec zsh -l
 ## Agent Skills
 
 所有用户级 Agent Skills 统一安装到 `~/.agents/skills`。这个目录是 dotfiles
-生成的完整结果，不应手工修改；Codex 自带的 `~/.codex/skills/.system` 不在管理范围内。
+生成的完整结果，不应手工修改；Codex 自带的 `~/.codex/skills/.system` 内容不会被修改。
 
 外部来源始终跟随远程默认分支的最新内容，其中 `company` 为可选来源，
 其余来源为必需：
@@ -322,6 +322,9 @@ exec zsh -l
 新机器没有旧副本时则跳过该来源，不阻断其他 Skills 安装及只读检查。
 这个放宽仅针对仓库拉取失败；如果 company 仓库已成功拉取，但安装器、
 Skill 结构或校验失败，同步仍会中止并保留完整的旧安装。
+成功替换后会清理旧安装根目录 `~/.codex/skills`，只保留官方 `.system`，避免旧的
+`TDD`、未加前缀的公司 Skill 与 `~/.agents/skills` 中的命名空间版本同时被发现。
+`--skills-only --check` 也会把任何重新出现的旧条目视为失败。
 
 完整 bootstrap 会自动同步 Skills。也可以只执行这一部分：
 

@@ -9,6 +9,7 @@ source "$AGENT_SKILLS_DIR/lib.sh"
 SOURCES_DIR=${AGENT_SKILLS_SOURCES_DIR:-$AGENT_SKILLS_DIR/sources}
 NATIVE_DIR=${AGENT_SKILLS_NATIVE_DIR:-$AGENT_SKILLS_DIR/native}
 INSTALL_DIR=${AGENT_SKILLS_INSTALL_DIR:-$HOME/.agents/skills}
+LEGACY_INSTALL_DIR=${AGENT_SKILLS_LEGACY_INSTALL_DIR:-$HOME/.codex/skills}
 
 SOURCE_URL=
 SOURCE_REQUIRED=true
@@ -173,6 +174,28 @@ replace_installation() {
   agent_skills_fail "unable to replace $INSTALL_DIR"
 }
 
+remove_legacy_codex_skills() {
+  local entry removed=0
+  [[ -d "$LEGACY_INSTALL_DIR" ]] || return 0
+  [[ -n "$LEGACY_INSTALL_DIR" && "$LEGACY_INSTALL_DIR" != / && \
+    "$LEGACY_INSTALL_DIR" != "$HOME" && "$LEGACY_INSTALL_DIR" != "$INSTALL_DIR" && \
+    ! -L "$LEGACY_INSTALL_DIR" ]] || \
+    agent_skills_fail "refusing unsafe legacy Skill cleanup target: $LEGACY_INSTALL_DIR"
+
+  for entry in \
+    "$LEGACY_INSTALL_DIR"/* \
+    "$LEGACY_INSTALL_DIR"/.[!.]* \
+    "$LEGACY_INSTALL_DIR"/..?*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    [[ ${entry##*/} == .system ]] && continue
+    rm -rf -- "$entry"
+    removed=$((removed + 1))
+  done
+  if (( removed > 0 )); then
+    agent_skills_log "Removed $removed legacy Codex Skill entries; preserved .system"
+  fi
+}
+
 sync_skills() {
   require_command awk
   require_command bash
@@ -194,6 +217,7 @@ sync_skills() {
   sync_native_skills
   validate_flat_skill_root "$FINAL_STAGE"
   replace_installation
+  remove_legacy_codex_skills
   trap - EXIT
   rm -rf "$WORK_ROOT"
   agent_skills_log "Installed Agent Skills into $INSTALL_DIR"
@@ -258,6 +282,21 @@ check_known_namespaces() {
   done
 }
 
+check_legacy_codex_skills() {
+  local entry
+  [[ -d "$LEGACY_INSTALL_DIR" ]] || return 0
+  [[ ! -L "$LEGACY_INSTALL_DIR" ]] || \
+    agent_skills_fail "legacy Codex Skill root must not be a symlink: $LEGACY_INSTALL_DIR"
+  for entry in \
+    "$LEGACY_INSTALL_DIR"/* \
+    "$LEGACY_INSTALL_DIR"/.[!.]* \
+    "$LEGACY_INSTALL_DIR"/..?*; do
+    [[ -e "$entry" || -L "$entry" ]] || continue
+    [[ ${entry##*/} == .system ]] && continue
+    agent_skills_fail "legacy Codex Skill entry must be removed: $entry"
+  done
+}
+
 check_skills() {
   require_command awk
   require_command bash
@@ -269,6 +308,7 @@ check_skills() {
   for_each_source check_source_installation
   check_native_skills
   check_known_namespaces
+  check_legacy_codex_skills
   agent_skills_log "Agent Skills validation passed"
 }
 

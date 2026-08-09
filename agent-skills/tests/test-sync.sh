@@ -10,8 +10,15 @@ TEST_HOME="$TEST_ROOT/home"
 MANAGER="$TEST_ROOT/manager"
 REPOSITORIES="$TEST_ROOT/repositories"
 INSTALL_DIR="$TEST_HOME/.agents/skills"
-mkdir -p "$MANAGER/sources" "$MANAGER/native" "$REPOSITORIES" "$INSTALL_DIR/old-skill"
+LEGACY_INSTALL_DIR="$TEST_HOME/.codex/skills"
+mkdir -p "$MANAGER/sources" "$MANAGER/native" "$REPOSITORIES" \
+  "$INSTALL_DIR/old-skill" "$LEGACY_INSTALL_DIR/.system" \
+  "$LEGACY_INSTALL_DIR/matt-tdd" "$LEGACY_INSTALL_DIR/architect"
 cp "$ROOT/lib.sh" "$ROOT/sync.sh" "$MANAGER/"
+printf '%s\n' system-preserved > "$LEGACY_INSTALL_DIR/.system/marker"
+printf '%s\n' legacy-matt > "$LEGACY_INSTALL_DIR/matt-tdd/SKILL.md"
+printf '%s\n' legacy-company > "$LEGACY_INSTALL_DIR/architect/SKILL.md"
+printf '%s\n' legacy-file > "$LEGACY_INSTALL_DIR/README.md"
 
 write_skill() {
   local directory=$1 name=$2 body=${3:-}
@@ -125,10 +132,23 @@ run_sync() {
     AGENT_SKILLS_SOURCES_DIR="$MANAGER/sources" \
     AGENT_SKILLS_NATIVE_DIR="$MANAGER/native" \
     AGENT_SKILLS_INSTALL_DIR="$INSTALL_DIR" \
+    AGENT_SKILLS_LEGACY_INSTALL_DIR="$LEGACY_INSTALL_DIR" \
     bash "$MANAGER/sync.sh" "$@"
 }
 
 run_sync sync
+
+# Codex still discovers the legacy ~/.codex/skills root. A successful sync must
+# leave only its bundled .system directory so old and namespaced Skills cannot
+# appear together in the UI.
+[[ -f "$LEGACY_INSTALL_DIR/.system/marker" ]]
+grep -Fqx system-preserved "$LEGACY_INSTALL_DIR/.system/marker"
+legacy_remaining=$(find "$LEGACY_INSTALL_DIR" -mindepth 1 -maxdepth 1 \
+  ! -name .system -print -quit)
+if [[ -n "$legacy_remaining" ]]; then
+  printf 'legacy Codex Skill remained after sync: %s\n' "$legacy_remaining" >&2
+  exit 1
+fi
 
 # Every external Skill must provide an explicit source-prefixed Codex UI name.
 # Upstream metadata may be absent or may use the legacy top-level shape.
@@ -199,6 +219,17 @@ grep -Fq 'name: kkkkhazix-human-writing' "$INSTALL_DIR/kkkkhazix-human-writing/S
 grep -Fq 'name: agents365-drawio-skill' "$INSTALL_DIR/agents365-drawio-skill/SKILL.md"
 [[ -z $(find "$TEST_HOME/.agents" -mindepth 1 -maxdepth 1 -name '.skills-sync.*' -print -quit) ]]
 
+run_sync check
+
+# Read-only validation must expose any legacy Skill that reappears after a
+# successful migration instead of reporting a duplicate-prone setup as valid.
+mkdir -p "$LEGACY_INSTALL_DIR/tdd"
+printf '%s\n' legacy-reintroduced > "$LEGACY_INSTALL_DIR/tdd/SKILL.md"
+if run_sync check >/dev/null 2>&1; then
+  printf '%s\n' 'legacy ~/.codex/skills entry unexpectedly passed check' >&2
+  exit 1
+fi
+rm -rf "$LEGACY_INSTALL_DIR/tdd"
 run_sync check
 
 # Read-only validation must reject a company installation whose explicit Codex
