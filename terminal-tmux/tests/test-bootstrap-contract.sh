@@ -595,6 +595,10 @@ yazi_packages_line=$(grep -n '^  install_yazi_packages$' "$BOOTSTRAP" | cut -d: 
 ghostty_install_line=$(grep -n '^  install_ghostty$' "$BOOTSTRAP" | cut -d: -f1)
 ghostty_config_line=$(grep -n '^  install_ghostty_config$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_install_line -lt $ghostty_config_line ]]
+termscp_install_line=$(grep -n '^  install_termscp$' "$BOOTSTRAP" | cut -d: -f1)
+fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $ghostty_config_line -lt $termscp_install_line ]]
+[[ $ghostty_config_line -lt $fresh_install_line ]]
 
 # Codex intentionally follows the latest official npm release instead of the
 # versions.lock policy used by the other tools.
