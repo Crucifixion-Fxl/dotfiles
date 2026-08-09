@@ -310,6 +310,38 @@ chmod +x "$FALLBACK_HOME/.local/bin/todo-agent"
   [[ ! -e "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid" ]]
 )
 
+# A fresh macOS checkout can report a tracked script as modified when only its
+# executable bit drifted. Managed pinned checkouts should restore that metadata
+# without downloading the repository again or discarding content changes.
+MODE_ONLY_CHECKOUT="$TEST_HOME/mode-only-checkout"
+mkdir -p "$MODE_ONLY_CHECKOUT"
+git -C "$MODE_ONLY_CHECKOUT" init -q
+git -C "$MODE_ONLY_CHECKOUT" config core.fileMode true
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$MODE_ONLY_CHECKOUT/plugin"
+chmod +x "$MODE_ONLY_CHECKOUT/plugin"
+git -C "$MODE_ONLY_CHECKOUT" add plugin
+git -C "$MODE_ONLY_CHECKOUT" \
+  -c user.name='Bootstrap Test' -c user.email='bootstrap@example.invalid' \
+  commit -qm 'add executable plugin'
+MODE_ONLY_COMMIT=$(git -C "$MODE_ONLY_CHECKOUT" rev-parse HEAD)
+chmod -x "$MODE_ONLY_CHECKOUT/plugin"
+[[ -n $(git -C "$MODE_ONLY_CHECKOUT" status --porcelain) ]]
+install_git_checkout mode-only https://example.invalid/mode-only.git \
+  "$MODE_ONLY_COMMIT" "$MODE_ONLY_CHECKOUT"
+[[ -x "$MODE_ONLY_CHECKOUT/plugin" ]]
+[[ -z $(git -C "$MODE_ONLY_CHECKOUT" status --porcelain) ]]
+
+printf '%s\n' '# local content must survive' >> "$MODE_ONLY_CHECKOUT/plugin"
+MODE_ONLY_ERROR="$TEST_HOME/mode-only-content-error"
+if (install_git_checkout mode-only https://example.invalid/mode-only.git \
+  "$MODE_ONLY_COMMIT" "$MODE_ONLY_CHECKOUT") 2> "$MODE_ONLY_ERROR"; then
+  printf '%s\n' 'managed checkout unexpectedly discarded a content change' >&2
+  exit 1
+fi
+grep -Fq ' M plugin' "$MODE_ONLY_ERROR"
+grep -Fq 'mode-only has content or untracked changes' "$MODE_ONLY_ERROR"
+grep -Fq '# local content must survive' "$MODE_ONLY_CHECKOUT/plugin"
+
 git() {
   if [[ $1 == clone ]]; then
     mkdir -p "$3/.git"

@@ -143,7 +143,9 @@ pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow 和 Y
 Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
-避免覆盖用户改动。Ghostty、Codex CLI、Iris、termscp 和 Fresh 是例外：Ghostty
+避免覆盖用户改动。仅 executable bit 发生漂移但文件内容未变时，bootstrap 会恢复
+锁定仓库记录的权限并继续；真实内容或未跟踪文件仍会逐项列出并停止。Ghostty、
+Codex CLI、Iris、termscp 和 Fresh 是例外：Ghostty
 跟随 Homebrew cask 的稳定版，Codex 和 Iris 在首次安装时分别获取
 `@openai/codex@latest` 与官方最新稳定版；已有可用版本时跳过重复下载。Linux
 termscp 与 Fresh 分别使用各自的官方通用安装脚本。
