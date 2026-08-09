@@ -112,6 +112,8 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - bootstrap 在本地 macOS 和远端 Debian/Ubuntu 默认安装 `pre-commit` CLI；
   仓库级 hook 仍由各项目在存在 `.pre-commit-config.yaml` 时执行
   `pre-commit install` 启用。
+- `ls`/`ll`/`la` 由 colorls 提供带图标的列表，目录默认排在文件前；
+  需要系统原生 `ls` 时使用 `command ls`。
 
 ## 锁定版本
 
@@ -127,6 +129,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
+- colorls `1.5.0`（Ruby Gem；兼容依赖版本同样记录在 `versions.lock`）
 - Ghostty：macOS 通过 Homebrew cask 安装当前稳定版（不锁版本）
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
 - termscp：仅在 Debian/Ubuntu 通过官方通用安装脚本获取当前版本（不锁版本）；
@@ -165,7 +168,7 @@ CN 字体，并在安装 Ghostty 后立即链接托管配置，再继续执行�
 | 类别 | macOS 本机 | Debian/Ubuntu 服务器或容器 |
 | --- | --- | --- |
 | 系统包管理器 | 必须预先安装 Homebrew；bootstrap 不自动执行 `brew update` | 使用 `apt`，需要 root 或 `sudo` |
-| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、Codex、Todoist CLI、btop | 安装同一组工具；锁定工具使用对应 Linux Release |
+| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、colorls、Codex、Todoist CLI、btop | 安装同一组工具；锁定工具使用对应 Linux Release/Gem |
 | termscp | 不安装；Mac 仅提供反向转发后的 SFTP 服务 | 通过官方安装器下载 `.deb`；实际在服务器/容器中运行 `termscp-mac` |
 | Fresh | 安装；官方安装器通过 Homebrew 安装 `fresh-editor` | 安装；官方安装器下载 `.deb` |
 | Node.js | Homebrew `node` | bootstrap 安装经过校验的用户级 Node.js 24 LTS，不使用 apt 中可能过旧的版本 |
@@ -176,7 +179,7 @@ CN 字体，并在安装 Ghostty 后立即链接托管配置，再继续执行�
 macOS 通过 Homebrew 安装以下前置包：
 
 - shell/构建：`bash`、`zsh`、`bison`、`git`、`curl`、`pkgconf`、`python`、
-  `node`、`libevent`、`ncurses`、`utf8proc`
+  `ruby`、`node`、`libevent`、`ncurses`、`utf8proc`
 - 终端/预览：`btop`、`yazi`、`glow`、`ffmpeg-full`、`sevenzip`、`jq`、
   `poppler`、`fd`、`ripgrep`、`resvg`、`imagemagick-full`
 - 字体：`font-maple-mono-nf-cn`、`font-symbols-only-nerd-font`
@@ -189,7 +192,7 @@ Debian/Ubuntu 使用 `apt` 安装以下前置依赖：
 - Node.js 与 npm 不使用 apt；bootstrap 随后安装用户级 Node.js 24 LTS，用于
   Codex 和 Todoist CLI
 - Python 3.10+（用于运行官方 pre-commit zipapp）
-- `gcc`、`make`、`pkg-config`、`bison`
+- `gcc`、`make`、`pkg-config`、`bison`、`ruby`、`ruby-dev`
 - `bubblewrap`（Linux 的非特权进程沙箱工具，提供 `bwrap` 命令）
 - `btop`（终端资源监视器）
 - Yazi 所需的 `file`、`unzip`，以及预览/搜索依赖 `ffmpeg`、`p7zip-full`、
@@ -247,6 +250,11 @@ Nerd Font，并通过官方文档列出的
 中的 Yazi、Glow、fzf 或 zoxide 与锁定版本不同，bootstrap 会用官方 Release 包把锁定
 版本安装到 `~/.local/bin`。
 
+colorls 在 macOS 使用 Homebrew Ruby，在 Debian/Ubuntu 使用系统
+Ruby，可执行命令都安装到 `~/.local/bin`。`colorls`、`manpages`
+和 `public_suffix` 使用 `versions.lock` 中的兼容版本，避免较旧
+Linux Ruby 因传递依赖升级而安装失败。
+
 Iris 使用同一份托管 `zshrc` 在本地、SSH 和 tmux 中初始化。首次 bootstrap 会把
 官方最新稳定 Release 安装到 `~/.local/bin`；以后每次正常运行 bootstrap 都检查
 官方 `releases/latest` 稳定资产，只有版本更高时才原子替换，只会升级、不会按仓库
@@ -260,8 +268,12 @@ zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，boot
 提示“未找到目录历史记录”；已有任何历史时不会重复添加或改变目录权重。Yazi
 内部通过小写 `z`（fzf）发生的目录跳转也会实时同步到 zoxide。
 
-远程 Ubuntu 通过 SSH 使用时，图标最终由本机终端字体渲染，因此服务端无需安装
-Nerd Font；本机 macOS 的 Homebrew 步骤会安装 `font-symbols-only-nerd-font`。
+远程 Ubuntu 通过 SSH 使用 colorls 时，图标最终由发起 SSH 的本机
+终端字体渲染，因此服务器/容器内无需安装 Nerd Font。macOS
+bootstrap 会安装 `font-maple-mono-nf-cn` 和
+`font-symbols-only-nerd-font`，Ghostty 与托管 iTerm2 Profile 都选用
+Maple Mono NF CN。如果直接在 Linux 桌面终端运行，需在该桌面终端
+中另行安装并选择 Nerd Font；本仓库不托管 Linux GUI 终端字体设置。
 
 ## 更新已有机器
 

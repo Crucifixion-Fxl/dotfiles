@@ -38,6 +38,15 @@ plugins=(
 
 source "$ZSH/oh-my-zsh.sh"
 
+# --- colorls ---------------------------------------------------------------
+# colorls 默认输出文件类型图标；--sd 让目录排在文件前面。
+# 图标由当前终端的 Nerd Font 渲染；需要原生 ls 时仍可执行 `command ls`。
+if command -v colorls >/dev/null 2>&1; then
+  alias ls='colorls --sd'
+  alias ll='colorls -lA --sd'
+  alias la='colorls -A --sd'
+fi
+
 # --- Zoxide ------------------------------------------------------------------
 # 记录访问过的目录，供 shell 的 `z` 命令和 Yazi 目录历史使用。
 if command -v zoxide >/dev/null 2>&1; then

@@ -33,6 +33,7 @@ grep -Fq '| Todo Agent 后台服务 |' "$README"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'btop' "$BOOTSTRAP"
+grep -q 'ruby ruby-dev' "$BOOTSTRAP"
 grep -q 'fonts-noto-cjk' "$BOOTSTRAP"
 grep -q 'locales' "$BOOTSTRAP"
 grep -q 'fd-find' "$BOOTSTRAP"
@@ -45,9 +46,11 @@ grep -q 'python3 python3-venv ripgrep' "$BOOTSTRAP"
 grep -q 'openssh-client' "$BOOTSTRAP"
 grep -q 'passwd' "$BOOTSTRAP"
 grep -q 'command -v ssh-keygen' "$BOOTSTRAP"
-grep -q 'pkgconf python utf8proc' "$BOOTSTRAP"
+grep -q 'pkgconf python ruby utf8proc' "$BOOTSTRAP"
 grep -q 'vim zsh' "$BOOTSTRAP"
 grep -q 'font-maple-mono-nf-cn' "$BOOTSTRAP"
+grep -q '^install_colorls()' "$BOOTSTRAP"
+grep -q '^colorls_gem_command()' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
 grep -q '^ensure_ghostty_terminfo()' "$BOOTSTRAP"
 grep -q '^configure_locale()' "$BOOTSTRAP"
@@ -111,7 +114,14 @@ fi
 
 prerequisite_function=$(sed -n '/^install_prerequisites()/,/^}/p' "$BOOTSTRAP")
 [[ $(grep -Eoc '(^|[[:space:]])btop($|[[:space:]])' <<< "$prerequisite_function") -eq 2 ]]
+[[ $(grep -Eoc '(^|[[:space:]])ruby($|[[:space:]])' <<< "$prerequisite_function") -eq 2 ]]
 grep -Fq 'command -v btop >/dev/null 2>&1 || fail "btop is required"' "$BOOTSTRAP"
+grep -Fq 'colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"' "$BOOTSTRAP"
+grep -Fq "alias ls='colorls --sd'" "$ZSH_CONFIG"
+grep -Fq "alias ll='colorls -lA --sd'" "$ZSH_CONFIG"
+grep -Fq "alias la='colorls -A --sd'" "$ZSH_CONFIG"
+grep -Fq '`font-symbols-only-nerd-font`' "$README"
+grep -Fq '本仓库不托管 Linux GUI 终端字体设置' "$README"
 if grep -Eq '(^|[[:space:]])(fzf|zoxide)($|[[:space:]])' <<< "$prerequisite_function"; then
   printf '%s\n' 'fzf and zoxide must come from pinned official releases, not apt or Homebrew' >&2
   exit 1
@@ -462,7 +472,43 @@ PATH="$TEST_HOME/.local/bin:$PATH" HOME=$TEST_HOME pre_commit_is_locked_version
 PRE_COMMIT_VERSION=$ORIGINAL_PRE_COMMIT_VERSION
 PRE_COMMIT_SHA256=$ORIGINAL_PRE_COMMIT_SHA256
 
+# colorls uses the package-manager Ruby on both platforms, but installs the
+# command into the shared ~/.local/bin. Pin the transitive dependencies before
+# the main gem so older Debian/Ubuntu Ruby versions do not select incompatible
+# releases. A second run must be a no-op once the locked command is present.
+COLORLS_TEST_HOME="$TEST_HOME/colorls"
+COLORLS_FAKE_BIN="$COLORLS_TEST_HOME/fake-bin"
+COLORLS_GEM_CALLS_FILE="$COLORLS_TEST_HOME/gem-calls"
+mkdir -p "$COLORLS_FAKE_BIN" "$COLORLS_TEST_HOME/.local/bin"
+cat > "$COLORLS_FAKE_BIN/gem" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$COLORLS_GEM_CALLS_FILE"
+case " $* " in
+  *' colorls '*)
+    cat > "$HOME/.local/bin/colorls" <<EOF
+#!/usr/bin/env bash
+printf '%s\\n' '$COLORLS_VERSION'
+EOF
+    chmod +x "$HOME/.local/bin/colorls"
+    ;;
+esac
+SH
+chmod +x "$COLORLS_FAKE_BIN/gem"
+export COLORLS_GEM_CALLS_FILE COLORLS_VERSION
+PATH="$COLORLS_TEST_HOME/.local/bin:$COLORLS_FAKE_BIN:/usr/bin:/bin" \
+  HOME=$COLORLS_TEST_HOME PLATFORM_OS=linux install_colorls
+grep -Fq "manpages --version $COLORLS_MANPAGES_VERSION" "$COLORLS_GEM_CALLS_FILE"
+grep -Fq "public_suffix --version $COLORLS_PUBLIC_SUFFIX_VERSION" "$COLORLS_GEM_CALLS_FILE"
+grep -Fq -- "--minimal-deps colorls --version $COLORLS_VERSION" "$COLORLS_GEM_CALLS_FILE"
+[[ $(wc -l < "$COLORLS_GEM_CALLS_FILE") -eq 3 ]]
+PATH="$COLORLS_TEST_HOME/.local/bin:$COLORLS_FAKE_BIN:/usr/bin:/bin" \
+  HOME=$COLORLS_TEST_HOME PLATFORM_OS=linux install_colorls
+[[ $(wc -l < "$COLORLS_GEM_CALLS_FILE") -eq 3 ]]
+
 for version_variable in \
+  COLORLS_VERSION \
+  COLORLS_MANPAGES_VERSION \
+  COLORLS_PUBLIC_SUFFIX_VERSION \
   FZF_VERSION \
   FZF_SHA256_DARWIN_ARM64 \
   FZF_SHA256_DARWIN_X86_64 \

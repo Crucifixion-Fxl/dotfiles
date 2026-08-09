@@ -10,7 +10,7 @@ set -euo pipefail
 # --skills-only 模式：只同步 Agent Skills，不安装或更新其他工具。
 #
 # 可复现策略：
-#   - pre-commit/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
+#   - pre-commit/colorls/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
 #   - Codex CLI 与 Iris 始终跟随官方最新稳定版；Linux termscp 和 Fresh 使用各自
@@ -215,6 +215,11 @@ pre_commit_is_locked_version() {
     [[ $(pre-commit --version 2>/dev/null) == "pre-commit $PRE_COMMIT_VERSION" ]]
 }
 
+colorls_is_locked_version() {
+  command -v colorls >/dev/null 2>&1 &&
+    [[ $(colorls --version 2>/dev/null) == "$COLORLS_VERSION" ]]
+}
+
 # --- 平台检测与系统依赖 -------------------------------------------------
 detect_platform() {
   case "$(uname -s)" in
@@ -240,7 +245,7 @@ install_prerequisites() {
     packages=(
       bash bison btop bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
       ncurses-base ncurses-bin openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip xz-utils vim zsh
-      libevent-dev libncurses-dev libutf8proc-dev
+      libevent-dev libncurses-dev libutf8proc-dev ruby ruby-dev
     )
     for optional_package in resvg; do
       if apt-cache show "$optional_package" >/dev/null 2>&1; then
@@ -253,7 +258,7 @@ install_prerequisites() {
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
     packages=(
-      bash bison btop curl git libevent ncurses node pkgconf python utf8proc zsh
+      bash bison btop curl git libevent ncurses node pkgconf python ruby utf8proc zsh
       yazi glow ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
@@ -852,6 +857,37 @@ install_pre_commit() {
   trap - RETURN
   rm -rf "$work"
   pre_commit_is_locked_version || fail "pre-commit $PRE_COMMIT_VERSION installation verification failed"
+}
+
+colorls_gem_command() {
+  local gem_command
+  if [[ "$PLATFORM_OS" == darwin ]]; then
+    gem_command="$(brew --prefix ruby)/bin/gem"
+  else
+    gem_command=$(command -v gem 2>/dev/null || true)
+  fi
+  [[ -n "$gem_command" && -x "$gem_command" ]] || fail "Ruby gem is required to install colorls"
+  printf '%s\n' "$gem_command"
+}
+
+install_colorls() {
+  colorls_is_locked_version && return 0
+
+  local gem_command
+  gem_command=$(colorls_gem_command)
+  log "Installing colorls $COLORLS_VERSION into $HOME/.local/bin"
+
+  # colorls 本身支持 Ruby 2.6+，但两个传递依赖的新版已经提高
+  # Ruby 下限。先固定最后的兼容版，让新 Mac 和较旧 Linux 都可重复安装。
+  "$gem_command" install --user-install --bindir "$HOME/.local/bin" --no-document \
+    manpages --version "$COLORLS_MANPAGES_VERSION"
+  "$gem_command" install --user-install --bindir "$HOME/.local/bin" --no-document \
+    public_suffix --version "$COLORLS_PUBLIC_SUFFIX_VERSION"
+  "$gem_command" install --user-install --bindir "$HOME/.local/bin" --no-document \
+    --minimal-deps colorls --version "$COLORLS_VERSION"
+  hash -r
+
+  colorls_is_locked_version || fail "colorls $COLORLS_VERSION installation verification failed"
 }
 
 install_codex() {
@@ -1462,6 +1498,7 @@ validate() {
   glow_is_locked_version || fail "expected Glow $GLOW_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
+  colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"
   codex_is_installed || fail "Codex CLI is required"
   if [[ "$PLATFORM_OS" == linux ]]; then
     termscp_is_installed || fail "termscp is required on Linux"
@@ -1681,6 +1718,7 @@ main() {
   install_glow
   install_yazi
   install_pre_commit
+  install_colorls
   install_node_for_todoist
   install_codex
   install_termscp
