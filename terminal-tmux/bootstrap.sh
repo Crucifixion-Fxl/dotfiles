@@ -864,6 +864,13 @@ install_codex() {
 }
 
 install_termscp() {
+  if termscp_is_installed; then
+    # 官方 macOS 安装器在已安装时会显式执行 brew update；这里先短路，避免重复
+    # bootstrap 因 Homebrew 元数据刷新而长时间等待。需要升级时由用户主动执行。
+    log "termscp is already installed; skipping installer"
+    return 0
+  fi
+
   log "Installing termscp with its official universal installer"
   curl --proto '=https' --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 \
     "$TERMSCP_INSTALL_URL" | sh -s -- --yes

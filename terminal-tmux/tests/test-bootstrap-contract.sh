@@ -26,6 +26,9 @@ AGENT_SKILLS_SYNC="$AGENT_SKILLS_ROOT/sync.sh"
 bash -n "$BOOTSTRAP"
 [[ -s "$WORKFLOW_IMAGE" ]]
 grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
+grep -Fq '### 平台安装边界' "$README"
+grep -Fq '| termscp | 首次通过官方 Homebrew tap 安装' "$README"
+grep -Fq '| Todo Agent 后台服务 |' "$README"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'btop' "$BOOTSTRAP"
@@ -628,23 +631,35 @@ HOME=$TEST_HOME install_todoist_cli
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @doist/todoist-cli@$TODOIST_CLI_VERSION" ]]
 todoist_cli_is_locked_version
 
-# termscp follows the latest official universal installer on both macOS and
-# Debian/Ubuntu. The bootstrap passes --yes so containers/headless SSH hosts
-# never block on the installer's confirmation prompt.
-TERMSCP_CURL_ARGS_FILE="$TEST_HOME/termscp-curl-args"
-curl() {
-  printf '%s\n' "$*" > "$TERMSCP_CURL_ARGS_FILE"
-  printf '%s\n' ':'
-}
-termscp() {
-  printf '%s\n' 'termscp v999.0.0 - test build'
-}
-HOME=$TEST_HOME install_termscp
-grep -Fq -- "--proto =https --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 $TERMSCP_INSTALL_URL" \
-  "$TERMSCP_CURL_ARGS_FILE"
+# termscp follows the official universal installer on macOS and Debian/Ubuntu.
+# Once installed, bootstrap must short-circuit before the upstream macOS path
+# can run its explicit `brew update` again.
+(
+  TERMSCP_CURL_ARGS_FILE="$TEST_HOME/termscp-curl-args"
+  TERMSCP_INSTALLED_FILE="$TEST_HOME/termscp-installed"
+  termscp_is_installed() {
+    [[ -e "$TERMSCP_INSTALLED_FILE" ]]
+  }
+  termscp() {
+    [[ -e "$TERMSCP_INSTALLED_FILE" ]] || return 127
+    printf '%s\n' 'termscp v999.0.0 - test build'
+  }
+  curl() {
+    printf '%s\n' "$*" > "$TERMSCP_CURL_ARGS_FILE"
+    printf 'touch %q\n' "$TERMSCP_INSTALLED_FILE"
+  }
+
+  rm -f "$TERMSCP_CURL_ARGS_FILE" "$TERMSCP_INSTALLED_FILE"
+  HOME=$TEST_HOME install_termscp
+  grep -Fq -- "--proto =https --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 $TERMSCP_INSTALL_URL" \
+    "$TERMSCP_CURL_ARGS_FILE"
+  [[ -e "$TERMSCP_INSTALLED_FILE" ]]
+
+  rm -f "$TERMSCP_CURL_ARGS_FILE"
+  HOME=$TEST_HOME install_termscp
+  [[ ! -e "$TERMSCP_CURL_ARGS_FILE" ]]
+)
 grep -Fq '| sh -s -- --yes' "$BOOTSTRAP"
-termscp_is_installed
-unset -f curl termscp
 
 mkdir -p \
   "$TEST_HOME/.druk/bin" \
