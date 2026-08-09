@@ -3,7 +3,7 @@
 #
 # bootstrap.sh 会 source 此文件。升级 Release 时必须同时更新对应平台的
 # SHA256，不要只改版本号。插件使用完整 Git commit，避免上游分支漂移。
-# Codex CLI 与 Iris 始终跟随官方最新稳定版；Linux termscp 和 Fresh 由各自官方
+# Codex CLI 始终跟随官方最新稳定版；Linux termscp 和 Fresh 由各自官方
 # 通用安装脚本管理，这些工具均不在此锁定。
 # =============================================================================
 
@@ -83,4 +83,5 @@ CONTINUUM_COMMIT=0698e8f4b17d6454c71bf5212895ec055c578da0
 
 # --- zsh 框架与插件 commit ------------------------------------------------
 OH_MY_ZSH_COMMIT=677a4592b18c08ddea737f8aca70bac0e9fc9313
+ZSH_AUTOSUGGESTIONS_COMMIT=85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5
 ZSH_SYNTAX_HIGHLIGHTING_COMMIT=1d85c692615a25fe2293bdd44b34c217d5d2bf04

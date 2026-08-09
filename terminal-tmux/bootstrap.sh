@@ -13,7 +13,7 @@ set -euo pipefail
 #   - pre-commit/colorls/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 与 Iris 首次安装官方最新稳定版，已有可用版本时跳过重复下载；
+#   - Codex CLI 首次安装官方最新稳定版，已有可用版本时跳过重复下载；
 #     Linux termscp 和 Fresh 使用各自官方通用安装脚本，这些工具均不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
@@ -22,7 +22,6 @@ DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 AGENT_SKILLS_SYNC="$DOTFILES_DIR/../agent-skills/sync.sh"
 FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
 TERMSCP_INSTALL_URL=https://termscp.rs/install.sh
-IRIS_LATEST_RELEASE_URL=https://github.com/versenilvis/iris/releases/latest/download
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
 
@@ -108,11 +107,6 @@ fzf_is_locked_version() {
 zoxide_is_locked_version() {
   command -v zoxide >/dev/null 2>&1 &&
     [[ $(zoxide --version 2>/dev/null | awk '{print $2}') == "$ZOXIDE_VERSION" ]]
-}
-
-iris_is_installed() {
-  command -v iris >/dev/null 2>&1 &&
-    iris version 2>/dev/null | grep -Eq '^iris v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 }
 
 glow_is_locked_version() {
@@ -654,79 +648,6 @@ install_zoxide() {
   zoxide_is_locked_version || fail "zoxide $ZOXIDE_VERSION installation verification failed"
 }
 
-iris_asset() {
-  case "$PLATFORM_OS/$PLATFORM_ARCH" in
-    darwin/arm64)
-      ASSET="iris_darwin_arm64.tar.gz"
-      ;;
-    darwin/x86_64)
-      ASSET="iris_darwin_amd64.tar.gz"
-      ;;
-    linux/arm64)
-      ASSET="iris_linux_arm64.tar.gz"
-      ;;
-    linux/x86_64)
-      ASSET="iris_linux_amd64.tar.gz"
-      ;;
-  esac
-}
-
-install_iris() {
-  if iris_is_installed; then
-    log "Iris is already installed; skipping Release download"
-    return 0
-  fi
-
-  local work archive binary candidate_version destination
-  iris_asset
-  work=$(mktemp -d) || fail "cannot create a temporary directory for Iris installation"
-  archive="$work/$ASSET"
-  trap 'rm -rf "$work"' RETURN
-
-  log "Downloading the official latest stable Iris Release"
-  if ! download "$IRIS_LATEST_RELEASE_URL/$ASSET" "$archive"; then
-    trap - RETURN
-    rm -rf "$work"
-    fail "latest stable Iris download failed"
-  fi
-  if ! tar -xzf "$archive" -C "$work"; then
-    trap - RETURN
-    rm -rf "$work"
-    fail "latest stable Iris archive is invalid"
-  fi
-  binary=$(find "$work" -type f -name iris -perm -u+x | head -1)
-  if [[ -z "$binary" ]] || ! candidate_version=$("$binary" version 2>/dev/null | \
-    awk 'NR == 1 && $1 == "iris" {sub(/^v/, "", $2); print $2}'); then
-    candidate_version=
-  fi
-  if [[ ! $candidate_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    trap - RETURN
-    rm -rf "$work"
-    fail "latest stable Iris binary is invalid"
-  fi
-
-  if ! mkdir -p "$HOME/.local/bin"; then
-    trap - RETURN
-    rm -rf "$work"
-    fail "cannot create $HOME/.local/bin for Iris installation"
-  fi
-  destination="$HOME/.local/bin/.iris.$$"
-  if ! install -m 0755 "$binary" "$destination" || \
-    ! "$destination" version >/dev/null 2>&1 || \
-    ! mv -f "$destination" "$HOME/.local/bin/iris"; then
-    rm -f "$destination"
-    trap - RETURN
-    rm -rf "$work"
-    fail "latest stable Iris installation failed"
-  fi
-  hash -r
-
-  trap - RETURN
-  rm -rf "$work"
-  iris_is_installed || fail "latest stable Iris installation verification failed"
-  log "Installed Iris stable $candidate_version"
-}
-
 glow_asset() {
   case "$PLATFORM_OS/$PLATFORM_ARCH" in
     darwin/arm64)
@@ -1040,8 +961,24 @@ install_plugin() {
 install_oh_my_zsh() {
   install_git_checkout oh-my-zsh https://github.com/ohmyzsh/ohmyzsh.git \
     "$OH_MY_ZSH_COMMIT" "$HOME/.oh-my-zsh"
+  install_git_checkout zsh-autosuggestions https://github.com/zsh-users/zsh-autosuggestions.git \
+    "$ZSH_AUTOSUGGESTIONS_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"
   install_git_checkout zsh-syntax-highlighting https://github.com/zsh-users/zsh-syntax-highlighting.git \
     "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting"
+}
+
+remove_legacy_iris() {
+  local managed_iris="$HOME/.local/bin/iris"
+
+  # Iris was previously installed by this bootstrap at this exact path. Do not
+  # remove a package-manager or manually managed Iris from elsewhere in PATH.
+  if [[ -e "$managed_iris" || -L "$managed_iris" ]]; then
+    log "Removing the obsolete dotfiles-managed Iris binary"
+    rm -f "$managed_iris"
+  fi
+  [[ ! -e "$managed_iris" && ! -L "$managed_iris" ]] || \
+    fail "could not remove obsolete dotfiles-managed Iris binary: $managed_iris"
+  hash -r
 }
 
 install_iterm2_profile() {
@@ -1246,7 +1183,7 @@ install_links() {
 }
 
 # zsh 和 tmux 是新机器继续运行 bootstrap 和排查中断的基础入口。
-# 这些链接必须早于任何网络安装，避免 Iris 或 tmux 已安装，但启动
+# 这些链接必须早于任何网络安装，避免 zsh 或 tmux 已安装，但启动
 # 入口、快捷键及其辅助脚本仍处于半配置状态。
 install_shell_links() {
   backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
@@ -1556,7 +1493,8 @@ validate() {
   delta_is_locked_version || fail "expected git-delta $DELTA_VERSION"
   fzf_is_locked_version || fail "expected fzf $FZF_VERSION"
   zoxide_is_locked_version || fail "expected zoxide $ZOXIDE_VERSION"
-  iris_is_installed || fail "Iris is required"
+  [[ ! -e "$HOME/.local/bin/iris" && ! -L "$HOME/.local/bin/iris" ]] || \
+    fail "obsolete dotfiles-managed Iris binary is still installed"
   glow_is_locked_version || fail "expected Glow $GLOW_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
@@ -1626,8 +1564,7 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
-  bash "$DOTFILES_DIR/tests/test-iris-update.sh"
-  bash "$DOTFILES_DIR/tests/test-iris-autostart.sh"
+  bash "$DOTFILES_DIR/tests/test-zsh-autosuggestions.sh"
   python3 "$DOTFILES_DIR/tests/test-todo-tui.py"
   python3 "$DOTFILES_DIR/tests/test-todo-agent.py"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
@@ -1705,6 +1642,7 @@ validate() {
   [[ -L "$tmux_config_destination" && $(readlink "$tmux_config_destination") == "$tmux_config" ]] || \
     fail "managed tmux config link is missing"
   [[ $(git -C "$HOME/.oh-my-zsh" rev-parse HEAD) == "$OH_MY_ZSH_COMMIT" ]] || fail "Oh My Zsh commit mismatch"
+  [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions" rev-parse HEAD) == "$ZSH_AUTOSUGGESTIONS_COMMIT" ]] || fail "zsh-autosuggestions commit mismatch"
   [[ $(git -C "$HOME/.oh-my-zsh/custom/plugins/zsh-syntax-highlighting" rev-parse HEAD) == "$ZSH_SYNTAX_HIGHLIGHTING_COMMIT" ]] || fail "zsh-syntax-highlighting commit mismatch"
 
   tmux -L terminal-tmux-check kill-server >/dev/null 2>&1 || true
@@ -1770,6 +1708,7 @@ main() {
   ensure_shell_path
   ensure_shell_locale
   install_shell_links
+  remove_legacy_iris
   install_prerequisites
   configure_login_shell
   install_ghostty
@@ -1786,7 +1725,6 @@ main() {
   install_delta
   install_fzf
   install_zoxide
-  install_iris
   install_glow
   install_yazi
   install_pre_commit

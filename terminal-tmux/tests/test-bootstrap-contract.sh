@@ -22,11 +22,11 @@ VERSIONS="$ROOT/versions.lock"
 TMUX_CONFIG="$ROOT/tmux/tmux.conf"
 AGENT_SKILLS_ROOT="$ROOT/../agent-skills"
 AGENT_SKILLS_SYNC="$AGENT_SKILLS_ROOT/sync.sh"
-IRIS_AUTOSTART_TEST="$ROOT/tests/test-iris-autostart.sh"
+ZSH_AUTOSUGGESTIONS_TEST="$ROOT/tests/test-zsh-autosuggestions.sh"
 TMUX_FRESH_MACHINE_TEST="$ROOT/tests/test-tmux-fresh-machine.sh"
 
 bash -n "$BOOTSTRAP"
-bash -n "$IRIS_AUTOSTART_TEST"
+bash -n "$ZSH_AUTOSUGGESTIONS_TEST"
 bash -n "$TMUX_FRESH_MACHINE_TEST"
 [[ -s "$WORKFLOW_IMAGE" ]]
 grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
@@ -64,7 +64,7 @@ grep -q '^managed_login_shell_path()' "$BOOTSTRAP"
 grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
-grep -q '^install_iris()' "$BOOTSTRAP"
+grep -q '^remove_legacy_iris()' "$BOOTSTRAP"
 grep -q '^install_shell_links()' "$BOOTSTRAP"
 grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
@@ -529,17 +529,11 @@ glow() {
 glab() {
   printf 'glab %s (test)\n' "$GLAB_VERSION"
 }
-iris() {
-  case "${1:-}" in
-    version) printf '%s\n' 'iris 0.4.21' ;;
-  esac
-}
 fzf_is_locked_version
 zoxide_is_locked_version
-iris_is_installed
 glow_is_locked_version
 glab_is_locked_version
-unset -f fzf zoxide iris glow glab
+unset -f fzf zoxide glow glab
 
 yazi() {
   printf 'Yazi %s (test)\n' "$YAZI_VERSION"
@@ -650,11 +644,6 @@ for version_variable in \
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
 done
 
-if grep -Eq '^IRIS_(VERSION|SHA256_)' "$ROOT/versions.lock"; then
-  printf '%s\n' 'Iris must follow the official latest stable release instead of versions.lock' >&2
-  exit 1
-fi
-
 PLATFORM_OS=darwin PLATFORM_ARCH=arm64 fzf_asset
 [[ $ASSET == "fzf-${FZF_VERSION}-darwin_arm64.tar.gz" ]]
 PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 fzf_asset
@@ -681,15 +670,6 @@ PLATFORM_OS=linux PLATFORM_ARCH=arm64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-aarch64-unknown-linux-musl.tar.gz" ]]
 PLATFORM_OS=linux PLATFORM_ARCH=x86_64 zoxide_asset
 [[ $ASSET == "zoxide-${ZOXIDE_VERSION}-x86_64-unknown-linux-musl.tar.gz" ]]
-
-PLATFORM_OS=darwin PLATFORM_ARCH=arm64 iris_asset
-[[ $ASSET == iris_darwin_arm64.tar.gz ]]
-PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 iris_asset
-[[ $ASSET == iris_darwin_amd64.tar.gz ]]
-PLATFORM_OS=linux PLATFORM_ARCH=arm64 iris_asset
-[[ $ASSET == iris_linux_arm64.tar.gz ]]
-PLATFORM_OS=linux PLATFORM_ARCH=x86_64 iris_asset
-[[ $ASSET == iris_linux_amd64.tar.gz ]]
 
 PLATFORM_OS=darwin PLATFORM_ARCH=arm64 glow_asset
 [[ $ASSET == "glow_${GLOW_VERSION}_Darwin_arm64.tar.gz" ]]
@@ -922,13 +902,16 @@ PLATFORM_OS=darwin HOME=$TEST_HOME install_fresh
 [[ ! -e "$FRESH_CURL_ARGS_FILE" ]]
 unset -f brew curl fresh
 
-for version_variable in OH_MY_ZSH_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
+for version_variable in OH_MY_ZSH_COMMIT ZSH_AUTOSUGGESTIONS_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
 done
 plugins_block=$(sed -n '/^plugins=(/,/^)/p' "$ROOT/shell/zshrc")
-if grep -Fq 'zsh-autosuggestions' <<< "$plugins_block" ||
-  grep -Eq 'zsh-autosuggestions|ZSH_AUTOSUGGESTIONS' "$BOOTSTRAP" "$ROOT/versions.lock"; then
-  printf '%s\n' 'zsh-autosuggestions must stay disabled and unmanaged when Iris is enabled' >&2
+[[ "$plugins_block" == $'plugins=(\n  git\n  zsh-autosuggestions\n  zsh-syntax-highlighting\n)' ]]
+grep -Fq 'https://github.com/zsh-users/zsh-autosuggestions.git' "$BOOTSTRAP"
+grep -Fq '"$ZSH_AUTOSUGGESTIONS_COMMIT" "$HOME/.oh-my-zsh/custom/plugins/zsh-autosuggestions"' "$BOOTSTRAP"
+if grep -Fq 'eval "$(iris init zsh)"' "$ROOT/shell/zshrc" ||
+  grep -q '^install_iris()' "$BOOTSTRAP"; then
+  printf '%s\n' 'Iris must stay disabled after migration to zsh-autosuggestions' >&2
   exit 1
 fi
 
@@ -953,9 +936,8 @@ grep -Fq 'piper -- CLICOLOR_FORCE=1 glow' "$ROOT/yazi/yazi.toml"
 grep -Fq 'use = "yazi-rs/plugins:piper"' "$ROOT/yazi/package.toml"
 grep -Fq 'rev = "bb758e2"' "$ROOT/yazi/package.toml"
 grep -Fq 'update_db = true' "$ROOT/yazi/init.lua"
-grep -Fq 'eval "$(iris init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq 'if [[ -r "$ZSH/oh-my-zsh.sh" ]]' "$ROOT/shell/zshrc"
-grep -Fq 'bash "$DOTFILES_DIR/tests/test-iris-autostart.sh"' "$BOOTSTRAP"
+grep -Fq 'bash "$DOTFILES_DIR/tests/test-zsh-autosuggestions.sh"' "$BOOTSTRAP"
 grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
@@ -968,8 +950,7 @@ grep -Fq 'glab auth login --hostname gitlab.addx.ai' "$BOOTSTRAP"
 grep -Fq 'GitLab token with api scope' "$BOOTSTRAP"
 grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
-grep -Fq '  install_iris' "$BOOTSTRAP"
-grep -Fq 'tests/test-iris-update.sh' "$BOOTSTRAP"
+grep -Fq '  remove_legacy_iris' "$BOOTSTRAP"
 grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
@@ -982,7 +963,7 @@ grep -Fq '  remind_ssh_key' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
 grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
-bash "$IRIS_AUTOSTART_TEST"
+bash "$ZSH_AUTOSUGGESTIONS_TEST"
 bash "$TMUX_FRESH_MACHINE_TEST"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
