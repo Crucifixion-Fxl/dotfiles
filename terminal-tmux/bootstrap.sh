@@ -1182,7 +1182,6 @@ remove_legacy_todo_bridge() {
 }
 
 install_links() {
-  backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
   backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
   backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
@@ -1195,7 +1194,6 @@ install_links() {
   backup_and_link "$DOTFILES_DIR/bin/termscp-key-authorizer" "$HOME/.local/bin/termscp-key-authorizer"
   backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"
   backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"
-  backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
   backup_and_link "$DOTFILES_DIR/yazi/package.toml" "$HOME/.config/yazi/package.toml"
@@ -1205,6 +1203,14 @@ install_links() {
   local lazygit_config_dir
   lazygit_config_dir=$(lazygit --print-config-dir)
   backup_and_link "$DOTFILES_DIR/lazygit/config.yml" "$lazygit_config_dir/config.yml"
+}
+
+# zsh 是新机器继续运行 bootstrap 和排查中断的基础入口。这两个
+# 链接必须早于任何网络安装，避免 Iris 已安装但 ~/.zshrc 仍是临时
+# PATH/locale 文件的半配置状态。
+install_shell_links() {
+  backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"
+  backup_and_link "$DOTFILES_DIR/shell/tmux-window-name.zsh" "$HOME/.config/tmux/window-name.zsh"
 }
 
 install_todo_agent_service() {
@@ -1481,7 +1487,8 @@ validate() {
   local prefix_bindings
   local ghostty_config ghostty_destination ghostty_launcher ghostty_launcher_destination
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
-  local login_shell login_user zsh_path
+  local login_shell login_user zsh_config zsh_config_destination zsh_path
+  local zsh_window_name_config zsh_window_name_destination
   local todo_agent_link todo_agent_service todo_agent_service_destination
   local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
@@ -1529,6 +1536,16 @@ validate() {
   [[ "$login_shell" == "$zsh_path" ]] || \
     fail "login shell for $login_user must be $zsh_path, got $login_shell"
 
+  zsh_config="$DOTFILES_DIR/shell/zshrc"
+  zsh_config_destination="$HOME/.zshrc"
+  [[ -L "$zsh_config_destination" && $(readlink "$zsh_config_destination") == "$zsh_config" ]] || \
+    fail "managed zsh config link is missing"
+  zsh_window_name_config="$DOTFILES_DIR/shell/tmux-window-name.zsh"
+  zsh_window_name_destination="$HOME/.config/tmux/window-name.zsh"
+  [[ -L "$zsh_window_name_destination" &&
+    $(readlink "$zsh_window_name_destination") == "$zsh_window_name_config" ]] || \
+    fail "managed tmux window-name zsh link is missing"
+
   zsh -n "$DOTFILES_DIR/shell/tmux-window-name.zsh"
   zsh -n "$DOTFILES_DIR/shell/zshrc"
   bash -n "$DOTFILES_DIR/bootstrap.sh"
@@ -1555,6 +1572,7 @@ validate() {
   bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
   bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
   bash "$DOTFILES_DIR/tests/test-iris-update.sh"
+  bash "$DOTFILES_DIR/tests/test-iris-autostart.sh"
   python3 "$DOTFILES_DIR/tests/test-todo-tui.py"
   python3 "$DOTFILES_DIR/tests/test-todo-agent.py"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
@@ -1698,6 +1716,7 @@ main() {
   # 已打开的父 shell，但后续新 shell 会立即获得 ~/.local/bin 和正确 locale。
   ensure_shell_path
   ensure_shell_locale
+  install_shell_links
   install_prerequisites
   configure_login_shell
   install_ghostty

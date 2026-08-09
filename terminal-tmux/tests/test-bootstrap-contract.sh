@@ -22,8 +22,10 @@ VERSIONS="$ROOT/versions.lock"
 TMUX_CONFIG="$ROOT/tmux/tmux.conf"
 AGENT_SKILLS_ROOT="$ROOT/../agent-skills"
 AGENT_SKILLS_SYNC="$AGENT_SKILLS_ROOT/sync.sh"
+IRIS_AUTOSTART_TEST="$ROOT/tests/test-iris-autostart.sh"
 
 bash -n "$BOOTSTRAP"
+bash -n "$IRIS_AUTOSTART_TEST"
 [[ -s "$WORKFLOW_IMAGE" ]]
 grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
 grep -Fq '### 平台安装边界' "$README"
@@ -61,6 +63,7 @@ grep -q '^ensure_linux_fd_command()' "$BOOTSTRAP"
 grep -q '^install_fzf()' "$BOOTSTRAP"
 grep -q '^install_zoxide()' "$BOOTSTRAP"
 grep -q '^install_iris()' "$BOOTSTRAP"
+grep -q '^install_shell_links()' "$BOOTSTRAP"
 grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
@@ -629,6 +632,8 @@ grep -Fqx "run '~/.tmux/plugins/tpm/tpm'" "$TMUX_CONFIG"
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $path_setup_line -lt $prerequisite_line ]]
+shell_links_line=$(grep -n '^  install_shell_links$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $shell_links_line -lt $prerequisite_line ]]
 login_shell_line=$(grep -n '^  configure_login_shell$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $prerequisite_line -lt $login_shell_line ]]
 locale_setup_line=$(grep -n '^  ensure_shell_locale$' "$BOOTSTRAP" | cut -d: -f1)
@@ -776,6 +781,8 @@ grep -Fq 'use = "yazi-rs/plugins:piper"' "$ROOT/yazi/package.toml"
 grep -Fq 'rev = "bb758e2"' "$ROOT/yazi/package.toml"
 grep -Fq 'update_db = true' "$ROOT/yazi/init.lua"
 grep -Fq 'eval "$(iris init zsh)"' "$ROOT/shell/zshrc"
+grep -Fq 'if [[ -r "$ZSH/oh-my-zsh.sh" ]]' "$ROOT/shell/zshrc"
+grep -Fq 'bash "$DOTFILES_DIR/tests/test-iris-autostart.sh"' "$BOOTSTRAP"
 grep -Fq 'eval "$(zoxide init zsh)"' "$ROOT/shell/zshrc"
 grep -Fq '  seed_zoxide_history' "$BOOTSTRAP"
 grep -Fq 'install_oh_my_zsh' "$BOOTSTRAP"
@@ -802,6 +809,7 @@ grep -Fq '  remind_ssh_key' "$BOOTSTRAP"
 grep -Fq 'function y()' "$ROOT/shell/zshrc"
 grep -Fq 'command yazi "$@" --cwd-file="$tmp"' "$ROOT/shell/zshrc"
 zsh -n "$ROOT/shell/zshrc"
+bash "$IRIS_AUTOSTART_TEST"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
 bash -n "$TERMSCP_LAUNCHER"
