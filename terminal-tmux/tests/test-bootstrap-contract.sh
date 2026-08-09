@@ -82,6 +82,8 @@ grep -q '^install_agent_skills()' "$BOOTSTRAP"
 grep -q '^check_agent_skills()' "$BOOTSTRAP"
 grep -q '^install_agent_skills_on_macos()' "$BOOTSTRAP"
 grep -q '^install_agent_skills_on_linux()' "$BOOTSTRAP"
+grep -q '^raise_bootstrap_open_file_limit()' "$BOOTSTRAP"
+[[ $(grep -Fc '  raise_bootstrap_open_file_limit' "$BOOTSTRAP") -eq 1 ]]
 grep -Fq 'install_agent_skills' "$BOOTSTRAP"
 grep -Fq 'check_agent_skills' "$BOOTSTRAP"
 grep -Fq -- '--skills-only' "$BOOTSTRAP"
@@ -172,6 +174,37 @@ TEST_PLUGIN_COMMIT=0123456789abcdef
 
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
+
+# macOS raises only this bootstrap process and its children above the default
+# 256-file soft limit. Linux keeps its existing limit unchanged.
+(
+  OPEN_FILE_LIMIT=256
+  ulimit() {
+    if [[ $* == '-S -n' ]]; then
+      printf '%s\n' "$OPEN_FILE_LIMIT"
+    elif [[ $* == '-S -n 4096' ]]; then
+      OPEN_FILE_LIMIT=4096
+    else
+      return 99
+    fi
+  }
+  PLATFORM_OS=darwin
+  raise_bootstrap_open_file_limit
+  [[ $OPEN_FILE_LIMIT -eq 4096 ]]
+)
+(
+  OPEN_FILE_LIMIT=1048576
+  ulimit() {
+    if [[ $* == '-S -n' ]]; then
+      printf '%s\n' "$OPEN_FILE_LIMIT"
+    else
+      return 99
+    fi
+  }
+  PLATFORM_OS=linux
+  raise_bootstrap_open_file_limit
+  [[ $OPEN_FILE_LIMIT -eq 1048576 ]]
+)
 
 # macOS syncs before the long download chain; Linux keeps the original late
 # ordering. The platform wrappers must call the shared installer exactly once.
@@ -759,8 +792,11 @@ macos_skills_line=$(grep -n '^  install_agent_skills_on_macos$' "$BOOTSTRAP" | c
 prerequisites_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
 linux_skills_line=$(grep -n '^  install_agent_skills_on_linux$' "$BOOTSTRAP" | cut -d: -f1)
 continuum_line=$(grep -n '^  install_plugin tmux-continuum ' "$BOOTSTRAP" | cut -d: -f1)
+open_file_limit_line=$(grep -n '^  raise_bootstrap_open_file_limit$' "$BOOTSTRAP" | cut -d: -f1)
+skills_only_branch_line=$(grep -n '^  if (( skills_only == 1 )); then$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $macos_skills_line -lt $prerequisites_line ]]
 [[ $linux_skills_line -gt $continuum_line ]]
+[[ $open_file_limit_line -lt $skills_only_branch_line ]]
 termscp_install_line=$(grep -n '^  install_termscp$' "$BOOTSTRAP" | cut -d: -f1)
 fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_config_line -lt $termscp_install_line ]]
