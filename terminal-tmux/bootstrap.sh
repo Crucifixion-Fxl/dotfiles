@@ -1664,6 +1664,9 @@ main() {
   install_prerequisites
   configure_login_shell
   install_ghostty
+  # 新 Mac 上先让 Ghostty 配置落地，避免后续网络安装失败或被中断时，
+  # 只留下已安装但仍使用默认配置的 Ghostty。
+  install_ghostty_config
   ensure_linux_fd_command
   configure_locale
   install_tmux
@@ -1696,7 +1699,6 @@ main() {
   install_yazi_packages
   seed_zoxide_history
   install_iterm2_profile
-  install_ghostty_config
   validate
 
   if tmux list-sessions >/dev/null 2>&1; then
@@ -1709,6 +1711,7 @@ main() {
   printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
   printf '%s\n' 'Transfer between the SSH server and this Mac: termscp-mac'
   printf '%s\n' 'Ghostty stable app and managed config are ready on macOS'
+  printf '%s\n' 'If Ghostty was already open, reload with Cmd+Shift+, or quit and reopen it'
   printf '%s\n' 'Choose an SSH host and open the remote menu in Ghostty: ghostty-dev'
   remind_gitlab_auth
   remind_ssh_key
