@@ -32,7 +32,7 @@ bash -n "$TMUX_FRESH_MACHINE_TEST"
 grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
 grep -Fq '### 平台安装边界' "$README"
 grep -Fq '| termscp | 不安装；Mac 仅提供反向转发后的 SFTP 服务' "$README"
-grep -Fq '| Fresh | 安装；官方安装器通过 Homebrew 安装 `fresh-editor`' "$README"
+grep -Fq '| Fresh | 直接通过 Homebrew 安装 `fresh-editor`' "$README"
 grep -Fq '| Todo Agent 后台服务 |' "$README"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
@@ -171,20 +171,85 @@ TEST_PLUGIN_COMMIT=0123456789abcdef
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
 
-# Every Homebrew call made by bootstrap inherits the opt-out, including calls
-# delegated to child installers through the exported environment.
+# Homebrew checks formula and cask inventories before installing only missing
+# packages. A fully prepared Mac must not execute brew install again.
 (
   BREW_CALLS=
+  BREW_ALL_INSTALLED=0
   brew() {
     [[ ${HOMEBREW_NO_AUTO_UPDATE:-} == 1 ]]
+    if [[ $1 == list && ( $2 == --formula || $2 == --cask ) ]]; then
+      [[ $BREW_ALL_INSTALLED == 1 || ${4:-} == bash ]]
+      return
+    fi
     BREW_CALLS+="$*"$'\n'
   }
   PLATFORM_OS=darwin
   install_prerequisites
-  [[ $BREW_CALLS == *'install bash bison btop '* ]]
+  brew_install_call=$(grep '^install ' <<< "$BREW_CALLS")
+  [[ " $brew_install_call " != *' bash '* ]]
+  [[ " $brew_install_call " == *' bison '* ]]
   [[ $BREW_CALLS == *'link ffmpeg-full imagemagick-full -f --overwrite'* ]]
   [[ $BREW_CALLS != *'update'* ]]
+
+  BREW_CALLS=
+  BREW_ALL_INSTALLED=1
+  install_prerequisites
+  ! grep -q '^install ' <<< "$BREW_CALLS"
+  [[ $BREW_CALLS == *'link ffmpeg-full imagemagick-full -f --overwrite'* ]]
 )
+
+# Debian/Ubuntu applies the same rule with dpkg-query. When every required
+# package is installed it must skip both apt-get update and apt-get install.
+(
+  APT_ROOT_CALLS=
+  APT_ALL_INSTALLED=0
+  apt-get() { :; }
+  apt-cache() { [[ $1 == show ]]; }
+  dpkg-query() {
+    local package=${!#}
+    if [[ $APT_ALL_INSTALLED == 1 || $package == bash ]]; then
+      printf '%s\n' 'ii '
+      return 0
+    fi
+    return 1
+  }
+  run_as_root() {
+    APT_ROOT_CALLS+="$*"$'\n'
+  }
+  PLATFORM_OS=linux
+  install_prerequisites
+  grep -Fqx 'apt-get update' <<< "$APT_ROOT_CALLS"
+  apt_install_call=$(grep 'apt-get install -y' <<< "$APT_ROOT_CALLS")
+  [[ " $apt_install_call " != *' bash '* ]]
+  [[ " $apt_install_call " == *' bison '* ]]
+
+  APT_ROOT_CALLS=
+  APT_ALL_INSTALLED=1
+  install_prerequisites
+  [[ -z $APT_ROOT_CALLS ]]
+)
+
+# A broken terminfo lookup must not blindly reinstall ncurses-base when dpkg
+# already reports that package as installed. Reinstalling the same package is
+# both a redundant download and unable to repair a non-package lookup issue.
+TMUX_TERMINFO_APT_CALLS="$TEST_HOME/tmux-terminfo-apt-calls"
+if (
+  PLATFORM_OS=linux
+  infocmp() { return 1; }
+  apt_package_is_installed() { return 0; }
+  run_as_root() {
+    printf '%s\n' "$*" >> "$TMUX_TERMINFO_APT_CALLS"
+  }
+  ensure_tmux_terminfo
+) 2>/dev/null; then
+  printf '%s\n' 'missing tmux terminfo unexpectedly passed validation' >&2
+  exit 1
+fi
+[[ ! -e "$TMUX_TERMINFO_APT_CALLS" ]] || {
+  printf '%s\n' 'installed ncurses-base must not be reinstalled for a terminfo lookup failure' >&2
+  exit 1
+}
 
 # A fresh container has no Todoist project mapping or token yet. Bootstrap
 # must still complete instead of starting a watcher that exits immediately.
@@ -638,7 +703,7 @@ grep -Fqx 'bind-key > swap-window -d -t +1' "$TMUX_CONFIG"
 grep -Fqx "set -g @plugin 'tmux-plugins/tpm'" "$TMUX_CONFIG"
 grep -Fqx "set -g @plugin 'tmux-plugins/tmux-resurrect'" "$TMUX_CONFIG"
 grep -Fqx "set -g @plugin 'tmux-plugins/tmux-continuum'" "$TMUX_CONFIG"
-grep -Fqx "run '~/.tmux/plugins/tpm/tpm'" "$TMUX_CONFIG"
+grep -Fqx 'if-shell '\''[ -x "$HOME/.tmux/plugins/tpm/tpm" ]'\'' '\''run-shell "$HOME/.tmux/plugins/tpm/tpm"'\''' "$TMUX_CONFIG"
 
 path_setup_line=$(grep -n '^  ensure_shell_path$' "$BOOTSTRAP" | cut -d: -f1)
 prerequisite_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
@@ -662,9 +727,11 @@ fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_config_line -lt $termscp_install_line ]]
 [[ $ghostty_config_line -lt $fresh_install_line ]]
 
-# Codex intentionally follows the latest official npm release instead of the
-# versions.lock policy used by the other tools.
+# Codex uses the latest official npm release for its first installation, then
+# skips repeated npm downloads while the existing command remains usable.
 NPM_ARGS=
+CODEX_INSTALLED_FILE="$TEST_HOME/codex-installed"
+CODEX_INSTALL_CALLS_FILE="$TEST_HOME/codex-install-calls"
 TD_VERSION=
 npm() {
   NPM_ARGS="$*"
@@ -675,12 +742,17 @@ npm() {
   if [[ $* == *'@doist/todoist-cli@'* ]]; then
     TD_VERSION=$TODOIST_CLI_VERSION
   fi
+  if [[ $* == *'@openai/codex@latest'* ]]; then
+    touch "$CODEX_INSTALLED_FILE"
+    printf '%s\n' "$*" >> "$CODEX_INSTALL_CALLS_FILE"
+  fi
   if [[ $1 == uninstall ]]; then
     rm -rf "$HOME/.local/lib/node_modules/druk"
     rm -f "$HOME/.local/bin/druk"
   fi
 }
 codex() {
+  [[ -e "$CODEX_INSTALLED_FILE" ]] || return 127
   printf '%s\n' 'codex-cli 999.0.0'
 }
 td() {
@@ -689,6 +761,15 @@ td() {
 
 HOME=$TEST_HOME install_codex
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @openai/codex@latest" ]]
+[[ $(wc -l < "$CODEX_INSTALL_CALLS_FILE") -eq 1 ]] || {
+  printf '%s\n' 'Codex first install did not invoke npm exactly once' >&2
+  exit 1
+}
+HOME=$TEST_HOME install_codex
+[[ $(wc -l < "$CODEX_INSTALL_CALLS_FILE") -eq 1 ]] || {
+  printf '%s\n' 'installed Codex must skip repeated npm downloads' >&2
+  exit 1
+}
 if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   printf '%s\n' 'Codex must track latest and must not be pinned in versions.lock' >&2
   exit 1
@@ -697,6 +778,31 @@ fi
 HOME=$TEST_HOME install_todoist_cli
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @doist/todoist-cli@$TODOIST_CLI_VERSION" ]]
 todoist_cli_is_locked_version
+
+# Locked Yazi packages install once, then a repeated bootstrap verifies the
+# recorded revision locally without invoking the package installer again.
+YAZI_PACKAGE_TEST_HOME="$TEST_HOME/yazi-packages"
+YA_PACKAGE_INSTALL_CALLS_FILE="$TEST_HOME/yazi-package-install-calls"
+ya() {
+  if [[ $1 == pkg && $2 == list ]]; then
+    [[ -d "$HOME/.config/yazi/plugins/piper.yazi" ]] &&
+      printf '%s\n' 'yazi-rs/plugins:piper (bb758e2)'
+  elif [[ $1 == pkg && $2 == install ]]; then
+    printf '%s\n' "$*" >> "$YA_PACKAGE_INSTALL_CALLS_FILE"
+    mkdir -p "$HOME/.config/yazi/plugins/piper.yazi"
+  fi
+}
+HOME=$YAZI_PACKAGE_TEST_HOME install_yazi_packages
+[[ $(wc -l < "$YA_PACKAGE_INSTALL_CALLS_FILE") -eq 1 ]] || {
+  printf '%s\n' 'Yazi package first install did not invoke ya exactly once' >&2
+  exit 1
+}
+HOME=$YAZI_PACKAGE_TEST_HOME install_yazi_packages
+[[ $(wc -l < "$YA_PACKAGE_INSTALL_CALLS_FILE") -eq 1 ]] || {
+  printf '%s\n' 'locked Yazi packages must skip repeated downloads' >&2
+  exit 1
+}
+unset -f ya
 
 # termscp runs only on the SSH server/container side of the reverse-SFTP flow.
 # macOS must skip the installer; Linux installs once and then stays idempotent.
@@ -746,19 +852,43 @@ HOME=$TEST_HOME uninstall_druk
 [[ ! -e "$TEST_HOME/.config/druk" ]]
 [[ ! -e "$TEST_HOME/.cache/druk" ]]
 
+FRESH_INSTALLED_FILE="$TEST_HOME/fresh-installed"
+FRESH_BREW_ARGS_FILE="$TEST_HOME/fresh-brew-args"
 FRESH_CURL_ARGS_FILE="$TEST_HOME/fresh-curl-args"
 curl() {
   printf '%s\n' "$*" > "$FRESH_CURL_ARGS_FILE"
+  touch "$FRESH_INSTALLED_FILE"
   printf '%s\n' ':'
 }
+brew() {
+  printf '%s\n' "$*" > "$FRESH_BREW_ARGS_FILE"
+  touch "$FRESH_INSTALLED_FILE"
+}
 fresh() {
+  [[ -e "$FRESH_INSTALLED_FILE" ]] || return 1
   printf '%s\n' 'fresh 999.0.0'
 }
-HOME=$TEST_HOME install_fresh
+
+# macOS has a first-party Homebrew formula and must not add a redundant
+# raw.githubusercontent.com dependency before ultimately invoking Homebrew.
+PLATFORM_OS=darwin HOME=$TEST_HOME install_fresh
+grep -Fqx 'install fresh-editor' "$FRESH_BREW_ARGS_FILE"
+[[ ! -e "$FRESH_CURL_ARGS_FILE" ]]
+
+# Debian/Ubuntu retains the upstream universal installer path.
+rm -f "$FRESH_INSTALLED_FILE" "$FRESH_BREW_ARGS_FILE" "$FRESH_CURL_ARGS_FILE"
+PLATFORM_OS=linux HOME=$TEST_HOME install_fresh
 grep -Fq -- '-fsSL --retry 3 --connect-timeout 15 https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh' \
   "$FRESH_CURL_ARGS_FILE"
+[[ ! -e "$FRESH_BREW_ARGS_FILE" ]]
 fresh_is_installed
-unset -f curl fresh
+
+# Repeated bootstrap runs keep an already usable Fresh without any network.
+rm -f "$FRESH_BREW_ARGS_FILE" "$FRESH_CURL_ARGS_FILE"
+PLATFORM_OS=darwin HOME=$TEST_HOME install_fresh
+[[ ! -e "$FRESH_BREW_ARGS_FILE" ]]
+[[ ! -e "$FRESH_CURL_ARGS_FILE" ]]
+unset -f brew curl fresh
 
 for version_variable in OH_MY_ZSH_COMMIT ZSH_SYNTAX_HIGHLIGHTING_COMMIT; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"

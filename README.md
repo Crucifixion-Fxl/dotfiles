@@ -56,7 +56,8 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
     │   ├── test-termscp-mac.sh        # Mac SFTP 入口参数检查
     │   ├── test-termscp-bridge-relay.sh # Docker bridge 中继检查
     │   ├── test-termscp-key-authorizer.sh # 容器公钥自动授权检查
-    │   ├── test-iris-update.sh         # Iris 最新稳定版安装与容错检查
+    │   ├── test-iris-update.sh         # Iris 首次安装与重复下载检查
+    │   ├── test-tmux-fresh-machine.sh  # 新 Mac live tmux 与 Ghostty 鼠标输入检查
     │   ├── test-todo-tui.py          # TUI 数据、中文宽度和视觉契约检查
     │   ├── test-todo-agent.py        # Agent 注册、状态、worktree 和重试检查
     │   ├── test-ghostty-dev.sh        # Ghostty 启动参数检查
@@ -125,16 +126,16 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - git-delta `0.19.2`
 - fzf `0.74.0`
 - zoxide `0.10.0`
-- Iris：每次正常运行 bootstrap 时自动更新到官方最新稳定版（不锁版本）
+- Iris：首次安装使用官方最新稳定版；已有可用版本时跳过下载（不锁版本）
 - Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
 - colorls `1.5.0`（Ruby Gem；兼容依赖版本同样记录在 `versions.lock`）
 - Ghostty：macOS 通过 Homebrew cask 安装当前稳定版（不锁版本）
-- Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
+- Codex CLI：首次安装获取 npm 官方包的最新版本；已有可用版本时跳过（不锁版本）
 - termscp：仅在 Debian/Ubuntu 通过官方通用安装脚本获取当前版本（不锁版本）；
   macOS 不安装 termscp CLI
-- Fresh：通过官方通用安装脚本安装（不锁版本）
+- Fresh：macOS 通过 Homebrew 安装，Debian/Ubuntu 通过官方通用安装脚本安装（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
 
@@ -143,8 +144,9 @@ Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 `package.toml` 中的 revision 和 hash 安装。tmux 和 zsh
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
 避免覆盖用户改动。Ghostty、Codex CLI、Iris、termscp 和 Fresh 是例外：Ghostty
-跟随 Homebrew cask 的稳定版，Codex 始终安装 `@openai/codex@latest`，Iris
-跟随官方最新稳定版，Linux termscp 与 Fresh 分别使用各自的官方通用安装脚本。
+跟随 Homebrew cask 的稳定版，Codex 和 Iris 在首次安装时分别获取
+`@openai/codex@latest` 与官方最新稳定版；已有可用版本时跳过重复下载。Linux
+termscp 与 Fresh 分别使用各自的官方通用安装脚本。
 
 ## 安装
 
@@ -172,7 +174,7 @@ CN 字体。托管 zsh 入口和 tmux window 命名脚本会在任何网络安�
 | 系统包管理器 | 必须预先安装 Homebrew；bootstrap 不自动执行 `brew update` | 使用 `apt`，需要 root 或 `sudo` |
 | 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、colorls、Codex、Todoist CLI、btop | 安装同一组工具；锁定工具使用对应 Linux Release/Gem |
 | termscp | 不安装；Mac 仅提供反向转发后的 SFTP 服务 | 通过官方安装器下载 `.deb`；实际在服务器/容器中运行 `termscp-mac` |
-| Fresh | 安装；官方安装器通过 Homebrew 安装 `fresh-editor` | 安装；官方安装器下载 `.deb` |
+| Fresh | 直接通过 Homebrew 安装 `fresh-editor` | 通过官方安装器下载 `.deb` |
 | Node.js | Homebrew `node` | bootstrap 安装经过校验的用户级 Node.js 24 LTS，不使用 apt 中可能过旧的版本 |
 | 图形终端与字体 | 安装 Ghostty、Maple Mono NF CN、Symbols Nerd Font，并链接 Ghostty 与 iTerm2 配置 | 不安装 Ghostty/iTerm2；只安装服务端 CJK 字体和 terminfo |
 | Todo Agent 后台服务 | 只安装 `todo`/`todo-agent` 命令，不启动 watcher 服务 | 有启用项目时使用 user systemd；不可用时使用持久 nohup watcher |
@@ -239,12 +241,18 @@ Debian/Ubuntu 使用官方 `https://termscp.rs/install.sh` 下载 `.deb`，并�
 `sinelaw/fresh` 官方通用安装脚本安装：macOS 使用 Homebrew 的 `fresh-editor`，
 Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk npm 包并
 删除旧的 `~/.druk` standalone 安装、`~/.config/druk` 用户配置和 `~/.cache/druk`
-缓存，再安装和验证 `fresh` 命令。Oh My Zsh 及第三方插件通过 Git
+缓存，再安装和验证 `fresh` 命令；已有可用 Fresh 时跳过网络安装。macOS 直接执行
+`brew install fresh-editor`，避免在 Homebrew 之前额外依赖远程安装脚本；Linux 保持
+使用官方通用安装脚本。Oh My Zsh 及第三方插件通过 Git
 安装到用户目录。apt 安装需要 root 或 sudo 权限。
 
 macOS 不会自动执行 `brew update`；bootstrap 和托管 zshrc 都设置
 `HOMEBREW_NO_AUTO_UPDATE=1`，因此脚本自身、日常 `brew install` 以及脚本调用的
 官方安装器都不会隐式刷新 Homebrew 元数据。需要刷新时手动执行 `brew update`。
+bootstrap 会分别用 Homebrew formula/cask 清单与 `dpkg-query` 检查系统包，只把
+缺失项交给 `brew install` 或 `apt-get install`；Debian/Ubuntu 在全部依赖已安装时
+也不会执行 `apt-get update`。锁定版本的用户级工具仅在版本缺失或不匹配时下载，
+未锁版本的 Iris、Codex、termscp 和 Fresh 已可用时直接跳过安装器。
 bootstrap 会安装 btop、Yazi、Glow、预览/搜索依赖、Maple Mono NF CN 与 Symbols
 Nerd Font，并通过官方文档列出的
 `brew install --cask ghostty` 安装 Ghostty 稳定版，最后强制链接
@@ -258,11 +266,9 @@ Ruby，可执行命令都安装到 `~/.local/bin`。`colorls`、`manpages`
 Linux Ruby 因传递依赖升级而安装失败。
 
 Iris 使用同一份托管 `zshrc` 在本地、SSH 和 tmux 中初始化。首次 bootstrap 会把
-官方最新稳定 Release 安装到 `~/.local/bin`；以后每次正常运行 bootstrap 都检查
-官方 `releases/latest` 稳定资产，只有版本更高时才原子替换，只会升级、不会按仓库
-版本降级。已有可用 Iris 遇到网络或更新失败时会保留当前版本并警告；首次安装失败
-则停止。`--check` 只验证 Iris 可用，不会联网更新。bootstrap 不会执行会自行改写
-shell 配置的 `iris setup`。旧的
+官方最新稳定 Release 安装到 `~/.local/bin`；已有可用 Iris 时直接跳过 Release
+下载，避免重复联网安装。首次安装失败则停止。`--check` 只验证 Iris 可用，不会联网
+更新。bootstrap 不会执行会自行改写 shell 配置的 `iris setup`。旧的
 `zsh-autosuggestions` 目录即使还留在某台机器上也不会被加载。
 
 zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
