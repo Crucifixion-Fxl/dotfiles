@@ -80,6 +80,8 @@ grep -q '^remove_legacy_todo_bridge()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^install_agent_skills()' "$BOOTSTRAP"
 grep -q '^check_agent_skills()' "$BOOTSTRAP"
+grep -q '^install_agent_skills_on_macos()' "$BOOTSTRAP"
+grep -q '^install_agent_skills_on_linux()' "$BOOTSTRAP"
 grep -Fq 'install_agent_skills' "$BOOTSTRAP"
 grep -Fq 'check_agent_skills' "$BOOTSTRAP"
 grep -Fq -- '--skills-only' "$BOOTSTRAP"
@@ -170,6 +172,25 @@ TEST_PLUGIN_COMMIT=0123456789abcdef
 
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
+
+# macOS syncs before the long download chain; Linux keeps the original late
+# ordering. The platform wrappers must call the shared installer exactly once.
+(
+  skills_calls=0
+  install_agent_skills() { skills_calls=$((skills_calls + 1)); }
+  PLATFORM_OS=darwin
+  install_agent_skills_on_macos
+  install_agent_skills_on_linux
+  [[ $skills_calls -eq 1 ]]
+)
+(
+  skills_calls=0
+  install_agent_skills() { skills_calls=$((skills_calls + 1)); }
+  PLATFORM_OS=linux
+  install_agent_skills_on_macos
+  install_agent_skills_on_linux
+  [[ $skills_calls -eq 1 ]]
+)
 
 # Homebrew checks formula and cask inventories before installing only missing
 # packages. A fully prepared Mac must not execute brew install again.
@@ -734,6 +755,12 @@ yazi_packages_line=$(grep -n '^  install_yazi_packages$' "$BOOTSTRAP" | cut -d: 
 ghostty_install_line=$(grep -n '^  install_ghostty$' "$BOOTSTRAP" | cut -d: -f1)
 ghostty_config_line=$(grep -n '^  install_ghostty_config$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_install_line -lt $ghostty_config_line ]]
+macos_skills_line=$(grep -n '^  install_agent_skills_on_macos$' "$BOOTSTRAP" | cut -d: -f1)
+prerequisites_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
+linux_skills_line=$(grep -n '^  install_agent_skills_on_linux$' "$BOOTSTRAP" | cut -d: -f1)
+continuum_line=$(grep -n '^  install_plugin tmux-continuum ' "$BOOTSTRAP" | cut -d: -f1)
+[[ $macos_skills_line -lt $prerequisites_line ]]
+[[ $linux_skills_line -gt $continuum_line ]]
 termscp_install_line=$(grep -n '^  install_termscp$' "$BOOTSTRAP" | cut -d: -f1)
 fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_config_line -lt $termscp_install_line ]]

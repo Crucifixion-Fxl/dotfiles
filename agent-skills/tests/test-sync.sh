@@ -34,9 +34,9 @@ commit_repository() {
 }
 
 configure_source() {
-  local name=$1 repository=$2 required=${3:-true}
+  local name=$1 repository=$2 required=${3:-true} installer_source=${4:-$1}
   mkdir -p "$MANAGER/sources/$name"
-  cp "$ROOT/sources/$name/install.sh" "$MANAGER/sources/$name/install.sh"
+  cp "$ROOT/sources/$installer_source/install.sh" "$MANAGER/sources/$name/install.sh"
   chmod +x "$MANAGER/sources/$name/install.sh"
   printf "SOURCE_URL='%s'\nSOURCE_REQUIRED='%s'\n" "$repository" "$required" \
     > "$MANAGER/sources/$name/source.conf"
@@ -46,6 +46,11 @@ company_repo="$REPOSITORIES/company"
 mkdir -p "$company_repo"
 write_skill "$company_repo/skills/code-review" code-review 'Run /architect and $architect.'
 write_skill "$company_repo/skills/architect" architect 'Architecture workflow.'
+mkdir -p "$company_repo/skills/architect/agents"
+printf '%s\n' 'display_name: "Architect"' 'short_description: "Architecture workflow"' \
+  > "$company_repo/skills/architect/agents/openai.yaml"
+write_skill "$company_repo/skills/already-prefixed" company-already-prefixed \
+  'The source already includes its namespace.'
 write_skill "$company_repo/skills/code-review/helper" helper \
   'Nested helper installed separately.'
 printf '%s\n' '[Helper](helper/SKILL.md)' >> "$company_repo/skills/code-review/SKILL.md"
@@ -81,6 +86,13 @@ mkdir -p "$agents365_repo"
 write_skill "$agents365_repo/skills/drawio-skill" drawio-skill 'Draw.io workflow.'
 commit_repository "$agents365_repo"
 
+# Simulate a source added in the future. Its directory name must automatically
+# become the namespace without any source-specific change in lib.sh.
+future_repo="$REPOSITORIES/future"
+mkdir -p "$future_repo"
+write_skill "$future_repo/skills/tool" future-tool 'Future workflow.'
+commit_repository "$future_repo"
+
 write_skill "$MANAGER/native/native-example" native-example 'Native workflow.'
 printf '%s\n' stale > "$INSTALL_DIR/old-skill/SKILL.md"
 
@@ -88,6 +100,20 @@ configure_source company "$company_repo" false
 configure_source matt "$matt_repo"
 configure_source kkkkhazix "$kkkkhazix_repo"
 configure_source agents365 "$agents365_repo"
+configure_source future "$future_repo" true company
+
+# A future source may use its own installer instead of the shared helper. The
+# sync layer must still add the explicit prefixed Codex UI metadata centrally.
+{
+  printf '%s\n' '#!/usr/bin/env bash' '' 'set -euo pipefail' ''
+  printf '%s\n' 'SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)'
+  printf '%s\n' 'source "$SCRIPT_DIR/../../lib.sh"' 'installer_parse_args "$@"' ''
+  printf '%s\n' 'if [[ "$INSTALLER_ACTION" == check ]]; then'
+  printf '%s\n' '  check_installed_prefix "$INSTALLER_TARGET" "$INSTALLER_PREFIX"' '  exit' 'fi' ''
+  printf '%s\n' 'mkdir -p "$INSTALLER_TARGET"'
+  printf '%s\n' 'cp -R "$INSTALLER_SOURCE/skills/tool" "$INSTALLER_TARGET/$INSTALLER_PREFIX-tool"'
+} > "$MANAGER/sources/future/install.sh"
+chmod +x "$MANAGER/sources/future/install.sh"
 
 grep -Fqx "SOURCE_REQUIRED='false'" "$ROOT/sources/company/source.conf"
 for required_source in matt kkkkhazix agents365; do
@@ -104,9 +130,44 @@ run_sync() {
 
 run_sync sync
 
+# Every external Skill must provide an explicit source-prefixed Codex UI name.
+# Upstream metadata may be absent or may use the legacy top-level shape.
+for source_directory in "$MANAGER/sources"/*; do
+  [[ -d "$source_directory" ]] || continue
+  source_prefix=${source_directory##*/}
+  for source_skill in "$INSTALL_DIR"/"$source_prefix"-*; do
+    [[ -d "$source_skill" ]] || continue
+    source_name=${source_skill##*/}
+    source_metadata="$source_skill/agents/openai.yaml"
+    [[ -f "$source_metadata" ]]
+    source_display_name=$(awk '
+      /^interface:[[:space:]]*$/ { in_interface = 1; next }
+      in_interface && /^[^[:space:]]/ { in_interface = 0 }
+      in_interface && /^[[:space:]]+display_name:[[:space:]]*/ {
+        value = $0
+        sub(/^[[:space:]]*display_name:[[:space:]]*/, "", value)
+        gsub(/^"|"$/, "", value)
+        print value
+        exit
+      }
+    ' "$source_metadata")
+    [[ "$source_display_name" == "$source_name" ]]
+    if grep -E '^[[:space:]]*display_name:[[:space:]]*' "$source_metadata" |
+      grep -Fvq "\"$source_name\""; then
+      printf '%s\n' "external Skill contains an unprefixed display_name: $source_metadata" >&2
+      exit 1
+    fi
+  done
+done
+
 [[ ! -e "$INSTALL_DIR/old-skill" ]]
 [[ -d "$INSTALL_DIR/company-code-review" ]]
 [[ -d "$INSTALL_DIR/company-architect" ]]
+if [[ ! -d "$INSTALL_DIR/company-already-prefixed" ||
+  -e "$INSTALL_DIR/company-company-already-prefixed" ]]; then
+  printf '%s\n' 'an already-prefixed upstream Skill must not receive a duplicate prefix' >&2
+  exit 1
+fi
 [[ -d "$INSTALL_DIR/company-helper" ]]
 [[ -d "$INSTALL_DIR/matt-grill-with-docs" ]]
 [[ -d "$INSTALL_DIR/matt-grill-helper" ]]
@@ -114,8 +175,9 @@ run_sync sync
 [[ ! -e "$INSTALL_DIR/matt-not-installed" ]]
 [[ -d "$INSTALL_DIR/kkkkhazix-human-writing" ]]
 [[ -d "$INSTALL_DIR/agents365-drawio-skill" ]]
+[[ -d "$INSTALL_DIR/future-tool" ]]
 [[ -d "$INSTALL_DIR/native-example" ]]
-[[ $(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') -eq 15 ]]
+[[ $(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ') -eq 17 ]]
 [[ -f "$INSTALL_DIR/company-code-review/reference-link.md" ]]
 [[ ! -L "$INSTALL_DIR/company-code-review/reference-link.md" ]]
 [[ ! -e "$INSTALL_DIR/company-code-review/helper" ]]
@@ -137,6 +199,20 @@ grep -Fq 'name: kkkkhazix-human-writing' "$INSTALL_DIR/kkkkhazix-human-writing/S
 grep -Fq 'name: agents365-drawio-skill' "$INSTALL_DIR/agents365-drawio-skill/SKILL.md"
 [[ -z $(find "$TEST_HOME/.agents" -mindepth 1 -maxdepth 1 -name '.skills-sync.*' -print -quit) ]]
 
+run_sync check
+
+# Read-only validation must reject a company installation whose explicit Codex
+# UI metadata is later removed or damaged.
+cp "$INSTALL_DIR/company-code-review/agents/openai.yaml" \
+  "$TEST_ROOT/company-code-review-openai.yaml"
+rm "$INSTALL_DIR/company-code-review/agents/openai.yaml"
+if run_sync check >/dev/null 2>&1; then
+  printf '%s\n' 'company Skill without explicit UI metadata unexpectedly passed check' >&2
+  exit 1
+fi
+mkdir -p "$INSTALL_DIR/company-code-review/agents"
+cp "$TEST_ROOT/company-code-review-openai.yaml" \
+  "$INSTALL_DIR/company-code-review/agents/openai.yaml"
 run_sync check
 
 printf '%s\n' preserve-on-failure > "$INSTALL_DIR/company-code-review/failure-marker"
