@@ -13,8 +13,8 @@ set -euo pipefail
 #   - pre-commit/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 与 Iris 始终跟随官方最新稳定版；termscp 和 Fresh 使用各自官方
-#     通用安装脚本，这些工具均不锁版本。
+#   - Codex CLI 与 Iris 始终跟随官方最新稳定版；Linux termscp 和 Fresh 使用各自
+#     官方通用安装脚本，这些工具均不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
@@ -864,9 +864,15 @@ install_codex() {
 }
 
 install_termscp() {
+  if [[ "$PLATFORM_OS" == darwin ]]; then
+    # termscp-mac 实际在 SSH 服务器或容器中运行；Mac 只提供反向转发后的 SFTP
+    # 服务，不需要安装会拉取大量 Homebrew 依赖的 termscp CLI。
+    log "Skipping termscp CLI on macOS; install it on remote Linux hosts"
+    return 0
+  fi
+
   if termscp_is_installed; then
-    # 官方 macOS 安装器在已安装时会显式执行 brew update；这里先短路，避免重复
-    # bootstrap 因 Homebrew 元数据刷新而长时间等待。需要升级时由用户主动执行。
+    # Linux 上重复执行 bootstrap 时保留已有可用版本，避免无意义地重跑安装器。
     log "termscp is already installed; skipping installer"
     return 0
   fi
@@ -1457,7 +1463,9 @@ validate() {
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   codex_is_installed || fail "Codex CLI is required"
-  termscp_is_installed || fail "termscp is required"
+  if [[ "$PLATFORM_OS" == linux ]]; then
+    termscp_is_installed || fail "termscp is required on Linux"
+  fi
   fresh_is_installed || fail "Fresh is required"
   node_supports_todoist_cli || fail "Todoist CLI requires Node.js 24 or newer"
   npm_supports_todoist_cli || fail "Todoist CLI requires npm 11 or newer"

@@ -129,7 +129,8 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - pre-commit `4.6.0`
 - Ghostty：macOS 通过 Homebrew cask 安装当前稳定版（不锁版本）
 - Codex CLI：每次安装时获取 npm 官方包的最新版本（不锁版本）
-- termscp：通过官方通用安装脚本获取当前版本（不锁版本）
+- termscp：仅在 Debian/Ubuntu 通过官方通用安装脚本获取当前版本（不锁版本）；
+  macOS 不安装 termscp CLI
 - Fresh：通过官方通用安装脚本安装（不锁版本）
 - TPM、tmux-resurrect、tmux-continuum 的固定 Git commit
 - Oh My Zsh、zsh-syntax-highlighting 的固定 Git commit
@@ -140,7 +141,7 @@ Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
 避免覆盖用户改动。Ghostty、Codex CLI、Iris、termscp 和 Fresh 是例外：Ghostty
 跟随 Homebrew cask 的稳定版，Codex 始终安装 `@openai/codex@latest`，Iris
-跟随官方最新稳定版，termscp 与 Fresh 分别使用各自的官方通用安装脚本。
+跟随官方最新稳定版，Linux termscp 与 Fresh 分别使用各自的官方通用安装脚本。
 
 ## 安装
 
@@ -162,8 +163,9 @@ CN 字体、链接托管配置并用 Ghostty 自带解析器验证；无需再�
 | 类别 | macOS 本机 | Debian/Ubuntu 服务器或容器 |
 | --- | --- | --- |
 | 系统包管理器 | 必须预先安装 Homebrew；bootstrap 不自动执行 `brew update` | 使用 `apt`，需要 root 或 `sudo` |
-| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、Codex、Todoist CLI、termscp、Fresh、btop | 安装同一组工具；锁定工具使用对应 Linux Release |
-| termscp | 首次通过官方 Homebrew tap 安装，会拉取其 macOS 运行时依赖；以后检测到可用版本就跳过 | 通过官方安装器下载 `.deb`；实际在服务器/容器中运行 `termscp-mac` |
+| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、Codex、Todoist CLI、btop | 安装同一组工具；锁定工具使用对应 Linux Release |
+| termscp | 不安装；Mac 仅提供反向转发后的 SFTP 服务 | 通过官方安装器下载 `.deb`；实际在服务器/容器中运行 `termscp-mac` |
+| Fresh | 安装；官方安装器通过 Homebrew 安装 `fresh-editor` | 安装；官方安装器下载 `.deb` |
 | Node.js | Homebrew `node` | bootstrap 安装经过校验的用户级 Node.js 24 LTS，不使用 apt 中可能过旧的版本 |
 | 图形终端与字体 | 安装 Ghostty、Maple Mono NF CN、Symbols Nerd Font，并链接 Ghostty 与 iTerm2 配置 | 不安装 Ghostty/iTerm2；只安装服务端 CJK 字体和 terminfo |
 | Todo Agent 后台服务 | 只安装 `todo`/`todo-agent` 命令，不启动 watcher 服务 | 有启用项目时使用 user systemd；不可用时使用持久 nohup watcher |
@@ -177,8 +179,6 @@ macOS 通过 Homebrew 安装以下前置包：
   `poppler`、`fd`、`ripgrep`、`resvg`、`imagemagick-full`
 - 字体：`font-maple-mono-nf-cn`、`font-symbols-only-nerd-font`
 - GUI：单独执行 `brew install --cask ghostty`
-- termscp：单独通过官方 `veeso/termscp` tap 安装；这是新 Mac 第一次运行时
-  依赖数量较多、耗时最明显的一步
 
 Debian/Ubuntu 使用 `apt` 安装以下前置依赖：
 
@@ -195,6 +195,7 @@ Debian/Ubuntu 使用 `apt` 安装以下前置依赖：
   `imagemagick`
 - `libevent`、`ncurses`、`utf8proc` 开发包，以及提供 `tmux-256color` 的
   `ncurses-base`
+- termscp：不使用 apt 仓库版本；bootstrap 通过官方安装器下载并安装 `.deb`
 
 apt 安装使用 `DEBIAN_FRONTEND=noninteractive`，适用于容器、CI 和没有
 `dialog`/`whiptail` 的精简服务器，不会等待 debconf 交互输入。
@@ -223,12 +224,11 @@ macOS 与 Linux 共用的官方 zipapp，并由启动器自动选择 Python 3.10
 `yazi` 与 `ya` 会一起安装并验证版本一致，随后由 `ya pkg install` 恢复锁定的
 `piper.yazi`。Ubuntu 的 `fd-find` 只提供 `fdfind` 命令，
 bootstrap 会在 `~/.local/bin` 创建 `fd` 链接。Codex CLI 通过官方 npm 包
-`@openai/codex@latest` 安装到 `~/.local/bin`。termscp 使用官方
-`https://termscp.rs/install.sh`：macOS 首次安装通过官方 Homebrew tap 拉取
-termscp 及其运行时依赖，Debian/Ubuntu 下载官方 `.deb`。已安装且版本可用时，
-bootstrap 会直接跳过 termscp 安装器，避免它显式执行 `brew update`；需要升级时
-再由用户主动执行。安装器使用非交互 `--yes`，因此在服务器或容器中运行 bootstrap
-不会等待确认。Fresh 通过
+`@openai/codex@latest` 安装到 `~/.local/bin`。termscp 真正运行在 SSH 服务器或
+容器中，通过反向 SFTP 访问 Mac；因此 macOS bootstrap 不安装 termscp CLI。
+Debian/Ubuntu 使用官方 `https://termscp.rs/install.sh` 下载 `.deb`，并在检测到
+已有可用版本时跳过重复安装。安装器使用非交互 `--yes`，因此在服务器或容器中
+运行 bootstrap 不会等待确认。Fresh 通过
 `sinelaw/fresh` 官方通用安装脚本安装：macOS 使用 Homebrew 的 `fresh-editor`，
 Debian/Ubuntu 使用官方 `.deb`。迁移时 bootstrap 会先卸载旧的 Druk npm 包并
 删除旧的 `~/.druk` standalone 安装、`~/.config/druk` 用户配置和 `~/.cache/druk`
@@ -419,7 +419,7 @@ bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow、Yazi/`ya` 的锁定版本，以及 Iris、termscp、Codex CLI、Fresh 可用性
+- pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow、Yazi/`ya` 的锁定版本，以及 Iris、Codex CLI、Fresh 可用性；Linux 额外验证 termscp
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、btop、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
