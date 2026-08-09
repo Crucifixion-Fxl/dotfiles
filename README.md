@@ -293,9 +293,10 @@ exec zsh -l
 所有用户级 Agent Skills 统一安装到 `~/.agents/skills`。这个目录是 dotfiles
 生成的完整结果，不应手工修改；Codex 自带的 `~/.codex/skills/.system` 不在管理范围内。
 
-当前外部来源均为必需来源，并始终跟随远程默认分支的最新内容：
+外部来源始终跟随远程默认分支的最新内容，其中 `company` 为可选来源，
+其余来源为必需：
 
-- `company`：`git@gitlab.addx.ai:engineering/skills.git`，安装为 `company-*`。
+- `company`（可选）：`git@gitlab.addx.ai:engineering/skills.git`，安装为 `company-*`。
 - `matt`：`mattpocock/skills` 的 `skills/engineering/` 及其 6 个明确依赖，安装为 `matt-*`。
 - `kkkkhazix`：`KKKKhazix/human-writing`，安装为 `kkkkhazix-human-writing`。
 - `agents365`：`Agents365-ai/drawio-skill`，安装为 `agents365-drawio-skill`。
@@ -304,7 +305,11 @@ exec zsh -l
 `install.sh` 将 Skill 复制到扁平暂存目录，添加来源前缀并改写显式的 `/skill`
 和 `$skill` 引用；`agents/openai.yaml` 存在时，其 `display_name` 也会改为带前缀的完整安装名。暂存结果必须包含有效且名称一致的 `SKILL.md`，不得包含软链接；
 上游存在嵌套 Skill 时，父子 Skill 都会拆成带前缀的平级安装目录，并改写父 Skill 指向子 Skill 的名称和路径；
-所有来源都成功后才整体替换 `~/.agents/skills`。
+所有必需来源都成功后才整体替换 `~/.agents/skills`。如果 `company`
+因网络或 GitLab 认证问题无法拉取，已安装的 `company-*` 会原样保留；
+新机器没有旧副本时则跳过该来源，不阻断其他 Skills 安装及只读检查。
+这个放宽仅针对仓库拉取失败；如果 company 仓库已成功拉取，但安装器、
+Skill 结构或校验失败，同步仍会中止并保留完整的旧安装。
 
 完整 bootstrap 会自动同步 Skills。也可以只执行这一部分：
 
