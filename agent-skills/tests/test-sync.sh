@@ -42,10 +42,12 @@ commit_repository() {
 
 configure_source() {
   local name=$1 repository=$2 required=${3:-true} installer_source=${4:-$1}
+  local platforms=${5:-darwin,linux}
   mkdir -p "$MANAGER/sources/$name"
   cp "$ROOT/sources/$installer_source/install.sh" "$MANAGER/sources/$name/install.sh"
   chmod +x "$MANAGER/sources/$name/install.sh"
-  printf "SOURCE_URL='%s'\nSOURCE_REQUIRED='%s'\n" "$repository" "$required" \
+  printf "SOURCE_URL='%s'\nSOURCE_REQUIRED='%s'\nSOURCE_PLATFORMS='%s'\n" \
+    "$repository" "$required" "$platforms" \
     > "$MANAGER/sources/$name/source.conf"
 }
 
@@ -103,7 +105,7 @@ commit_repository "$future_repo"
 write_skill "$MANAGER/native/native-example" native-example 'Native workflow.'
 printf '%s\n' stale > "$INSTALL_DIR/old-skill/SKILL.md"
 
-configure_source company "$company_repo" false
+configure_source company "$company_repo" false company linux
 configure_source matt "$matt_repo"
 configure_source kkkkhazix "$kkkkhazix_repo"
 configure_source agents365 "$agents365_repo"
@@ -123,12 +125,14 @@ configure_source future "$future_repo" true company
 chmod +x "$MANAGER/sources/future/install.sh"
 
 grep -Fqx "SOURCE_REQUIRED='false'" "$ROOT/sources/company/source.conf"
+grep -Fqx "SOURCE_PLATFORMS='linux'" "$ROOT/sources/company/source.conf"
 for required_source in matt kkkkhazix agents365; do
   grep -Fqx "SOURCE_REQUIRED='true'" "$ROOT/sources/$required_source/source.conf"
 done
 
 run_sync() {
   HOME=$TEST_HOME \
+    AGENT_SKILLS_PLATFORM=${TEST_PLATFORM:-linux} \
     AGENT_SKILLS_SOURCES_DIR="$MANAGER/sources" \
     AGENT_SKILLS_NATIVE_DIR="$MANAGER/native" \
     AGENT_SKILLS_INSTALL_DIR="$INSTALL_DIR" \
@@ -220,6 +224,39 @@ grep -Fq 'name: agents365-drawio-skill' "$INSTALL_DIR/agents365-drawio-skill/SKI
 [[ -z $(find "$TEST_HOME/.agents" -mindepth 1 -maxdepth 1 -name '.skills-sync.*' -print -quit) ]]
 
 run_sync check
+
+# macOS excludes the Linux-only company source from both synchronization and
+# validation. The transactional projection naturally removes a previously
+# installed company namespace without any source-specific cleanup migration.
+MAC_INSTALL_DIR="$TEST_HOME/.agents/skills-macos"
+MAC_LEGACY_INSTALL_DIR="$TEST_HOME/.codex/skills-macos"
+mkdir -p "$MAC_INSTALL_DIR" "$MAC_LEGACY_INSTALL_DIR/.system"
+cp -R "$INSTALL_DIR/." "$MAC_INSTALL_DIR/"
+run_macos_sync() {
+  HOME=$TEST_HOME \
+    AGENT_SKILLS_PLATFORM=darwin \
+    AGENT_SKILLS_SOURCES_DIR="$MANAGER/sources" \
+    AGENT_SKILLS_NATIVE_DIR="$MANAGER/native" \
+    AGENT_SKILLS_INSTALL_DIR="$MAC_INSTALL_DIR" \
+    AGENT_SKILLS_LEGACY_INSTALL_DIR="$MAC_LEGACY_INSTALL_DIR" \
+    bash "$MANAGER/sync.sh" "$@"
+}
+if run_macos_sync check >/dev/null 2>&1; then
+  printf '%s\n' 'macOS unexpectedly accepted installed Linux-only company Skills' >&2
+  exit 1
+fi
+MAC_SYNC_OUTPUT="$TEST_ROOT/macos-sync-output"
+run_macos_sync sync > "$MAC_SYNC_OUTPUT"
+grep -Fq 'Skipping company Skills on darwin' "$MAC_SYNC_OUTPUT"
+if grep -Fq 'Cloning latest company Skills' "$MAC_SYNC_OUTPUT"; then
+  printf '%s\n' 'macOS unexpectedly cloned the Linux-only company source' >&2
+  exit 1
+fi
+[[ -z $(find "$MAC_INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d -name 'company-*' -print -quit) ]]
+[[ -d "$MAC_INSTALL_DIR/matt-grill-with-docs" ]]
+[[ -d "$MAC_INSTALL_DIR/kkkkhazix-human-writing" ]]
+[[ -d "$MAC_INSTALL_DIR/agents365-drawio-skill" ]]
+run_macos_sync check
 
 # Read-only validation must expose any legacy Skill that reappears after a
 # successful migration instead of reporting a duplicate-prone setup as valid.

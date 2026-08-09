@@ -23,7 +23,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 │   ├── lib.sh                       # 安装器共用的复制、前缀改写与验证函数
 │   ├── native/                      # 直接由 dotfiles 维护的 Skills
 │   └── sources/<name>/
-│       ├── source.conf              # Git URL 与 required 配置
+│       ├── source.conf              # Git URL、required 与可选平台范围
 │       └── install.sh               # 该仓库专属的 Bash 安装规则
 └── terminal-tmux/
     ├── bootstrap.sh                 # 安装、链接和验证入口
@@ -300,10 +300,10 @@ exec zsh -l
 所有用户级 Agent Skills 统一安装到 `~/.agents/skills`。这个目录是 dotfiles
 生成的完整结果，不应手工修改；Codex 自带的 `~/.codex/skills/.system` 内容不会被修改。
 
-外部来源始终跟随远程默认分支的最新内容，其中 `company` 为可选来源，
-其余来源为必需：
+外部来源始终跟随远程默认分支的最新内容。未声明平台范围的来源默认同时用于
+macOS 和 Linux；`company` 仅用于 Linux 且为可选来源，其余来源为两端必需：
 
-- `company`（可选）：`git@gitlab.addx.ai:engineering/skills.git`，安装为 `company-*`。
+- `company`（仅 Linux、可选）：`git@gitlab.addx.ai:engineering/skills.git`，安装为 `company-*`；macOS 默认不拉取、不安装。
 - `matt`：`mattpocock/skills` 的 `skills/engineering/` 及其 6 个明确依赖，安装为 `matt-*`。
 - `kkkkhazix`：`KKKKhazix/human-writing`，安装为 `kkkkhazix-human-writing`。
 - `agents365`：`Agents365-ai/drawio-skill`，安装为 `agents365-drawio-skill`。
@@ -317,21 +317,17 @@ exec zsh -l
 的目录名作为相同的 UI 与 Skill 命名前缀，无需修改公共安装逻辑。暂存结果必须包含
 有效且名称一致的 `SKILL.md`，不得包含软链接；
 上游存在嵌套 Skill 时，父子 Skill 都会拆成带前缀的平级安装目录，并改写父 Skill 指向子 Skill 的名称和路径；
-所有必需来源都成功后才整体替换 `~/.agents/skills`。如果 `company`
+所有当前平台的必需来源都成功后才整体替换 `~/.agents/skills`。Linux 上如果 `company`
 因网络或 GitLab 认证问题无法拉取，已安装的 `company-*` 会原样保留；
 新机器没有旧副本时则跳过该来源，不阻断其他 Skills 安装及只读检查。
 这个放宽仅针对仓库拉取失败；如果 company 仓库已成功拉取，但安装器、
 Skill 结构或校验失败，同步仍会中止并保留完整的旧安装。
+macOS 不处理 company 来源；同步结果中也不会保留 `company-*`。
 成功替换后会清理旧安装根目录 `~/.codex/skills`，只保留官方 `.system`，避免旧的
 `TDD`、未加前缀的公司 Skill 与 `~/.agents/skills` 中的命名空间版本同时被发现。
 `--skills-only --check` 也会把任何重新出现的旧条目视为失败。
 
 完整 bootstrap 会自动同步 Skills。也可以只执行这一部分：
-
-macOS 执行 bootstrap 时，会仅在当前 bootstrap 进程及其子进程中把 soft `nofile`
-下限提高到 4096，避免大量 Skills 和安装步骤触发 `Too many open files`。该设置会在
-bootstrap 退出后自动失效，不修改 launchd、系统全局限制或 zsh 配置，也不影响 Linux；
-已经运行的 Codex GUI 进程不会继承这个限制。
 
 ```bash
 bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only

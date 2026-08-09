@@ -8,6 +8,10 @@
 由独立 Git 仓库维护、安装时始终获取其最新可用版本的 Skill 唯一来源；仓库内容构成该来源的完整 Skills 集合。
 _Avoid_: Pinned skill, vendored skill
 
+**Source Platform Scope**:
+External Skill Source 可选的目标平台集合，由 `SOURCE_PLATFORMS` 声明为 `darwin`、`linux` 或二者；未声明时默认同时启用。禁用平台既不拉取该来源，也不接受对应 Installed Skills。
+_Avoid_: Runtime cleanup rule, hard-coded source exception
+
 **Temporary Source Clone**:
 Skill Sync 为 External Skill Source 创建的临时仓库副本；它跟随远程默认分支，并在本次同步结束后删除，不作为机器持久状态。
 _Avoid_: Persistent cache, Git submodule, installation directory, development clone

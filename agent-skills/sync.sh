@@ -13,13 +13,30 @@ LEGACY_INSTALL_DIR=${AGENT_SKILLS_LEGACY_INSTALL_DIR:-$HOME/.codex/skills}
 
 SOURCE_URL=
 SOURCE_REQUIRED=true
+SOURCE_PLATFORMS=darwin,linux
+
+if [[ -n ${AGENT_SKILLS_PLATFORM:-} ]]; then
+  AGENT_SKILLS_CURRENT_PLATFORM=$AGENT_SKILLS_PLATFORM
+else
+  case "$(uname -s)" in
+    Darwin) AGENT_SKILLS_CURRENT_PLATFORM=darwin ;;
+    Linux) AGENT_SKILLS_CURRENT_PLATFORM=linux ;;
+    *) agent_skills_fail "unsupported Agent Skills platform: $(uname -s)" ;;
+  esac
+fi
+case "$AGENT_SKILLS_CURRENT_PLATFORM" in
+  darwin|linux) ;;
+  *) agent_skills_fail "unsupported Agent Skills platform: $AGENT_SKILLS_CURRENT_PLATFORM" ;;
+esac
 
 read_source_config() {
-  local config=$1 line url_seen=0 required_seen=0
+  local config=$1 line url_seen=0 required_seen=0 platforms_seen=0 value
   local url_pattern="^SOURCE_URL='([^']+)'$"
   local required_pattern="^SOURCE_REQUIRED='(true|false)'$"
+  local platforms_pattern="^SOURCE_PLATFORMS='([^']+)'$"
   SOURCE_URL=
   SOURCE_REQUIRED=true
+  SOURCE_PLATFORMS=darwin,linux
 
   while IFS= read -r line || [[ -n "$line" ]]; do
     case "$line" in
@@ -33,11 +50,22 @@ read_source_config() {
       (( required_seen == 0 )) || agent_skills_fail "SOURCE_REQUIRED is duplicated: $config"
       SOURCE_REQUIRED=${BASH_REMATCH[1]}
       required_seen=1
+    elif [[ "$line" =~ $platforms_pattern ]]; then
+      (( platforms_seen == 0 )) || agent_skills_fail "SOURCE_PLATFORMS is duplicated: $config"
+      value=${BASH_REMATCH[1]}
+      [[ "$value" =~ ^(darwin|linux)(,(darwin|linux))*$ ]] || \
+        agent_skills_fail "invalid SOURCE_PLATFORMS in $config: $value"
+      SOURCE_PLATFORMS=$value
+      platforms_seen=1
     else
       agent_skills_fail "unsupported source.conf line in $config: $line"
     fi
   done < "$config"
   [[ -n "$SOURCE_URL" ]] || agent_skills_fail "SOURCE_URL is missing: $config"
+}
+
+source_is_enabled_on_current_platform() {
+  [[ ",$SOURCE_PLATFORMS," == *",$AGENT_SKILLS_CURRENT_PLATFORM,"* ]]
 }
 
 for_each_source() {
@@ -122,6 +150,10 @@ sync_external_source() {
   clone_dir="$WORK_ROOT/repositories/$source_name"
   source_stage="$WORK_ROOT/source-stages/$source_name"
   read_source_config "$config"
+  if ! source_is_enabled_on_current_platform; then
+    agent_skills_log "Skipping $source_name Skills on $AGENT_SKILLS_CURRENT_PLATFORM"
+    return 0
+  fi
   mkdir -p "$source_stage"
 
   agent_skills_log "Cloning latest $source_name Skills"
@@ -230,6 +262,14 @@ check_source_installation() {
   config="$source_directory/source.conf"
   installer="$source_directory/install.sh"
   read_source_config "$config"
+  if ! source_is_enabled_on_current_platform; then
+    for installed in "$INSTALL_DIR/$source_name-"*; do
+      [[ -d "$installed" ]] || continue
+      agent_skills_fail "disabled source $source_name is installed on $AGENT_SKILLS_CURRENT_PLATFORM: $(basename "$installed")"
+    done
+    agent_skills_log "Skipping $source_name Skills check on $AGENT_SKILLS_CURRENT_PLATFORM"
+    return 0
+  fi
   if [[ "$SOURCE_REQUIRED" == false ]]; then
     for installed in "$INSTALL_DIR/$source_name-"*; do
       [[ -d "$installed" ]] || continue
@@ -264,6 +304,8 @@ check_known_namespaces() {
     for source_directory in "$SOURCES_DIR"/*; do
       [[ -d "$source_directory" ]] || continue
       source_name=$(basename "$source_directory")
+      read_source_config "$source_directory/source.conf"
+      source_is_enabled_on_current_platform || continue
       if [[ $(basename "$installed") == "$source_name-"* ]]; then
         known=1
         break
