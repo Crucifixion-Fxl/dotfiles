@@ -36,7 +36,11 @@ plugins=(
   zsh-syntax-highlighting
 )
 
-source "$ZSH/oh-my-zsh.sh"
+# bootstrap 会在网络安装前先链接本文件。若首次下载尚未完成，
+# 仍允许新 zsh 启动 Iris，而不因 Oh My Zsh 目录暂时不存在而报错。
+if [[ -r "$ZSH/oh-my-zsh.sh" ]]; then
+  source "$ZSH/oh-my-zsh.sh"
+fi
 
 # --- colorls ---------------------------------------------------------------
 # colorls 默认输出文件类型图标；--sd 让目录排在文件前面。

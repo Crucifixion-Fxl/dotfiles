@@ -159,8 +159,10 @@ git clone https://github.com/Crucifixion-Fxl/dotfiles ~/.dotfiles
 在一台新的 Apple Silicon Mac 上，先安装 Homebrew、按安装器提示让 `brew` 进入
 `PATH`，并准备该私有仓库的读取权限，然后只需运行上面的 bootstrap 一次。脚本会
 使用系统自带的 `/bin/zsh` 作为登录 shell，安装 Ghostty 稳定版与 Maple Mono NF
-CN 字体，并在安装 Ghostty 后立即链接托管配置，再继续执行其他网络安装；因此后续
-下载中断不会留下使用默认配置的 Ghostty。若 Ghostty 已经打开，按 `Cmd+Shift+,`
+CN 字体。托管 zsh 入口和 tmux window 命名脚本会在任何网络安装前先链接，
+因此后续下载失败时，新 login zsh 仍能在 Iris 安装后自动启动它。脚本还会
+在安装 Ghostty 后立即链接托管配置，避免留下使用默认配置的 Ghostty。
+若 Ghostty 已经打开，按 `Cmd+Shift+,`
 重载配置，或完全退出后重新打开；无需再手动复制 Ghostty 设置。
 
 ### 平台安装边界
