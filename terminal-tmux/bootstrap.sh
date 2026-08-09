@@ -13,8 +13,8 @@ set -euo pipefail
 #   - pre-commit/colorls/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
 #   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 与 Iris 始终跟随官方最新稳定版；Linux termscp 和 Fresh 使用各自
-#     官方通用安装脚本，这些工具均不锁版本。
+#   - Codex CLI 与 Iris 首次安装官方最新稳定版，已有可用版本时跳过重复下载；
+#     Linux termscp 和 Fresh 使用各自官方通用安装脚本，这些工具均不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
@@ -115,32 +115,6 @@ iris_is_installed() {
     iris version 2>/dev/null | grep -Eq '^iris v?[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 }
 
-iris_version() {
-  iris version 2>/dev/null | awk 'NR == 1 {sub(/^v/, "", $2); print $2}'
-}
-
-iris_version_is_newer() {
-  local current=${1#v} candidate=${2#v}
-  local current_major current_minor current_patch candidate_major candidate_minor candidate_patch
-
-  [[ $current =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)([-.][0-9A-Za-z.-]+)?$ ]] || return 1
-  current_major=${BASH_REMATCH[1]}
-  current_minor=${BASH_REMATCH[2]}
-  current_patch=${BASH_REMATCH[3]}
-  [[ $candidate =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)([-.][0-9A-Za-z.-]+)?$ ]] || return 1
-  candidate_major=${BASH_REMATCH[1]}
-  candidate_minor=${BASH_REMATCH[2]}
-  candidate_patch=${BASH_REMATCH[3]}
-
-  (( 10#$candidate_major > 10#$current_major )) && return 0
-  (( 10#$candidate_major < 10#$current_major )) && return 1
-  (( 10#$candidate_minor > 10#$current_minor )) && return 0
-  (( 10#$candidate_minor < 10#$current_minor )) && return 1
-  (( 10#$candidate_patch > 10#$current_patch )) && return 0
-  (( 10#$candidate_patch < 10#$current_patch )) && return 1
-  [[ $current == *-* && $candidate != *-* ]]
-}
-
 glow_is_locked_version() {
   command -v glow >/dev/null 2>&1 &&
     [[ $(glow --version 2>/dev/null | awk '/glow version/{print $3; exit}') == "$GLOW_VERSION" ]]
@@ -236,26 +210,61 @@ detect_platform() {
   esac
 }
 
+brew_package_is_installed() {
+  local package=$1
+  brew list --formula --versions "$package" >/dev/null 2>&1 ||
+    brew list --cask --versions "$package" >/dev/null 2>&1
+}
+
+apt_package_is_installed() {
+  dpkg-query -W -f='${db:Status-Abbrev}' "$1" 2>/dev/null | grep -q '^ii '
+}
+
 install_prerequisites() {
-  local packages optional_package
+  local package optional_package apt_updated=0
+  local packages missing_packages
 
   if [[ "$PLATFORM_OS" == linux ]]; then
     command -v apt-get >/dev/null 2>&1 || fail "Linux bootstrap currently requires a Debian/Ubuntu apt host"
-    log "Installing Debian/Ubuntu prerequisites with apt"
-    run_as_root apt-get update
+    command -v dpkg-query >/dev/null 2>&1 || fail "dpkg-query is required to inspect Debian/Ubuntu packages"
     packages=(
       bash bison btop bubblewrap ca-certificates curl fd-find ffmpeg file fonts-noto-cjk gcc git imagemagick jq locales make
       ncurses-base ncurses-bin openssh-client p7zip-full passwd pkg-config poppler-utils python3 python3-venv ripgrep tar unzip xz-utils vim zsh
       libevent-dev libncurses-dev libutf8proc-dev ruby ruby-dev
     )
+    missing_packages=()
+    for package in "${packages[@]}"; do
+      apt_package_is_installed "$package" || missing_packages+=("$package")
+    done
+
+    # Refresh package metadata only when at least one required package is
+    # missing. This preserves optional-package discovery on a fresh host while
+    # keeping a fully prepared server entirely offline.
+    if (( ${#missing_packages[@]} > 0 )); then
+      log "Refreshing apt metadata for missing Debian/Ubuntu prerequisites"
+      run_as_root apt-get update
+      apt_updated=1
+    fi
     for optional_package in resvg; do
-      if apt-cache show "$optional_package" >/dev/null 2>&1; then
-        packages+=("$optional_package")
+      if apt_package_is_installed "$optional_package"; then
+        continue
+      elif apt-cache show "$optional_package" >/dev/null 2>&1; then
+        missing_packages+=("$optional_package")
       else
         log "Skipping unavailable optional apt package: $optional_package"
       fi
     done
-    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${packages[@]}"
+
+    if (( ${#missing_packages[@]} > 0 )); then
+      if (( apt_updated == 0 )); then
+        log "Refreshing apt metadata for missing optional prerequisites"
+        run_as_root apt-get update
+      fi
+      log "Installing missing Debian/Ubuntu prerequisites with apt: ${missing_packages[*]}"
+      run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing_packages[@]}"
+    else
+      log "All Debian/Ubuntu prerequisites are already installed"
+    fi
   else
     command -v brew >/dev/null 2>&1 || fail "Homebrew is required on macOS"
     packages=(
@@ -263,8 +272,16 @@ install_prerequisites() {
       yazi glow ffmpeg-full sevenzip jq poppler fd ripgrep resvg imagemagick-full
       font-maple-mono-nf-cn font-symbols-only-nerd-font
     )
-    log "Installing macOS prerequisites with Homebrew"
-    brew install "${packages[@]}"
+    missing_packages=()
+    for package in "${packages[@]}"; do
+      brew_package_is_installed "$package" || missing_packages+=("$package")
+    done
+    if (( ${#missing_packages[@]} > 0 )); then
+      log "Installing missing macOS prerequisites with Homebrew: ${missing_packages[*]}"
+      brew install "${missing_packages[@]}"
+    else
+      log "All macOS prerequisites are already installed"
+    fi
     brew link ffmpeg-full imagemagick-full -f --overwrite
   fi
 }
@@ -390,8 +407,12 @@ ensure_tmux_terminfo() {
   fi
 
   if [[ "$PLATFORM_OS" == linux ]]; then
-    log "Installing tmux-256color terminfo from Debian/Ubuntu ncurses-base"
-    run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y ncurses-base
+    if apt_package_is_installed ncurses-base; then
+      warn "ncurses-base is already installed but tmux-256color terminfo is unavailable"
+    else
+      log "Installing tmux-256color terminfo from Debian/Ubuntu ncurses-base"
+      run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y ncurses-base
+    fi
   fi
 
   infocmp tmux-256color >/dev/null 2>&1 || \
@@ -651,41 +672,26 @@ iris_asset() {
 }
 
 install_iris() {
-  local current_version existing_iris=0
   if iris_is_installed; then
-    existing_iris=1
-    current_version=$(iris_version)
+    log "Iris is already installed; skipping Release download"
+    return 0
   fi
 
   local work archive binary candidate_version destination
   iris_asset
-  if ! work=$(mktemp -d); then
-    if (( existing_iris )); then
-      warn "Iris update could not create a temporary directory; keeping the usable installed version: $current_version"
-      return 0
-    fi
-    fail "cannot create a temporary directory for Iris installation"
-  fi
+  work=$(mktemp -d) || fail "cannot create a temporary directory for Iris installation"
   archive="$work/$ASSET"
   trap 'rm -rf "$work"' RETURN
 
-  log "Checking the official latest stable Iris Release${current_version:+ from $current_version}"
+  log "Downloading the official latest stable Iris Release"
   if ! download "$IRIS_LATEST_RELEASE_URL/$ASSET" "$archive"; then
     trap - RETURN
     rm -rf "$work"
-    if (( existing_iris )); then
-      warn "Iris stable update check failed; keeping the usable installed version: $current_version"
-      return 0
-    fi
     fail "latest stable Iris download failed"
   fi
   if ! tar -xzf "$archive" -C "$work"; then
     trap - RETURN
     rm -rf "$work"
-    if (( existing_iris )); then
-      warn "Iris stable archive is invalid; keeping the usable installed version: $current_version"
-      return 0
-    fi
     fail "latest stable Iris archive is invalid"
   fi
   binary=$(find "$work" -type f -name iris -perm -u+x | head -1)
@@ -696,26 +702,12 @@ install_iris() {
   if [[ ! $candidate_version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     trap - RETURN
     rm -rf "$work"
-    if (( existing_iris )); then
-      warn "Iris stable asset has an invalid binary; keeping the usable installed version: $current_version"
-      return 0
-    fi
     fail "latest stable Iris binary is invalid"
-  fi
-  if (( existing_iris )) && ! iris_version_is_newer "$current_version" "$candidate_version"; then
-    trap - RETURN
-    rm -rf "$work"
-    log "Iris is already at the newest stable version allowed without downgrade: $current_version"
-    return 0
   fi
 
   if ! mkdir -p "$HOME/.local/bin"; then
     trap - RETURN
     rm -rf "$work"
-    if (( existing_iris )); then
-      warn "Iris update cannot write $HOME/.local/bin; keeping the usable installed version: $current_version"
-      return 0
-    fi
     fail "cannot create $HOME/.local/bin for Iris installation"
   fi
   destination="$HOME/.local/bin/.iris.$$"
@@ -725,10 +717,6 @@ install_iris() {
     rm -f "$destination"
     trap - RETURN
     rm -rf "$work"
-    if (( existing_iris )); then
-      warn "Iris stable update could not be installed; keeping the usable installed version: $current_version"
-      return 0
-    fi
     fail "latest stable Iris installation failed"
   fi
   hash -r
@@ -831,9 +819,26 @@ install_yazi() {
 
 install_yazi_packages() {
   command -v ya >/dev/null 2>&1 || fail "ya is required to install Yazi packages"
+  if yazi_packages_are_locked; then
+    log "Locked Yazi packages are already installed; skipping installer"
+    return 0
+  fi
   log "Installing locked Yazi packages"
   ya pkg install
-  [[ -d "$HOME/.config/yazi/plugins/piper.yazi" ]] || fail "piper.yazi installation failed"
+  yazi_packages_are_locked || fail "locked Yazi package installation verification failed"
+}
+
+yazi_packages_are_locked() {
+  local manifest="$DOTFILES_DIR/yazi/package.toml"
+  local expected_plugin expected_revision plugin_directory package_list
+  command -v ya >/dev/null 2>&1 || return 1
+  expected_plugin=$(awk -F'"' '/^use = / {print $2; exit}' "$manifest")
+  expected_revision=$(awk -F'"' '/^rev = / {print $2; exit}' "$manifest")
+  [[ -n "$expected_plugin" && -n "$expected_revision" ]] || return 1
+  plugin_directory="$HOME/.config/yazi/plugins/${expected_plugin##*:}.yazi"
+  [[ -d "$plugin_directory" ]] || return 1
+  package_list=$(ya pkg list 2>/dev/null) || return 1
+  grep -Fq "$expected_plugin ($expected_revision)" <<< "$package_list"
 }
 
 install_pre_commit() {
@@ -892,6 +897,10 @@ install_colorls() {
 }
 
 install_codex() {
+  if codex_is_installed; then
+    log "Codex CLI is already installed; skipping npm installer"
+    return 0
+  fi
   command -v npm >/dev/null 2>&1 || fail "npm is required to install Codex CLI"
   log "Installing the latest Codex CLI into $HOME/.local/bin"
   npm install --global --prefix "$HOME/.local" '@openai/codex@latest'
@@ -944,8 +953,18 @@ uninstall_druk() {
 }
 
 install_fresh() {
-  log "Installing Fresh with its official universal installer"
-  curl -fsSL --retry 3 --connect-timeout 15 "$FRESH_INSTALL_URL" | sh
+  if fresh_is_installed; then
+    log "Fresh is already installed; skipping installer"
+    return 0
+  fi
+
+  if [[ "$PLATFORM_OS" == darwin ]]; then
+    log "Installing Fresh with Homebrew"
+    brew install fresh-editor
+  else
+    log "Installing Fresh with its official universal installer"
+    curl -fsSL --retry 3 --connect-timeout 15 "$FRESH_INSTALL_URL" | sh
+  fi
   hash -r
   fresh_is_installed || fail "Fresh installation verification failed"
   log "Installed $(fresh --version)"
@@ -1212,6 +1231,17 @@ install_shell_links() {
   backup_and_link "$DOTFILES_DIR/tmux/session-status-counts.sh" "$HOME/.tmux/session-status-counts.sh"
   backup_and_link "$DOTFILES_DIR/bin/tmux-zsh" "$HOME/.local/bin/tmux-zsh"
   backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"
+
+  # A user may start tmux while a fresh bootstrap is still running or after an
+  # earlier run was interrupted. Reload immediately so that live server does
+  # not retain tmux defaults until every later network install succeeds.
+  if command -v tmux >/dev/null 2>&1 && tmux list-sessions >/dev/null 2>&1; then
+    if tmux source-file "$HOME/.tmux.conf"; then
+      log "Reloaded the managed config in the running tmux server"
+    else
+      warn "could not reload the running tmux server before prerequisites; bootstrap will retry after installation"
+    fi
+  fi
 }
 
 install_todo_agent_service() {
@@ -1493,7 +1523,7 @@ validate() {
   local todo_agent_link todo_agent_service todo_agent_service_destination
   local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
-  local yazi_package yazi_package_destination yazi_package_list
+  local yazi_package yazi_package_destination
 
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -1619,9 +1649,7 @@ validate() {
   yazi_package_destination="$HOME/.config/yazi/package.toml"
   [[ -L "$yazi_package_destination" && $(readlink "$yazi_package_destination") == "$yazi_package" ]] || \
     fail "Yazi package manifest link is missing"
-  [[ -d "$HOME/.config/yazi/plugins/piper.yazi" ]] || fail "piper.yazi is missing"
-  yazi_package_list=$(ya pkg list 2>/dev/null)
-  grep -Fq 'yazi-rs/plugins:piper (' <<< "$yazi_package_list" || fail "piper.yazi is not managed by ya pkg"
+  yazi_packages_are_locked || fail "locked Yazi packages do not match package.toml"
 
   if [[ "$PLATFORM_OS" == darwin ]]; then
     iterm2_profile="$DOTFILES_DIR/iterm2/dev.json"
