@@ -2,7 +2,7 @@
 
 个人开发环境配置仓库。目前包含 `terminal-tmux/`：一套可在 macOS 和
 Debian/Ubuntu 远端服务器上严格复现的 Ghostty、pre-commit、tmux、lazygit、
-git-delta、GitLab CLI、btop、Yazi、Glow Markdown 预览、Iris、termscp、Codex CLI、Fresh、Oh My Zsh、
+git-delta、GitLab CLI、btop、Yazi、Glow Markdown 预览、termscp、Codex CLI、Fresh、Oh My Zsh、
 Codex 状态通知、Todoist TUI 和 zsh 交互环境；以及 `agent-skills/`：统一恢复个人使用的 Agent Skills。
 
 ## 整体流程
@@ -56,7 +56,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
     │   ├── test-termscp-mac.sh        # Mac SFTP 入口参数检查
     │   ├── test-termscp-bridge-relay.sh # Docker bridge 中继检查
     │   ├── test-termscp-key-authorizer.sh # 容器公钥自动授权检查
-    │   ├── test-iris-update.sh         # Iris 首次安装与重复下载检查
+    │   ├── test-zsh-autosuggestions.sh # 命令建议与旧 Iris 迁移检查
     │   ├── test-tmux-fresh-machine.sh  # 新 Mac live tmux 与 Ghostty 鼠标输入检查
     │   ├── test-todo-tui.py          # TUI 数据、中文宽度和视觉契约检查
     │   ├── test-todo-agent.py        # Agent 注册、状态、worktree 和重试检查
@@ -94,9 +94,9 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - 普通命令运行时，window 名显示命令名；Python/Node 脚本优先显示脚本名。
 - 回到 zsh prompt 后，window 名恢复为当前目录名。
 - Codex 运行、等待输入、完成时分别显示 `🔄 codex`、`❓ codex`、`✅ codex`。
-- zsh 使用 Oh My Zsh 的 `robbyrussell` 主题，并启用 `git` 和
-  `zsh-syntax-highlighting` 插件；本地、SSH 和 tmux 中的命令建议统一由 Iris 提供，
-  不再加载 `zsh-autosuggestions`。
+- zsh 使用 Oh My Zsh 的 `robbyrussell` 主题，并启用 `git`、
+  `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件；本地、SSH 和 tmux
+  共用同一套命令历史建议与语法高亮。
 - 使用 `y` 启动 Yazi；退出时当前 shell 会切换到 Yazi 最后所在目录。
 - Yazi 中按 Enter 用可编辑的 Vim 打开文本文件，并支持鼠标滚轮查看内容。
 - Vim 在本地和远端默认显示绝对行号。
@@ -126,7 +126,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - git-delta `0.19.2`
 - fzf `0.74.0`
 - zoxide `0.10.0`
-- Iris：首次安装使用官方最新稳定版；已有可用版本时跳过下载（不锁版本）
+- zsh-autosuggestions commit `85919cd1ffa7d2d5412f6d3fe437ebdbeeec4fc5`
 - Glow `2.1.2`
 - Yazi `26.5.6`（`yazi` 与 `ya` 保持完全相同的版本）
 - pre-commit `4.6.0`
@@ -145,9 +145,9 @@ Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 相关 Git 仓库必须处于锁定 commit；如果目录存在本地修改，bootstrap 会停止，
 避免覆盖用户改动。仅 executable bit 发生漂移但文件内容未变时，bootstrap 会恢复
 锁定仓库记录的权限并继续；真实内容或未跟踪文件仍会逐项列出并停止。Ghostty、
-Codex CLI、Iris、termscp 和 Fresh 是例外：Ghostty
-跟随 Homebrew cask 的稳定版，Codex 和 Iris 在首次安装时分别获取
-`@openai/codex@latest` 与官方最新稳定版；已有可用版本时跳过重复下载。Linux
+Codex CLI、termscp 和 Fresh 是例外：Ghostty
+跟随 Homebrew cask 的稳定版，Codex 在首次安装时获取
+`@openai/codex@latest`；已有可用版本时跳过重复下载。Linux
 termscp 与 Fresh 分别使用各自的官方通用安装脚本。
 
 ## 安装
@@ -164,7 +164,7 @@ git clone https://github.com/Crucifixion-Fxl/dotfiles ~/.dotfiles
 `PATH`，并准备该私有仓库的读取权限，然后只需运行上面的 bootstrap 一次。脚本会
 使用系统自带的 `/bin/zsh` 作为登录 shell，安装 Ghostty 稳定版与 Maple Mono NF
 CN 字体。托管 zsh 入口和 tmux window 命名脚本会在任何网络安装前先链接，
-因此后续下载失败时，新 login zsh 仍能在 Iris 安装后自动启动它。脚本还会
+因此后续下载失败时，新 login zsh 仍能使用已经安装的 Oh My Zsh 插件。脚本还会
 在安装 Ghostty 后立即链接托管配置，避免留下使用默认配置的 Ghostty。
 若 Ghostty 已经打开，按 `Cmd+Shift+,`
 重载配置，或完全退出后重新打开；无需再手动复制 Ghostty 设置。
@@ -174,7 +174,7 @@ CN 字体。托管 zsh 入口和 tmux window 命名脚本会在任何网络安�
 | 类别 | macOS 本机 | Debian/Ubuntu 服务器或容器 |
 | --- | --- | --- |
 | 系统包管理器 | 必须预先安装 Homebrew；bootstrap 不自动执行 `brew update` | 使用 `apt`，需要 root 或 `sudo` |
-| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Iris、Glow、Yazi、pre-commit、colorls、Codex、Todoist CLI、btop | 安装同一组工具；锁定工具使用对应 Linux Release/Gem |
+| 共用终端工具 | tmux、lazygit、glab、delta、fzf、zoxide、Glow、Yazi、pre-commit、colorls、Codex、Todoist CLI、btop | 安装同一组工具；锁定工具使用对应 Linux Release/Gem |
 | termscp | 不安装；Mac 仅提供反向转发后的 SFTP 服务 | 通过官方安装器下载 `.deb`；实际在服务器/容器中运行 `termscp-mac` |
 | Fresh | 直接通过 Homebrew 安装 `fresh-editor` | 通过官方安装器下载 `.deb` |
 | Node.js | Homebrew `node` | bootstrap 安装经过校验的用户级 Node.js 24 LTS，不使用 apt 中可能过旧的版本 |
@@ -254,7 +254,7 @@ macOS 不会自动执行 `brew update`；bootstrap 和托管 zshrc 都设置
 bootstrap 会分别用 Homebrew formula/cask 清单与 `dpkg-query` 检查系统包，只把
 缺失项交给 `brew install` 或 `apt-get install`；Debian/Ubuntu 在全部依赖已安装时
 也不会执行 `apt-get update`。锁定版本的用户级工具仅在版本缺失或不匹配时下载，
-未锁版本的 Iris、Codex、termscp 和 Fresh 已可用时直接跳过安装器。
+未锁版本的 Codex、termscp 和 Fresh 已可用时直接跳过安装器。
 bootstrap 会安装 btop、Yazi、Glow、预览/搜索依赖、Maple Mono NF CN 与 Symbols
 Nerd Font，并通过官方文档列出的
 `brew install --cask ghostty` 安装 Ghostty 稳定版，最后强制链接
@@ -267,11 +267,10 @@ Ruby，可执行命令都安装到 `~/.local/bin`。`colorls`、`manpages`
 和 `public_suffix` 使用 `versions.lock` 中的兼容版本，避免较旧
 Linux Ruby 因传递依赖升级而安装失败。
 
-Iris 使用同一份托管 `zshrc` 在本地、SSH 和 tmux 中初始化。首次 bootstrap 会把
-官方最新稳定 Release 安装到 `~/.local/bin`；已有可用 Iris 时直接跳过 Release
-下载，避免重复联网安装。首次安装失败则停止。`--check` 只验证 Iris 可用，不会联网
-更新。bootstrap 不会执行会自行改写 shell 配置的 `iris setup`。旧的
-`zsh-autosuggestions` 目录即使还留在某台机器上也不会被加载。
+zsh-autosuggestions 使用同一份托管 `zshrc` 在本地、SSH、tmux 和容器中加载。
+bootstrap 会把插件安装到 Oh My Zsh 的自定义插件目录并校验锁定 commit；已在该
+commit 时不会重复拉取。迁移时只删除旧 bootstrap 曾管理的 `~/.local/bin/iris`，
+不会删除通过其他路径或包管理器安装的软件。
 
 zsh 启动时会初始化 zoxide。首次安装且 zoxide 历史为空时，bootstrap 会把实际
 存在的 `~/Documents` 和 `~/.dotfiles` 加入数据库，避免 Yazi 中按大写 `Z` 时
@@ -435,7 +434,7 @@ hash -r
 ```
 
 bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 登录和 tmux
-新 pane 都会进入受管的 login zsh，以保证 PATH、Iris 和窗口命名 hook 行为一致。
+新 pane 都会进入受管的 login zsh，以保证 PATH、命令建议和窗口命名 hook 行为一致。
 修改登录 shell 后，已打开的连接不变，下一次 SSH 登录开始生效。
 
 ## 验证
@@ -448,7 +447,7 @@ bootstrap 会把本地和远端账户的登录 shell 设置为 zsh；普通 SSH 
 
 验证内容包括：
 
-- pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow、Yazi/`ya` 的锁定版本，以及 Iris、Codex CLI、Fresh 可用性；Linux 额外验证 termscp
+- pre-commit、tmux、lazygit、GitLab CLI、git-delta、fzf、zoxide、Glow、Yazi/`ya` 和 zsh-autosuggestions 的锁定版本，以及 Codex CLI、Fresh 可用性；Linux 额外验证 termscp
 - Yazi `package.toml` 链接、官方 `piper.yazi` 安装状态和 Markdown 预览规则
 - bash、zsh、git、btop、`zh_CN.UTF-8` locale 和 `tmux-256color` terminfo
 - 托管 zshrc 和其他 Bash/zsh 脚本的语法
@@ -685,17 +684,16 @@ Ghostty 默认使用 `TERM=xterm-ghostty`。远端入口会分别在宿主机和
 列表默认每页显示 12 个并随高亮自动翻页，`r` 刷新列表、`h` 返回宿主机、`q`
 退出。选中后直接执行 `docker exec`，并在容器内部附加或创建名为 `dev` 的
 tmux。容器路径不会创建或附加宿主机 tmux，因此不存在宿主机 tmux 嵌套容器
-tmux 的情况。进入宿主机已有 `dev` session 时会优先选择 zsh/Iris pane；如果
+tmux 的情况。进入宿主机已有 `dev` session 时会优先选择 zsh pane；如果
 历史 session 只有 Bash pane，则保留旧 pane 并新建一个 zsh window。宿主机尚未
 安装完整 dotfiles 时，入口也会直接使用系统 zsh，不会退回 Bash。进入容器时会
 优先使用 `zh_CN.UTF-8`，不可用时回退到
 `C.UTF-8`，并同步已有 tmux server 的 `LANG` 和 `LC_ALL`，避免重新连接后
 中文显示异常。容器入口会直接 `exec tmux`，tmux 再通过 `default-command`
-启动受管的 login zsh，避免 Iris 在 tmux 外包装 zsh 后阻断 attach。如果容器内
+启动受管的 login zsh。如果容器内
 已经存在 tmux server，还会重新加载 `~/.tmux.conf`，确保它与手动进入容器后
-启动 tmux 的配置一致。附加已有 session 前会优先选择空闲的受管 shell pane；
-启用 Iris 时该 pane 的前台进程可能显示为 `iris` 而不是 `zsh`，两者都会被正确
-识别。如果所有 pane 都在运行其他前台命令，则新建一个 zsh window，不会终止
+启动 tmux 的配置一致。附加已有 session 前会优先选择空闲的受管 zsh pane。
+如果所有 pane 都在运行其他前台命令，则新建一个 zsh window，不会终止
 现有 pane 中的进程。
 
 容器内必须为 `docker exec` 使用的用户预先安装 tmux。推荐在容器镜像构建阶段运行

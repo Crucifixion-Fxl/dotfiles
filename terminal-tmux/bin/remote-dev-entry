@@ -266,13 +266,13 @@ enter_host_tmux() {
     fi
   fi
 
-  # 已有 dev session 可能仍停在历史 Bash pane。优先选择受管的 zsh/Iris pane；
+  # 已有 dev session 可能仍停在历史 Bash pane。优先选择受管的 zsh pane；
   # 如果不存在则新建 zsh window，但不终止或改写原有 pane。
   if tmux has-session -t "=$HOST_TMUX_SESSION" 2>/dev/null; then
     zsh_pane=
     while read -r pane_id pane_command; do
       case "$pane_command" in
-        zsh|iris)
+        zsh)
           zsh_pane=$pane_id
           break
           ;;
@@ -310,10 +310,10 @@ enter_container_tmux() {
     # 即使授权服务暂时失败，也保持专用 Host，绝不回退读取普通 SSH 身份。
     termscp_mac_host=dotfiles-termscp-mac
   fi
-  # 容器镜像可能通过 BASH_ENV/ENV 注入 shell 初始化脚本（例如 Iris）。tmux
+  # 容器镜像可能通过 BASH_ENV/ENV 注入会产生输出的 shell 初始化脚本。tmux
   # 状态栏的 #() helper 是非交互子 shell；继承这些脚本会把终端控制序列当作
   # 状态文本显示。显式指向无输出的 /dev/null，也能覆盖已有 tmux server
-  # 启动时保存的镜像默认值，避免 unset 后再次回落到原始 Iris hook。
+  # 启动时保存的镜像默认值，避免 unset 后再次回落到原始 hook。
   docker_environment=(
     -e "TERM=${TERM:-xterm-256color}"
     -e "BASH_ENV=/dev/null"
@@ -329,7 +329,7 @@ enter_container_tmux() {
   # 该路径绝不创建宿主机 tmux。docker exec 取代 SSH 入口进程，后续 tmux
   # 命令只会在容器内解析和启动。
   # 与公钥采集相同，这里必须使用非登录 shell。否则 ~/.profile 可能提前加载
-  # Iris 等交互包装器，导致下面的 tmux 入口脚本根本没有机会执行。
+  # 交互初始化脚本，导致下面的 tmux 入口脚本根本没有机会执行。
   exec docker exec -it "${docker_environment[@]}" "$container_id" sh -c '
     export BASH_ENV=/dev/null
     export ENV=/dev/null
@@ -396,8 +396,7 @@ enter_container_tmux() {
     fi
 
     # 持久 session 可能正指向一个运行其他前台命令的 pane。新客户端优先选择
-    # 空闲的受管 shell pane；Iris 会成为 zsh 的外层进程，因此 pane_current_command
-    # 在 prompt 处可能是 zsh，也可能是 iris。
+    # 空闲的受管 zsh pane，避免把客户端重新接入仍在运行其他前台命令的 pane。
     if tmux has-session -t "=$tmux_session" 2>/dev/null; then
       zsh_pane=
       attempt=0
@@ -409,7 +408,7 @@ enter_container_tmux() {
           pane_command=$2
           shift 2
           case "$pane_command" in
-            zsh|iris)
+            zsh)
               zsh_pane=$pane_id
               break
               ;;
@@ -427,9 +426,8 @@ enter_container_tmux() {
       tmux select-pane -t "$zsh_pane"
     fi
 
-    # tmux 必须直接取代容器入口。不能先启动 interactive zsh：Iris 会包装
-    # 该 zsh，使外层命令停在 Iris 而未执行 tmux。tmux pane 自身仍会通过
-    # ~/.tmux.conf 的 default-command 启动受管 login zsh。
+    # tmux 必须直接取代容器入口；tmux pane 自身会通过 ~/.tmux.conf 的
+    # default-command 启动受管 login zsh。
     exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$tmux_session"
   ' sh "$CONTAINER_TMUX_SESSION"
 }

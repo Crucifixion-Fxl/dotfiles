@@ -211,7 +211,7 @@ grep -Fq 'tmux set-environment -g ENV /dev/null' "$ENTRY"
 grep -Fq 'tmux source-file "$HOME/.tmux.conf"' "$ENTRY"
 grep -Fq 'tmux has-session -t "=$HOST_TMUX_SESSION"' "$ENTRY"
 grep -Fq 'tmux list-panes -s -t "=$HOST_TMUX_SESSION"' "$ENTRY"
-grep -Fq 'zsh|iris)' "$ENTRY"
+grep -Fq 'zsh)' "$ENTRY"
 grep -Fq 'tmux new-window -d -P -F "#{pane_id}" -t "$HOST_TMUX_SESSION:"' "$ENTRY"
 grep -Fq 'shell_command="$zsh_path -l"' "$ENTRY"
 grep -Fq 'exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$HOST_TMUX_SESSION" "$shell_command"' "$ENTRY"
@@ -219,11 +219,15 @@ grep -Fq 'exec tmux new-session -A -s "$HOST_TMUX_SESSION" "$shell_command"' "$E
 grep -Fq 'tmux has-session -t "=$tmux_session"' "$ENTRY"
 grep -Fq '#{pane_current_command}' "$ENTRY"
 grep -Fq 'tmux list-panes -s -t "=$tmux_session"' "$ENTRY"
-grep -Fq 'zsh|iris)' "$ENTRY"
+grep -Fq 'zsh)' "$ENTRY"
 grep -Fq 'attempt=$((attempt + 1))' "$ENTRY"
 grep -Fq 'tmux new-window -d -P -F "#{pane_id}"' "$ENTRY"
 grep -Fq 'tmux select-window -t "$zsh_window"' "$ENTRY"
 grep -Fq 'tmux select-pane -t "$zsh_pane"' "$ENTRY"
+if grep -Fq 'zsh|iris)' "$ENTRY"; then
+  printf '%s\n' 'remote tmux entry must no longer treat Iris as a managed shell pane' >&2
+  exit 1
+fi
 grep -Fq 'exec tmux -f "$HOME/.tmux.conf" new-session -A -s "$tmux_session"' "$ENTRY"
 if grep -Fq 'TODO_BRIDGE' "$ENTRY"; then
   printf '%s\n' 'remote entry must not inject a Mac Todo bridge into containers' >&2
