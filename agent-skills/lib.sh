@@ -53,6 +53,24 @@ openai_display_name() {
   ' "$metadata"
 }
 
+openai_interface_display_name() {
+  local metadata=$1
+  awk '
+    /^interface:[[:space:]]*$/ { in_interface = 1; next }
+    in_interface && /^[^[:space:]]/ { in_interface = 0 }
+    in_interface && /^[[:space:]]+display_name:[[:space:]]*/ {
+      value = $0
+      sub(/^[[:space:]]*display_name:[[:space:]]*/, "", value)
+      sub(/[[:space:]]*$/, "", value)
+      if (value ~ /^".*"$/ || value ~ /^'"'"'.*'"'"'$/) {
+        value = substr(value, 2, length(value) - 2)
+      }
+      print value
+      exit
+    }
+  ' "$metadata"
+}
+
 validate_skill_directory() {
   local skill_dir=$1 expected_prefix=${2:-}
   local directory_name description display_name metadata name nested_skill
@@ -84,6 +102,11 @@ validate_skill_directory() {
   if [[ -n "$expected_prefix" ]]; then
     [[ "$name" == "$expected_prefix-"* ]] || \
       agent_skills_fail "skill $name does not use required prefix $expected_prefix-"
+    [[ -f "$metadata" ]] || \
+      agent_skills_fail "external Skill is missing agents/openai.yaml: $skill_dir"
+    display_name=$(openai_interface_display_name "$metadata")
+    [[ "$display_name" == "$name" ]] || \
+      agent_skills_fail "external interface.display_name $display_name does not match skill name $name"
   fi
 }
 
@@ -135,6 +158,15 @@ validate_source_symlinks() {
   done < <(find "$skill_dir" -type l -print)
 }
 
+prefixed_skill_name() {
+  local prefix=$1 name=$2
+  if [[ "$name" == "$prefix-"* ]]; then
+    printf '%s\n' "$name"
+  else
+    printf '%s-%s\n' "$prefix" "$name"
+  fi
+}
+
 rewrite_frontmatter_name() {
   local skill_md=$1 new_name=$2 temporary
   temporary="$skill_md.tmp.$$"
@@ -161,20 +193,74 @@ rewrite_openai_display_name() {
   grep -Eq '^[[:space:]]*display_name:[[:space:]]*' "$metadata" || return 0
   temporary="$metadata.tmp.$$"
   awk -v new_name="$new_name" '
-    !changed && /^[[:space:]]*display_name:[[:space:]]*/ {
+    /^[[:space:]]*display_name:[[:space:]]*/ {
       match($0, /^[[:space:]]*/)
       indentation = substr($0, 1, RLENGTH)
       print indentation "display_name: \"" new_name "\""
-      changed = 1
+      changed += 1
       next
     }
     { print }
-    END { if (!changed) exit 2 }
+    END { if (changed == 0) exit 2 }
   ' "$metadata" > "$temporary" || {
     rm -f "$temporary"
     agent_skills_fail "unable to rewrite OpenAI display_name: $metadata"
   }
   mv "$temporary" "$metadata"
+}
+
+openai_interface_has_display_name() {
+  local metadata=$1
+  [[ -n $(openai_interface_display_name "$metadata") ]]
+}
+
+ensure_openai_display_name() {
+  local metadata=$1 new_name=$2 temporary
+  mkdir -p "$(dirname "$metadata")"
+
+  if [[ ! -f "$metadata" ]]; then
+    printf 'interface:\n  display_name: "%s"\n' "$new_name" > "$metadata"
+    return
+  fi
+
+  temporary="$metadata.tmp.$$"
+  if ! grep -Eq '^interface:[[:space:]]*$' "$metadata"; then
+    awk -v new_name="$new_name" '
+      BEGIN {
+        print "interface:"
+        print "  display_name: \"" new_name "\""
+      }
+      { print }
+    ' "$metadata" > "$temporary"
+    mv "$temporary" "$metadata"
+  elif ! openai_interface_has_display_name "$metadata"; then
+    awk -v new_name="$new_name" '
+      !added && /^interface:[[:space:]]*$/ {
+        print
+        print "  display_name: \"" new_name "\""
+        added = 1
+        next
+      }
+      { print }
+      END { if (!added) exit 2 }
+    ' "$metadata" > "$temporary" || {
+      rm -f "$temporary"
+      agent_skills_fail "unable to add OpenAI display_name: $metadata"
+    }
+    mv "$temporary" "$metadata"
+  fi
+
+  # Normalize every legacy or nested display_name so Codex never has two
+  # different UI labels to choose from for the same managed Skill.
+  rewrite_openai_display_name "$metadata" "$new_name"
+}
+
+ensure_prefixed_skill_display_names() {
+  local root=$1 prefix=$2 skill_dir
+  for skill_dir in "$root/$prefix-"*; do
+    [[ -d "$skill_dir" ]] || continue
+    ensure_openai_display_name "$skill_dir/agents/openai.yaml" "$(basename "$skill_dir")"
+  done
 }
 
 rewrite_exact_literal_mappings() {
@@ -269,7 +355,7 @@ rewrite_token_references() {
 flatten_nested_skills() {
   local target=$1 prefix=$2 source_skill_dir=$3 list_file=$4
   local path_mappings name_mappings removals
-  local nested nested_dir old_name relative source_nested
+  local nested nested_dir new_name old_name relative source_nested
   path_mappings=$(mktemp "${target%/}/.nested-paths.XXXXXX")
   name_mappings=$(mktemp "${target%/}/.nested-names.XXXXXX")
   removals=$(mktemp "${target%/}/.nested-removals.XXXXXX")
@@ -283,14 +369,15 @@ flatten_nested_skills() {
       agent_skills_fail "invalid nested Skill frontmatter: $nested"
     [[ "$old_name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || \
       agent_skills_fail "invalid nested Skill name: $old_name"
+    new_name=$(prefixed_skill_name "$prefix" "$old_name")
     nested_dir=${nested%/SKILL.md}
     case "$nested_dir" in
       "$target"/*) ;;
       *) agent_skills_fail "nested Skill escaped parent: $nested_dir" ;;
     esac
-    printf '%s\t../%s-%s/SKILL.md\n' "$relative" "$prefix" "$old_name" \
+    printf '%s\t../%s/SKILL.md\n' "$relative" "$new_name" \
       >> "$path_mappings"
-    printf '%s\t%s-%s\n' "$old_name" "$prefix" "$old_name" >> "$name_mappings"
+    printf '%s\t%s\n' "$old_name" "$new_name" >> "$name_mappings"
     printf '%s\n' "$nested_dir" >> "$removals"
   done < <(find "$target" -depth -mindepth 2 -name SKILL.md -type f -print)
   if [[ -s "$removals" ]]; then
@@ -363,7 +450,7 @@ install_prefixed_skill_list() {
       agent_skills_fail "invalid YAML frontmatter boundary: $skill_md"
     [[ "$old_name" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || \
       agent_skills_fail "invalid upstream skill name: $old_name"
-    new_name="$prefix-$old_name"
+    new_name=$(prefixed_skill_name "$prefix" "$old_name")
     destination="$target/$new_name"
     [[ ! -e "$destination" && ! -L "$destination" ]] || \
       agent_skills_fail "duplicate installed skill name: $new_name"
@@ -371,7 +458,7 @@ install_prefixed_skill_list() {
     cp -RL "$skill_dir" "$destination"
     flatten_nested_skills "$destination" "$prefix" "$skill_dir" "$list_file"
     rewrite_frontmatter_name "$destination/SKILL.md" "$new_name"
-    rewrite_openai_display_name "$destination/agents/openai.yaml" "$new_name"
+    ensure_openai_display_name "$destination/agents/openai.yaml" "$new_name"
     printf '%s\t%s\n' "$old_name" "$new_name" >> "$mappings"
   done < "$list_file"
 

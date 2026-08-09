@@ -103,6 +103,7 @@ preserve_installed_prefix() {
     [[ ! -e "$destination" && ! -L "$destination" ]] || \
       agent_skills_fail "duplicate preserved skill name: $(basename "$skill_dir")"
     cp -R "$skill_dir" "$destination"
+    ensure_openai_display_name "$destination/agents/openai.yaml" "$(basename "$destination")"
     count=$((count + 1))
   done
   if (( count > 0 )); then
@@ -136,6 +137,9 @@ sync_external_source() {
     --source "$clone_dir" \
     --target "$source_stage" \
     --prefix "$source_name"
+  # Enforce the Codex UI namespace centrally as well as in the shared installer
+  # helper, so a future source-specific installer cannot accidentally omit it.
+  ensure_prefixed_skill_display_names "$source_stage" "$source_name"
   validate_flat_skill_root "$source_stage" "$source_name"
   merge_staged_source "$source_stage" "$FINAL_STAGE"
 }

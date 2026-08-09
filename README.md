@@ -310,7 +310,12 @@ exec zsh -l
 
 外部仓库只克隆到本次同步的临时目录，安装结束后立即删除。每个来源的
 `install.sh` 将 Skill 复制到扁平暂存目录，添加来源前缀并改写显式的 `/skill`
-和 `$skill` 引用；`agents/openai.yaml` 存在时，其 `display_name` 也会改为带前缀的完整安装名。暂存结果必须包含有效且名称一致的 `SKILL.md`，不得包含软链接；
+和 `$skill` 引用；`agents/openai.yaml` 存在时，其 `display_name` 也会改为带前缀的完整安装名。
+每个外部 Skill 都会生成或补全明确的带来源前缀 `interface.display_name`，包括
+`company-*`、`matt-*`、`kkkkhazix-*` 和 `agents365-*`，避免 Codex UI 因上游元数据
+有无不同而显示不一致。未来新增来源也自动使用 `agent-skills/sources/<source-name>/`
+的目录名作为相同的 UI 与 Skill 命名前缀，无需修改公共安装逻辑。暂存结果必须包含
+有效且名称一致的 `SKILL.md`，不得包含软链接；
 上游存在嵌套 Skill 时，父子 Skill 都会拆成带前缀的平级安装目录，并改写父 Skill 指向子 Skill 的名称和路径；
 所有必需来源都成功后才整体替换 `~/.agents/skills`。如果 `company`
 因网络或 GitLab 认证问题无法拉取，已安装的 `company-*` 会原样保留；

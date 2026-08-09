@@ -48,6 +48,20 @@ install_agent_skills() {
   bash "$AGENT_SKILLS_SYNC" sync
 }
 
+# A fresh Mac performs many Homebrew and Release downloads. Sync Skills before
+# that network chain so an unrelated tool failure cannot prevent their setup.
+install_agent_skills_on_macos() {
+  [[ "$PLATFORM_OS" == darwin ]] || return 0
+  install_agent_skills
+}
+
+# Preserve the established Linux server ordering: install shared tools and tmux
+# plugins first, then synchronize Skills at the original point in the flow.
+install_agent_skills_on_linux() {
+  [[ "$PLATFORM_OS" == linux ]] || return 0
+  install_agent_skills
+}
+
 check_agent_skills() {
   [[ -x "$AGENT_SKILLS_SYNC" ]] || fail "Agent Skills sync script is missing or not executable"
   bash "$AGENT_SKILLS_SYNC" check
@@ -1709,6 +1723,7 @@ main() {
   ensure_shell_locale
   install_shell_links
   remove_legacy_iris
+  install_agent_skills_on_macos
   install_prerequisites
   configure_login_shell
   install_ghostty
@@ -1740,7 +1755,7 @@ main() {
   install_plugin tpm https://github.com/tmux-plugins/tpm.git "$TPM_COMMIT"
   install_plugin tmux-resurrect https://github.com/tmux-plugins/tmux-resurrect.git "$RESURRECT_COMMIT"
   install_plugin tmux-continuum https://github.com/tmux-plugins/tmux-continuum.git "$CONTINUUM_COMMIT"
-  install_agent_skills
+  install_agent_skills_on_linux
 
   install_links
   install_todo_agent_service
