@@ -34,11 +34,11 @@ commit_repository() {
 }
 
 configure_source() {
-  local name=$1 repository=$2
+  local name=$1 repository=$2 required=${3:-true}
   mkdir -p "$MANAGER/sources/$name"
   cp "$ROOT/sources/$name/install.sh" "$MANAGER/sources/$name/install.sh"
   chmod +x "$MANAGER/sources/$name/install.sh"
-  printf "SOURCE_URL='%s'\nSOURCE_REQUIRED='true'\n" "$repository" \
+  printf "SOURCE_URL='%s'\nSOURCE_REQUIRED='%s'\n" "$repository" "$required" \
     > "$MANAGER/sources/$name/source.conf"
 }
 
@@ -84,10 +84,15 @@ commit_repository "$agents365_repo"
 write_skill "$MANAGER/native/native-example" native-example 'Native workflow.'
 printf '%s\n' stale > "$INSTALL_DIR/old-skill/SKILL.md"
 
-configure_source company "$company_repo"
+configure_source company "$company_repo" false
 configure_source matt "$matt_repo"
 configure_source kkkkhazix "$kkkkhazix_repo"
 configure_source agents365 "$agents365_repo"
+
+grep -Fqx "SOURCE_REQUIRED='false'" "$ROOT/sources/company/source.conf"
+for required_source in matt kkkkhazix agents365; do
+  grep -Fqx "SOURCE_REQUIRED='true'" "$ROOT/sources/$required_source/source.conf"
+done
 
 run_sync() {
   HOME=$TEST_HOME \
@@ -135,12 +140,48 @@ grep -Fq 'name: agents365-drawio-skill' "$INSTALL_DIR/agents365-drawio-skill/SKI
 run_sync check
 
 printf '%s\n' preserve-on-failure > "$INSTALL_DIR/company-code-review/failure-marker"
-printf "%s\n" "SOURCE_URL='$TEST_ROOT/missing-company'" "SOURCE_REQUIRED='true'" \
+printf "%s\n" "SOURCE_URL='$TEST_ROOT/missing-company'" "SOURCE_REQUIRED='false'" \
   > "$MANAGER/sources/company/source.conf"
+run_sync sync >/dev/null 2>&1
+[[ -f "$INSTALL_DIR/company-code-review/failure-marker" ]]
+run_sync check
+
+# A fresh machine with no previous company installation must still install and
+# validate every required/native source when the optional company clone fails.
+find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d -name 'company-*' -exec rm -rf {} +
+run_sync sync >/dev/null 2>&1
+[[ -z $(find "$INSTALL_DIR" -mindepth 1 -maxdepth 1 -type d -name 'company-*' -print -quit) ]]
+[[ -d "$INSTALL_DIR/matt-grill-with-docs" ]]
+[[ -d "$INSTALL_DIR/kkkkhazix-human-writing" ]]
+[[ -d "$INSTALL_DIR/agents365-drawio-skill" ]]
+[[ -d "$INSTALL_DIR/native-example" ]]
+run_sync check
+
+# SOURCE_REQUIRED=false only tolerates a repository clone failure. Once the
+# company repository is fetched, malformed source content must still abort the
+# transaction instead of silently keeping stale Skills.
+broken_company_repo="$REPOSITORIES/broken-company"
+mkdir -p "$broken_company_repo"
+printf '%s\n' 'missing required skills directory' > "$broken_company_repo/README.md"
+commit_repository "$broken_company_repo"
+printf "%s\n" "SOURCE_URL='$broken_company_repo'" "SOURCE_REQUIRED='false'" \
+  > "$MANAGER/sources/company/source.conf"
+printf '%s\n' preserve-malformed-company > "$INSTALL_DIR/matt-grill-with-docs/company-failure-marker"
+if run_sync sync >/dev/null 2>&1; then
+  printf '%s\n' 'malformed optional source unexpectedly succeeded after clone' >&2
+  exit 1
+fi
+[[ -f "$INSTALL_DIR/matt-grill-with-docs/company-failure-marker" ]]
+
+# Other sources remain required. Their failure must abort the transaction and
+# preserve the complete installation that existed before the failed sync.
+printf '%s\n' preserve-required-failure > "$INSTALL_DIR/matt-grill-with-docs/failure-marker"
+printf "%s\n" "SOURCE_URL='$TEST_ROOT/missing-matt'" "SOURCE_REQUIRED='true'" \
+  > "$MANAGER/sources/matt/source.conf"
 if run_sync sync >/dev/null 2>&1; then
   printf '%s\n' 'required source failure unexpectedly succeeded' >&2
   exit 1
 fi
-[[ -f "$INSTALL_DIR/company-code-review/failure-marker" ]]
+[[ -f "$INSTALL_DIR/matt-grill-with-docs/failure-marker" ]]
 
 printf '%s\n' 'agent-skills sync tests passed'

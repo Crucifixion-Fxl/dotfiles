@@ -197,9 +197,22 @@ sync_skills() {
 }
 
 check_source_installation() {
-  local source_directory=$1 source_name installer
+  local source_directory=$1 source_name config installer installed found=0
   source_name=$(basename "$source_directory")
+  config="$source_directory/source.conf"
   installer="$source_directory/install.sh"
+  read_source_config "$config"
+  if [[ "$SOURCE_REQUIRED" == false ]]; then
+    for installed in "$INSTALL_DIR/$source_name-"*; do
+      [[ -d "$installed" ]] || continue
+      found=1
+      break
+    done
+    if (( found == 0 )); then
+      agent_skills_log "Optional source $source_name has no installed Skills; skipping check"
+      return 0
+    fi
+  fi
   bash "$installer" check --target "$INSTALL_DIR" --prefix "$source_name"
 }
 
