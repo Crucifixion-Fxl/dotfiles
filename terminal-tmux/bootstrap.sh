@@ -988,8 +988,24 @@ backup_and_link() {
   ln -s "$source" "$destination"
 }
 
+restore_mode_only_git_changes() {
+  local name=$1 destination=$2 path
+
+  # Never touch staged or content changes. On filesystems/configurations where
+  # only executable metadata drifted, Git reports a dirty checkout even though
+  # the pinned source bytes are unchanged; restoring those index modes is safe.
+  git -C "$destination" diff --cached --quiet || return 0
+  git -C "$destination" diff --quiet && return 0
+  git -c core.fileMode=false -C "$destination" diff --quiet || return 0
+
+  log "Restoring tracked file permissions in the managed $name checkout"
+  while IFS= read -r -d '' path; do
+    git -C "$destination" checkout -- "$path"
+  done < <(git -C "$destination" diff --name-only -z)
+}
+
 install_git_checkout() {
-  local name repository commit destination
+  local name repository commit destination dirty line
   name=$1
   repository=$2
   commit=$3
@@ -1000,7 +1016,15 @@ install_git_checkout() {
     git clone "$repository" "$destination"
   fi
 
-  [[ -z $(git -C "$destination" status --porcelain) ]] || fail "$name has local changes"
+  restore_mode_only_git_changes "$name" "$destination"
+  dirty=$(git -C "$destination" status --porcelain=v1 --untracked-files=all)
+  if [[ -n "$dirty" ]]; then
+    warn "$name checkout contains local changes that bootstrap preserved:"
+    while IFS= read -r line; do
+      printf '  %s\n' "$line" >&2
+    done <<< "$dirty"
+    fail "$name has content or untracked changes; inspect $destination"
+  fi
   if [[ $(git -C "$destination" rev-parse HEAD) != "$commit" ]]; then
     git -C "$destination" fetch --tags origin
     git -C "$destination" checkout --detach "$commit"
