@@ -94,6 +94,8 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - 普通命令运行时，window 名显示命令名；Python/Node 脚本优先显示脚本名。
 - 回到 zsh prompt 后，window 名恢复为当前目录名。
 - Codex 运行、等待输入、完成时分别显示 `🔄 codex`、`❓ codex`、`✅ codex`。
+- Codex 自动配置 Next AI Draw.io MCP Server，可通过自然语言创建、编辑和导出
+  draw.io 图，并在浏览器中实时预览。
 - zsh 使用 Oh My Zsh 的 `robbyrussell` 主题，并启用 `git`、
   `zsh-autosuggestions` 和 `zsh-syntax-highlighting` 插件；本地、SSH 和 tmux
   共用同一套命令历史建议与语法高亮。
@@ -341,6 +343,22 @@ bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only --check
 
 更新完成后需要启动新的 Agent 会话，才能加载新的 Skills。Git 认证使用当前机器
 已有的 SSH Key、SSH Agent 或 credential helper；凭据不会写入 dotfiles。
+
+## Codex MCP Servers
+
+`DayuanJiang/next-ai-draw-io` 当前不是 Agent Skill 仓库，上游没有 `SKILL.md`；它通过
+npm 提供 STDIO MCP Server。因此它不加入 `agent-skills/sources/`，而是在 Codex CLI
+安装完成后由 bootstrap 幂等配置：
+
+```bash
+codex mcp add drawio -- npx -y @next-ai-drawio/mcp-server@latest
+```
+
+bootstrap 只管理名为 `drawio` 的这一个 MCP 条目，不提交或替换完整
+`~/.codex/config.toml`，也不改动其他 MCP Server。包保持 `@latest`，首次使用时由
+`npx -y` 获取当前发布版；无需 API Key。执行 `codex mcp list` 可以检查配置，启动
+新的 Codex 会话后即可使用。首次创建图时 MCP 会打开实时预览页面；默认使用端口
+`6002`，冲突时会依次尝试到 `6020`。
 
 如果 Oh My Zsh 或插件目录存在未提交的本地修改，bootstrap 会停止，
 不会覆盖。

@@ -22,6 +22,7 @@ DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 AGENT_SKILLS_SYNC="$DOTFILES_DIR/../agent-skills/sync.sh"
 FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
 TERMSCP_INSTALL_URL=https://termscp.rs/install.sh
+NEXT_AI_DRAWIO_MCP_PACKAGE='@next-ai-drawio/mcp-server@latest'
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
 
@@ -844,6 +845,42 @@ install_codex() {
   log "Installed $(codex --version)"
 }
 
+drawio_mcp_is_configured() {
+  local configuration
+  codex_is_installed || return 1
+  configuration=$(codex mcp get drawio --json 2>/dev/null) || return 1
+  printf '%s\n' "$configuration" | python3 -c '
+import json
+import sys
+
+configuration = json.load(sys.stdin)
+transport = configuration.get("transport") or {}
+package = sys.argv[1]
+expected = (
+    configuration.get("enabled") is True
+    and transport.get("type") == "stdio"
+    and transport.get("command") == "npx"
+    and transport.get("args") == ["-y", package]
+    and transport.get("env") in (None, {})
+    and transport.get("env_vars", []) == []
+    and transport.get("cwd") is None
+)
+raise SystemExit(0 if expected else 1)
+' "$NEXT_AI_DRAWIO_MCP_PACKAGE" 2>/dev/null
+}
+
+configure_codex_mcp_servers() {
+  command -v npx >/dev/null 2>&1 || fail "npx is required to configure Codex MCP servers"
+  if drawio_mcp_is_configured; then
+    log "Next AI Draw.io MCP server is already configured"
+    return 0
+  fi
+
+  log "Configuring the latest Next AI Draw.io MCP server for Codex"
+  codex mcp add drawio -- npx -y "$NEXT_AI_DRAWIO_MCP_PACKAGE"
+  drawio_mcp_is_configured || fail "Next AI Draw.io MCP server configuration verification failed"
+}
+
 install_termscp() {
   if [[ "$PLATFORM_OS" == darwin ]]; then
     # termscp-mac 实际在 SSH 服务器或容器中运行；Mac 只提供反向转发后的 SFTP
@@ -1514,6 +1551,7 @@ validate() {
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"
   codex_is_installed || fail "Codex CLI is required"
+  drawio_mcp_is_configured || fail "Next AI Draw.io MCP server must be configured"
   if [[ "$PLATFORM_OS" == linux ]]; then
     termscp_is_installed || fail "termscp is required on Linux"
   fi
@@ -1746,6 +1784,7 @@ main() {
   install_colorls
   install_node_for_todoist
   install_codex
+  configure_codex_mcp_servers
   install_termscp
   install_todoist_cli
   remove_legacy_todo_bridge
