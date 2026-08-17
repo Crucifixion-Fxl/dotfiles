@@ -54,6 +54,9 @@ grep -q 'pkgconf python ruby utf8proc' "$BOOTSTRAP"
 grep -q 'vim zsh' "$BOOTSTRAP"
 grep -q 'font-maple-mono-nf-cn' "$BOOTSTRAP"
 grep -q '^install_colorls()' "$BOOTSTRAP"
+grep -q '^drawio_mcp_is_configured()' "$BOOTSTRAP"
+grep -q '^configure_codex_mcp_servers()' "$BOOTSTRAP"
+grep -Fq "NEXT_AI_DRAWIO_MCP_PACKAGE='@next-ai-drawio/mcp-server@latest'" "$BOOTSTRAP"
 grep -q '^colorls_gem_command()' "$BOOTSTRAP"
 grep -q '^ensure_tmux_terminfo()' "$BOOTSTRAP"
 grep -q '^ensure_ghostty_terminfo()' "$BOOTSTRAP"
@@ -763,14 +766,19 @@ continuum_line=$(grep -n '^  install_plugin tmux-continuum ' "$BOOTSTRAP" | cut 
 [[ $linux_skills_line -gt $continuum_line ]]
 termscp_install_line=$(grep -n '^  install_termscp$' "$BOOTSTRAP" | cut -d: -f1)
 fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
+codex_install_line=$(grep -n '^  install_codex$' "$BOOTSTRAP" | cut -d: -f1)
+drawio_config_line=$(grep -n '^  configure_codex_mcp_servers$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_config_line -lt $termscp_install_line ]]
 [[ $ghostty_config_line -lt $fresh_install_line ]]
+[[ $codex_install_line -lt $drawio_config_line ]]
 
 # Codex uses the latest official npm release for its first installation, then
 # skips repeated npm downloads while the existing command remains usable.
 NPM_ARGS=
 CODEX_INSTALLED_FILE="$TEST_HOME/codex-installed"
 CODEX_INSTALL_CALLS_FILE="$TEST_HOME/codex-install-calls"
+CODEX_MCP_CONFIG_FILE="$TEST_HOME/codex-drawio-mcp.json"
+CODEX_MCP_ADD_CALLS_FILE="$TEST_HOME/codex-mcp-add-calls"
 TD_VERSION=
 npm() {
   NPM_ARGS="$*"
@@ -792,7 +800,20 @@ npm() {
 }
 codex() {
   [[ -e "$CODEX_INSTALLED_FILE" ]] || return 127
-  printf '%s\n' 'codex-cli 999.0.0'
+  if [[ ${1:-} == --version ]]; then
+    printf '%s\n' 'codex-cli 999.0.0'
+  elif [[ ${1:-} == mcp && ${2:-} == get && ${3:-} == drawio && ${4:-} == --json ]]; then
+    [[ -f "$CODEX_MCP_CONFIG_FILE" ]] || return 1
+    command cat "$CODEX_MCP_CONFIG_FILE"
+  elif [[ ${1:-} == mcp && ${2:-} == add && ${3:-} == drawio && ${4:-} == -- &&
+    ${5:-} == npx && ${6:-} == -y && ${7:-} == '@next-ai-drawio/mcp-server@latest' ]]; then
+    printf '%s\n' "$*" >> "$CODEX_MCP_ADD_CALLS_FILE"
+    printf '%s\n' \
+      '{"name":"drawio","enabled":true,"transport":{"type":"stdio","command":"npx","args":["-y","@next-ai-drawio/mcp-server@latest"],"env":null,"env_vars":[],"cwd":null}}' \
+      > "$CODEX_MCP_CONFIG_FILE"
+  else
+    return 1
+  fi
 }
 td() {
   printf '%s\n' "${TD_VERSION:-not-installed}"
@@ -813,6 +834,15 @@ if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
   printf '%s\n' 'Codex must track latest and must not be pinned in versions.lock' >&2
   exit 1
 fi
+
+HOME=$TEST_HOME configure_codex_mcp_servers
+[[ $(wc -l < "$CODEX_MCP_ADD_CALLS_FILE") -eq 1 ]]
+drawio_mcp_is_configured
+HOME=$TEST_HOME configure_codex_mcp_servers
+[[ $(wc -l < "$CODEX_MCP_ADD_CALLS_FILE") -eq 1 ]] || {
+  printf '%s\n' 'configured Draw.io MCP server must not be added again' >&2
+  exit 1
+}
 
 HOME=$TEST_HOME install_todoist_cli
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @doist/todoist-cli@$TODOIST_CLI_VERSION" ]]
