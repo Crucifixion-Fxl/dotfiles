@@ -62,8 +62,10 @@ write_skill "$company_repo/skills/already-prefixed" company-already-prefixed \
   'The source already includes its namespace.'
 write_skill "$company_repo/skills/code-review/helper" helper \
   'Nested helper installed separately.'
+printf '%s\n' 'Use helper as documented.' >> "$company_repo/skills/code-review/SKILL.md"
 printf '%s\n' '[Helper](helper/SKILL.md)' >> "$company_repo/skills/code-review/SKILL.md"
-printf '%s\n' 'reference body' > "$company_repo/skills/code-review/reference.md"
+printf '%s\n' 'Reference /architect and $architect without renaming.' \
+  > "$company_repo/skills/code-review/reference.md"
 ln -s reference.md "$company_repo/skills/code-review/reference-link.md"
 commit_repository "$company_repo"
 
@@ -210,15 +212,31 @@ grep -Fq 'company-helper' "$INSTALL_DIR/company-code-review/SKILL.md"
 [[ -z $(find "$INSTALL_DIR" -mindepth 3 -name SKILL.md -type f -print -quit) ]]
 [[ -z $(find "$INSTALL_DIR" -type l -print -quit) ]]
 grep -Fq 'name: company-code-review' "$INSTALL_DIR/company-code-review/SKILL.md"
-grep -Fq '/company-architect' "$INSTALL_DIR/company-code-review/SKILL.md"
-grep -Fq '$company-architect' "$INSTALL_DIR/company-code-review/SKILL.md"
+grep -Fq 'Run /architect and $architect.' "$INSTALL_DIR/company-code-review/SKILL.md"
+grep -Fq 'Use helper as documented.' "$INSTALL_DIR/company-code-review/SKILL.md"
+if grep -Fq 'Use company-helper as documented.' \
+  "$INSTALL_DIR/company-code-review/SKILL.md"; then
+  printf '%s\n' 'source prefix leaked into a nested Skill name reference' >&2
+  exit 1
+fi
+if grep -Fq 'Run /company-architect and $company-architect.' \
+  "$INSTALL_DIR/company-code-review/SKILL.md"; then
+  printf '%s\n' 'source prefix leaked into company Skill body' >&2
+  exit 1
+fi
+grep -Fq 'Reference /architect and $architect without renaming.' \
+  "$INSTALL_DIR/company-code-review/reference.md"
+if grep -Fq 'company-architect' "$INSTALL_DIR/company-code-review/reference.md"; then
+  printf '%s\n' 'source prefix leaked into company Skill reference content' >&2
+  exit 1
+fi
 grep -Fq 'name: matt-grill-with-docs' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
 [[ ! -e "$INSTALL_DIR/matt-grill-with-docs/grill-helper" ]]
 grep -Fq '../matt-grill-helper/SKILL.md' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
 grep -Fq 'display_name: "matt-grill-with-docs"' \
   "$INSTALL_DIR/matt-grill-with-docs/agents/openai.yaml"
-grep -Fq '/matt-grilling' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
-grep -Fq '/matt-domain-modeling' "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
+grep -Fq 'Run /grilling with /domain-modeling.' \
+  "$INSTALL_DIR/matt-grill-with-docs/SKILL.md"
 grep -Fq 'name: kkkkhazix-human-writing' "$INSTALL_DIR/kkkkhazix-human-writing/SKILL.md"
 grep -Fq 'name: agents365-drawio-skill' "$INSTALL_DIR/agents365-drawio-skill/SKILL.md"
 [[ -z $(find "$TEST_HOME/.agents" -mindepth 1 -maxdepth 1 -name '.skills-sync.*' -print -quit) ]]
