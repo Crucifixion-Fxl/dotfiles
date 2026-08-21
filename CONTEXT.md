@@ -29,7 +29,7 @@ _Avoid_: Required source
 _Avoid_: Per-machine selection, ad hoc installation
 
 **Source Prefix**:
-由唯一的 Source Name 直接确定的命名空间；安装时无条件将它添加到每个上游 Skill 名称之前，即使上游名称已经带有相同文本。
+由唯一的 Source Name 直接确定的命名空间；安装时将它添加到每个上游 Skill 的安装目录、frontmatter `name` 和 UI display name，但不改写 Skill 正文中的命令或名称引用。上游名称已经带有相同前缀时不重复添加。
 _Avoid_: Automatic prefix, source precedence
 
 **Source Name**:
@@ -49,11 +49,11 @@ _Avoid_: POSIX sh script, discovery rule, upstream installer, generic installer
 _Avoid_: Source skill, managed source
 
 **Staged Skill**:
-位于扁平暂存根目录的直接子目录中、正在等待完成名称修正、内部引用更新和验证的自包含 Skill；上游的嵌套父子 Skills 必须拆成平级 Staged Skills。它不得含有软链接或嵌套 `SKILL.md`，只有完整通过后才能成为 Installed Skill。
+位于扁平暂存根目录的直接子目录中、正在等待完成 identity 修正、嵌套路径调整和验证的自包含 Skill；上游的嵌套父子 Skills 必须拆成平级 Staged Skills。它不得含有软链接或嵌套 `SKILL.md`，只有完整通过后才能成为 Installed Skill。
 _Avoid_: Source checkout, installed skill, symlink
 
 **Installed Projection**:
-Source Installer 从 External Skill Source 自动生成的安装副本；它为 Skill 名称、显示名称和内部引用添加 Source Prefix，但不修改上游仓库。
+Source Installer 从 External Skill Source 自动生成的安装副本；它为安装目录、frontmatter `name` 和 UI display name 添加 Source Prefix，并只为嵌套 Skill 扁平化调整失效的相对文件路径，不改写普通正文或语义引用，也不修改上游仓库。
 _Avoid_: Vendored copy, source checkout, renamed symlink
 
 **Managed Skill**:

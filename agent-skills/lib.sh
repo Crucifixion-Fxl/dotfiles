@@ -305,59 +305,11 @@ rewrite_exact_references() {
   done < <(find "$target" -type f -print)
 }
 
-rewrite_token_mappings() {
-  local file=$1 mappings=$2 temporary
-  temporary="$file.tmp.$$"
-  awk -v mappings="$mappings" '
-    function replace_token(value, old_value, new_value, pattern, matched, old_position, result) {
-      result = ""
-      pattern = "(^|[^a-z0-9-])" old_value "([^a-z0-9-]|$)"
-      while (match(value, pattern)) {
-        matched = substr(value, RSTART, RLENGTH)
-        old_position = index(matched, old_value)
-        result = result substr(value, 1, RSTART - 1) \
-          substr(matched, 1, old_position - 1) new_value \
-          substr(matched, old_position + length(old_value))
-        value = substr(value, RSTART + RLENGTH)
-      }
-      return result value
-    }
-    BEGIN {
-      while ((getline mapping < mappings) > 0) {
-        split(mapping, fields, "\t")
-        old_values[++mapping_count] = fields[1]
-        new_values[mapping_count] = fields[2]
-      }
-      close(mappings)
-    }
-    {
-      line = $0
-      for (mapping_index = 1; mapping_index <= mapping_count; mapping_index++) {
-        line = replace_token(line, old_values[mapping_index], new_values[mapping_index])
-      }
-      print line
-    }
-  ' "$file" > "$temporary"
-  mv "$temporary" "$file"
-}
-
-rewrite_token_references() {
-  local target=$1 mappings=$2 file
-  while IFS= read -r file; do
-    [[ -n "$file" ]] || continue
-    [[ "$file" == "$mappings" ]] && continue
-    if LC_ALL=C grep -Iq . "$file"; then
-      rewrite_token_mappings "$file" "$mappings"
-    fi
-  done < <(find "$target" -type f -print)
-}
-
 flatten_nested_skills() {
   local target=$1 prefix=$2 source_skill_dir=$3 list_file=$4
-  local path_mappings name_mappings removals
+  local path_mappings removals
   local nested nested_dir new_name old_name relative source_nested
   path_mappings=$(mktemp "${target%/}/.nested-paths.XXXXXX")
-  name_mappings=$(mktemp "${target%/}/.nested-names.XXXXXX")
   removals=$(mktemp "${target%/}/.nested-removals.XXXXXX")
   while IFS= read -r nested; do
     [[ -n "$nested" ]] || continue
@@ -377,7 +329,6 @@ flatten_nested_skills() {
     esac
     printf '%s\t../%s/SKILL.md\n' "$relative" "$new_name" \
       >> "$path_mappings"
-    printf '%s\t%s\n' "$old_name" "$new_name" >> "$name_mappings"
     printf '%s\n' "$nested_dir" >> "$removals"
   done < <(find "$target" -depth -mindepth 2 -name SKILL.md -type f -print)
   if [[ -s "$removals" ]]; then
@@ -386,62 +337,18 @@ flatten_nested_skills() {
       rm -rf -- "$nested_dir"
     done < "$removals"
     rewrite_exact_references "$target" "$path_mappings"
-    rewrite_token_references "$target" "$name_mappings"
   fi
-  rm -f "$path_mappings" "$name_mappings" "$removals"
-}
-
-rewrite_literal_references() {
-  local file=$1 mappings=$2 temporary
-  temporary="$file.tmp.$$"
-  awk -v mappings="$mappings" '
-    function replace_literal(value, needle, replacement, before, position) {
-      while ((position = index(value, needle)) != 0) {
-        before = before substr(value, 1, position - 1) replacement
-        value = substr(value, position + length(needle))
-      }
-      return before value
-    }
-    BEGIN {
-      while ((getline mapping < mappings) > 0) {
-        split(mapping, fields, "\t")
-        old_names[++mapping_count] = fields[1]
-        new_names[mapping_count] = fields[2]
-      }
-      close(mappings)
-    }
-    {
-      line = $0
-      for (mapping_index = 1; mapping_index <= mapping_count; mapping_index++) {
-        line = replace_literal(line, "/" old_names[mapping_index], "/" new_names[mapping_index])
-        line = replace_literal(line, "$" old_names[mapping_index], "$" new_names[mapping_index])
-      }
-      print line
-    }
-  ' "$file" > "$temporary"
-  mv "$temporary" "$file"
-}
-
-rewrite_skill_references() {
-  local target=$1 mappings=$2 file
-  while IFS= read -r file; do
-    [[ -n "$file" ]] || continue
-    if LC_ALL=C grep -Iq . "$file"; then
-      rewrite_literal_references "$file" "$mappings"
-    fi
-  done < <(find "$target" -type f -print)
+  rm -f "$path_mappings" "$removals"
 }
 
 install_prefixed_skill_list() {
   local source_root=$1 target=$2 prefix=$3 list_file=$4
-  local destination mappings new_name old_name skill_dir skill_md
+  local destination new_name old_name skill_dir skill_md
 
   [[ "$prefix" =~ ^[a-z0-9]+(-[a-z0-9]+)*$ ]] || \
     agent_skills_fail "invalid source prefix: $prefix"
   [[ -s "$list_file" ]] || agent_skills_fail "source produced no SKILL.md files: $source_root"
   mkdir -p "$target"
-  mappings=$(mktemp "${target%/}/.mappings.XXXXXX")
-  trap 'rm -f "$mappings"' RETURN
 
   while IFS= read -r skill_md; do
     [[ -f "$skill_md" ]] || agent_skills_fail "listed SKILL.md is missing: $skill_md"
@@ -459,12 +366,8 @@ install_prefixed_skill_list() {
     flatten_nested_skills "$destination" "$prefix" "$skill_dir" "$list_file"
     rewrite_frontmatter_name "$destination/SKILL.md" "$new_name"
     ensure_openai_display_name "$destination/agents/openai.yaml" "$new_name"
-    printf '%s\t%s\n' "$old_name" "$new_name" >> "$mappings"
   done < "$list_file"
 
-  rewrite_skill_references "$target" "$mappings"
-  rm -f "$mappings"
-  trap - RETURN
   validate_flat_skill_root "$target" "$prefix"
 }
 
