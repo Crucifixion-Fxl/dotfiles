@@ -833,12 +833,8 @@ install_colorls() {
 }
 
 install_codex() {
-  if codex_is_installed; then
-    log "Codex CLI is already installed; skipping npm installer"
-    return 0
-  fi
   command -v npm >/dev/null 2>&1 || fail "npm is required to install Codex CLI"
-  log "Installing the latest Codex CLI into $HOME/.local/bin"
+  log "Installing or updating to the latest Codex CLI into $HOME/.local/bin"
   npm install --global --prefix "$HOME/.local" '@openai/codex@latest'
   hash -r
   codex_is_installed || fail "latest Codex CLI installation verification failed"

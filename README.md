@@ -134,7 +134,7 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 - pre-commit `4.6.0`
 - colorls `1.5.0`（Ruby Gem；兼容依赖版本同样记录在 `versions.lock`）
 - Ghostty：macOS 通过 Homebrew cask 安装当前稳定版（不锁版本）
-- Codex CLI：首次安装获取 npm 官方包的最新版本；已有可用版本时跳过（不锁版本）
+- Codex CLI：每次运行 bootstrap 都安装或更新到 npm 官方包的最新版本（不锁版本）
 - termscp：仅在 Debian/Ubuntu 通过官方通用安装脚本获取当前版本（不锁版本）；
   macOS 不安装 termscp CLI
 - Fresh：macOS 通过 Homebrew 安装，Debian/Ubuntu 通过官方通用安装脚本安装（不锁版本）
@@ -148,8 +148,8 @@ Release 包均进行 SHA256 校验。`piper.yazi` 由 Yazi 官方包管理器按
 避免覆盖用户改动。仅 executable bit 发生漂移但文件内容未变时，bootstrap 会恢复
 锁定仓库记录的权限并继续；真实内容或未跟踪文件仍会逐项列出并停止。Ghostty、
 Codex CLI、termscp 和 Fresh 是例外：Ghostty
-跟随 Homebrew cask 的稳定版，Codex 在首次安装时获取
-`@openai/codex@latest`；已有可用版本时跳过重复下载。Linux
+跟随 Homebrew cask 的稳定版，Codex 在每次运行 bootstrap 时安装或更新到
+`@openai/codex@latest`。Linux
 termscp 与 Fresh 分别使用各自的官方通用安装脚本。
 
 ## 安装
@@ -256,7 +256,7 @@ macOS 不会自动执行 `brew update`；bootstrap 和托管 zshrc 都设置
 bootstrap 会分别用 Homebrew formula/cask 清单与 `dpkg-query` 检查系统包，只把
 缺失项交给 `brew install` 或 `apt-get install`；Debian/Ubuntu 在全部依赖已安装时
 也不会执行 `apt-get update`。锁定版本的用户级工具仅在版本缺失或不匹配时下载，
-未锁版本的 Codex、termscp 和 Fresh 已可用时直接跳过安装器。
+Codex 每次都运行 npm 安装器更新到最新版；未锁版本的 termscp 和 Fresh 已可用时直接跳过安装器。
 bootstrap 会安装 btop、Yazi、Glow、预览/搜索依赖、Maple Mono NF CN 与 Symbols
 Nerd Font，并通过官方文档列出的
 `brew install --cask ghostty` 安装 Ghostty 稳定版，最后强制链接

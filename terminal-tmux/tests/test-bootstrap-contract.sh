@@ -772,8 +772,8 @@ drawio_config_line=$(grep -n '^  configure_codex_mcp_servers$' "$BOOTSTRAP" | cu
 [[ $ghostty_config_line -lt $fresh_install_line ]]
 [[ $codex_install_line -lt $drawio_config_line ]]
 
-# Codex uses the latest official npm release for its first installation, then
-# skips repeated npm downloads while the existing command remains usable.
+# Codex installs or updates to the latest official npm release on every run,
+# even when the existing command remains usable.
 NPM_ARGS=
 CODEX_INSTALLED_FILE="$TEST_HOME/codex-installed"
 CODEX_INSTALL_CALLS_FILE="$TEST_HOME/codex-install-calls"
@@ -826,8 +826,8 @@ HOME=$TEST_HOME install_codex
   exit 1
 }
 HOME=$TEST_HOME install_codex
-[[ $(wc -l < "$CODEX_INSTALL_CALLS_FILE") -eq 1 ]] || {
-  printf '%s\n' 'installed Codex must skip repeated npm downloads' >&2
+[[ $(wc -l < "$CODEX_INSTALL_CALLS_FILE") -eq 2 ]] || {
+  printf '%s\n' 'installed Codex must update to latest on every bootstrap run' >&2
   exit 1
 }
 if grep -q '^CODEX_VERSION=' "$ROOT/versions.lock"; then
