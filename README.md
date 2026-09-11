@@ -709,7 +709,10 @@ Ghostty 默认使用 `TERM=xterm-ghostty`。远端入口会分别在宿主机和
 每页行数，宽度不足时会压缩表格字段并切换为紧凑提示。使用 `↑/↓` 移动高亮，按
 `Enter` 进入；
 列表默认每页显示 12 个并随高亮自动翻页，`r` 刷新列表、`h` 返回宿主机、`q`
-退出。选中后直接执行 `docker exec`，并在容器内部附加或创建名为 `dev` 的
+退出。列表按确认进入的次数降序排列，次数相同时最近选择的容器优先；尚未选择
+过的容器保持 Docker 原有顺序。记录按容器名保存在远端当前用户的
+`${XDG_STATE_HOME:-~/.local/state}/remote-dev-entry/container-history`，同名容器
+重建后仍保留排序习惯；首次使用从当前顺序开始累计。选中后直接执行 `docker exec`，并在容器内部附加或创建名为 `dev` 的
 tmux。容器路径不会创建或附加宿主机 tmux，因此不存在宿主机 tmux 嵌套容器
 tmux 的情况。进入宿主机已有 `dev` session 时会优先选择 zsh pane；如果
 历史 session 只有 Bash pane，则保留旧 pane 并新建一个 zsh window。宿主机尚未

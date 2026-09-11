@@ -463,6 +463,39 @@ repeat_panel_character() {
   printf '%s' "$output"
 }
 
+container_history_file() {
+  printf '%s/remote-dev-entry/container-history\n' "${XDG_STATE_HOME:-$HOME/.local/state}"
+}
+
+sort_containers_by_usage() {
+  local history_file
+  history_file=$(container_history_file)
+  [[ -r "$history_file" && -f "$history_file" ]] || history_file=/dev/null
+
+  # 按名称保留重建后的使用习惯；次数相同时优先最近选择的容器，
+  # 从未选择的容器保持 docker ps 的原始顺序。
+  awk -F '\t' '
+    FILENAME != "-" {
+      if ($0 ~ /^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/) {
+        count[$0]++
+        recent[$0] = FNR
+      }
+      next
+    }
+    NF >= 4 {
+      printf "%d\t%d\t%d\t%s\n", count[$2], recent[$2], FNR, $0
+    }
+  ' "$history_file" - | LC_ALL=C sort -t $'\t' -k1,1nr -k2,2nr -k3,3n | cut -f4-
+}
+
+record_container_selection() (
+  local history_file
+  history_file=$(container_history_file)
+  # 只追加一行，避免多个 SSH 菜单同时选择时相互覆盖记录。
+  umask 077
+  mkdir -p "${history_file%/*}" && printf '%s\n' "$1" >> "$history_file"
+)
+
 choose_container() {
   # 菜单每次外层循环都重新读取 docker ps；内层循环处理翻页、键盘和缩放。
   # REMOTE_DEV_MENU_ROWS 可改每页目标行数，实际行数仍会受终端高度限制。
@@ -502,6 +535,7 @@ choose_container() {
     if ! container_output=$(docker ps --format '{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}'); then
       fail "无法列出 Docker 容器，请检查 Docker daemon 和当前用户权限"
     fi
+    container_output=$(printf '%s\n' "$container_output" | sort_containers_by_usage)
 
     while IFS=$'\t' read -r id name image status; do
       [[ -n "$id" ]] || continue
@@ -671,6 +705,8 @@ choose_container() {
             trap - WINCH
             printf '\033[2J\033[H'
           fi
+          # 统计确认进入的选择；状态目录不可写时仍正常进入容器。
+          record_container_selection "${container_names[$selected]}" 2>/dev/null || true
           enter_container_tmux "${container_ids[$selected]}" "${container_names[$selected]}"
           return
           ;;

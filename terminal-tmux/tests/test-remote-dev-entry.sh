@@ -8,6 +8,11 @@ ENTRY="$ROOT/bin/remote-dev-entry"
 # shellcheck source=../bin/remote-dev-entry
 source "$ENTRY"
 
+# 菜单测试只能读写自己的选择历史。
+selection_state=$(mktemp -d)
+export XDG_STATE_HOME="$selection_state"
+trap 'rm -rf "$selection_state"' EXIT
+
 # xterm-ghostty 只在远端缺少对应 terminfo 时降级；iTerm2 等已有 TERM 不变。
 infocmp() {
   [[ ${TERMINFO_TEST_MODE:-missing} == present ]]
@@ -170,6 +175,44 @@ if printf '\n' | DOCKER_TEST_MODE=denied main >/dev/null 2>&1; then
   printf '%s\n' 'Docker permission failure must stop the entry flow' >&2
   exit 1
 fi
+
+# 跨菜单进程记住选择；只移动、刷新、退出或返回宿主机不计次数。
+(
+  export XDG_STATE_HOME="$selection_state/usage"
+  export DOCKER_TEST_MODE=multiple
+  history_file=$(container_history_file)
+  printf '\njrq' | main >/dev/null
+  printf '\nh' | main >/dev/null
+  [[ ! -e "$history_file" ]]
+
+  output=$(printf '\nj\n' | main)
+  grep -Fq 'selected:container:def456:web-dev:dev' <<< "$output"
+  output=$(printf '\n\n' | main)
+  grep -Fq 'selected:container:def456:web-dev:dev' <<< "$output"
+
+  # 较少使用的 api-dev 即便刚被选择，仍排在 web-dev 后面。
+  output=$(printf '\nj\n' | main)
+  grep -Fq 'selected:container:abc123:api-dev:dev' <<< "$output"
+  output=$(printf '\n\n' | main)
+  grep -Fq 'selected:container:def456:web-dev:dev' <<< "$output"
+  [[ $(wc -l < "$history_file") -eq 4 ]]
+
+  # 次数相同时最近选择优先；新 ID 沿用同名历史，未访问项保持原序。
+  record_container_selection api-dev
+  record_container_selection api-dev
+  sorted=$(printf 'new-web\tweb-dev\tweb:dev\tUp\nnew-api\tapi-dev\tapi:dev\tUp\nz\tz-new\tnew:dev\tUp\na\ta-new\tnew:dev\tUp\n' | sort_containers_by_usage)
+  [[ $(cut -f1 <<< "$sorted") == $'new-api\nnew-web\nz\na' ]]
+
+  # 历史里的已停止容器不会混入正在运行的列表。
+  output=$(printf '\n\n' | DOCKER_TEST_MODE=running main)
+  grep -Fq 'selected:container:abc123:api-dev:dev' <<< "$output"
+
+  # 状态路径不可写也不影响进入容器。
+  touch "$selection_state/not-a-directory"
+  export XDG_STATE_HOME="$selection_state/not-a-directory"
+  output=$(printf '\n\n' | main)
+  grep -Fq 'selected:container:abc123:api-dev:dev' <<< "$output"
+)
 
 grep -Fq 'exec docker exec -it' "$ENTRY"
 grep -Fq 'fallback_ghostty_term' "$ENTRY"
