@@ -88,9 +88,10 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
   状态栏出现 `[Ctrl-b]` 表示前缀已收到，正在等待下一键。
 - macOS 已配置 Karabiner-Elements 时，bootstrap 会在当前 profile 加入规则：
   Ghostty 中按 `Ctrl+b` 自动切到英文 ABC/US，同时发送 tmux 前缀。原来是中文时，
-  按完 c/s（松开按键）自动切回；原来是英文则保持英文。Esc 或再次 Ctrl+b 也会恢复，
+  按完 c/s（松开按键）按原输入法标识直接恢复微信输入法或系统拼音；原来是英文则保持英文。
+  Esc 或再次 Ctrl+b 也会恢复，
   其他下一键会结束本次恢复状态，避免之后普通输入 c/s 误切换。
-  恢复使用 macOS 的 `Ctrl+Space`“选择上一个输入法”快捷键，需保持启用。规则作用于
+  恢复不发送 `Ctrl+Space`，避免唤出其他应用的全局快捷键。规则作用于
   Ghostty 的本地和 SSH 会话（包括普通 shell），其他应用不受影响。仅重装此规则可运行
   `python3 ~/.dotfiles/terminal-tmux/bin/install-tmux-input-source`；已有规则会保留，并备份原配置。
   使用的键盘还需在 Karabiner → Devices 中开启 `Modify events`；否则该键盘会绕过规则。

@@ -42,11 +42,69 @@
           ],
           "to_after_key_up": [
             {
-              "key_code": "spacebar",
-              "modifiers": [
-                "left_control"
-              ],
-              "repeat": false,
+              "select_input_source": {
+                "input_source_id": "^com\\.tencent\\.inputmethod\\.wetype\\.pinyin$"
+              },
+              "conditions": [
+                {
+                  "type": "frontmost_application_if",
+                  "bundle_identifiers": [
+                    "^com\\.mitchellh\\.ghostty$"
+                  ]
+                },
+                {
+                  "type": "input_source_if",
+                  "input_sources": [
+                    {
+                      "input_source_id": "^com\\.apple\\.keylayout\\.(ABC|US)$"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "c",
+            "modifiers": {
+              "optional": [
+                "control",
+                "caps_lock"
+              ]
+            }
+          },
+          "conditions": [
+            {
+              "type": "frontmost_application_if",
+              "bundle_identifiers": [
+                "^com\\.mitchellh\\.ghostty$"
+              ]
+            },
+            {
+              "type": "variable_if",
+              "name": "dotfiles_tmux_restore_chinese",
+              "value": 2
+            }
+          ],
+          "to": [
+            {
+              "from_event": true,
+              "repeat": false
+            },
+            {
+              "set_variable": {
+                "name": "dotfiles_tmux_restore_chinese",
+                "value": 0
+              }
+            }
+          ],
+          "to_after_key_up": [
+            {
+              "select_input_source": {
+                "input_source_id": "^com\\.apple\\.inputmethod\\.SCIM\\.ITABC$"
+              },
               "conditions": [
                 {
                   "type": "frontmost_application_if",
@@ -104,11 +162,69 @@
           ],
           "to_after_key_up": [
             {
-              "key_code": "spacebar",
-              "modifiers": [
-                "left_control"
-              ],
-              "repeat": false,
+              "select_input_source": {
+                "input_source_id": "^com\\.tencent\\.inputmethod\\.wetype\\.pinyin$"
+              },
+              "conditions": [
+                {
+                  "type": "frontmost_application_if",
+                  "bundle_identifiers": [
+                    "^com\\.mitchellh\\.ghostty$"
+                  ]
+                },
+                {
+                  "type": "input_source_if",
+                  "input_sources": [
+                    {
+                      "input_source_id": "^com\\.apple\\.keylayout\\.(ABC|US)$"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "s",
+            "modifiers": {
+              "optional": [
+                "control",
+                "caps_lock"
+              ]
+            }
+          },
+          "conditions": [
+            {
+              "type": "frontmost_application_if",
+              "bundle_identifiers": [
+                "^com\\.mitchellh\\.ghostty$"
+              ]
+            },
+            {
+              "type": "variable_if",
+              "name": "dotfiles_tmux_restore_chinese",
+              "value": 2
+            }
+          ],
+          "to": [
+            {
+              "from_event": true,
+              "repeat": false
+            },
+            {
+              "set_variable": {
+                "name": "dotfiles_tmux_restore_chinese",
+                "value": 0
+              }
+            }
+          ],
+          "to_after_key_up": [
+            {
+              "select_input_source": {
+                "input_source_id": "^com\\.apple\\.inputmethod\\.SCIM\\.ITABC$"
+              },
               "conditions": [
                 {
                   "type": "frontmost_application_if",
@@ -166,11 +282,69 @@
           ],
           "to_after_key_up": [
             {
-              "key_code": "spacebar",
-              "modifiers": [
-                "left_control"
-              ],
-              "repeat": false,
+              "select_input_source": {
+                "input_source_id": "^com\\.tencent\\.inputmethod\\.wetype\\.pinyin$"
+              },
+              "conditions": [
+                {
+                  "type": "frontmost_application_if",
+                  "bundle_identifiers": [
+                    "^com\\.mitchellh\\.ghostty$"
+                  ]
+                },
+                {
+                  "type": "input_source_if",
+                  "input_sources": [
+                    {
+                      "input_source_id": "^com\\.apple\\.keylayout\\.(ABC|US)$"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "escape",
+            "modifiers": {
+              "optional": [
+                "control",
+                "caps_lock"
+              ]
+            }
+          },
+          "conditions": [
+            {
+              "type": "frontmost_application_if",
+              "bundle_identifiers": [
+                "^com\\.mitchellh\\.ghostty$"
+              ]
+            },
+            {
+              "type": "variable_if",
+              "name": "dotfiles_tmux_restore_chinese",
+              "value": 2
+            }
+          ],
+          "to": [
+            {
+              "from_event": true,
+              "repeat": false
+            },
+            {
+              "set_variable": {
+                "name": "dotfiles_tmux_restore_chinese",
+                "value": 0
+              }
+            }
+          ],
+          "to_after_key_up": [
+            {
+              "select_input_source": {
+                "input_source_id": "^com\\.apple\\.inputmethod\\.SCIM\\.ITABC$"
+              },
               "conditions": [
                 {
                   "type": "frontmost_application_if",
@@ -230,11 +404,71 @@
           ],
           "to_after_key_up": [
             {
-              "key_code": "spacebar",
-              "modifiers": [
-                "left_control"
+              "select_input_source": {
+                "input_source_id": "^com\\.tencent\\.inputmethod\\.wetype\\.pinyin$"
+              },
+              "conditions": [
+                {
+                  "type": "frontmost_application_if",
+                  "bundle_identifiers": [
+                    "^com\\.mitchellh\\.ghostty$"
+                  ]
+                },
+                {
+                  "type": "input_source_if",
+                  "input_sources": [
+                    {
+                      "input_source_id": "^com\\.apple\\.keylayout\\.(ABC|US)$"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "b",
+            "modifiers": {
+              "mandatory": [
+                "control"
               ],
-              "repeat": false,
+              "optional": [
+                "caps_lock"
+              ]
+            }
+          },
+          "conditions": [
+            {
+              "type": "frontmost_application_if",
+              "bundle_identifiers": [
+                "^com\\.mitchellh\\.ghostty$"
+              ]
+            },
+            {
+              "type": "variable_if",
+              "name": "dotfiles_tmux_restore_chinese",
+              "value": 2
+            }
+          ],
+          "to": [
+            {
+              "from_event": true,
+              "repeat": false
+            },
+            {
+              "set_variable": {
+                "name": "dotfiles_tmux_restore_chinese",
+                "value": 0
+              }
+            }
+          ],
+          "to_after_key_up": [
+            {
+              "select_input_source": {
+                "input_source_id": "^com\\.apple\\.inputmethod\\.SCIM\\.ITABC$"
+              },
               "conditions": [
                 {
                   "type": "frontmost_application_if",
@@ -292,11 +526,21 @@
                   "type": "input_source_if",
                   "input_sources": [
                     {
-                      "language": "^zh(?:[-_].*)?$"
-                    },
-                    {
                       "input_source_id": "^com\\.tencent\\.inputmethod\\.wetype\\.pinyin$"
-                    },
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "set_variable": {
+                "name": "dotfiles_tmux_restore_chinese",
+                "value": 2
+              },
+              "conditions": [
+                {
+                  "type": "input_source_if",
+                  "input_sources": [
                     {
                       "input_source_id": "^com\\.apple\\.inputmethod\\.SCIM\\.ITABC$"
                     }
@@ -330,9 +574,9 @@
           },
           "conditions": [
             {
-              "type": "variable_if",
+              "type": "variable_unless",
               "name": "dotfiles_tmux_restore_chinese",
-              "value": 1
+              "value": 0
             }
           ],
           "to": [
@@ -353,9 +597,9 @@
           },
           "conditions": [
             {
-              "type": "variable_if",
+              "type": "variable_unless",
               "name": "dotfiles_tmux_restore_chinese",
-              "value": 1
+              "value": 0
             }
           ],
           "to": [
@@ -376,9 +620,9 @@
           },
           "conditions": [
             {
-              "type": "variable_if",
+              "type": "variable_unless",
               "name": "dotfiles_tmux_restore_chinese",
-              "value": 1
+              "value": 0
             }
           ],
           "to": [

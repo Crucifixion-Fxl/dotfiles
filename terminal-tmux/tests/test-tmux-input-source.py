@@ -2,6 +2,7 @@
 """Check that installing the IME rule preserves existing Karabiner settings."""
 
 import json
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -9,6 +10,18 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 INSTALLER = ROOT / "bin/install-tmux-input-source"
+
+# Restoration must name the original IME, not emit a global shortcut such as
+# Ctrl+Space (which can launch another app instead of switching input sources).
+managed = json.loads((ROOT / "karabiner/tmux-input-source.json").read_text())["rules"][0]
+for command_key in ("c", "s"):
+    restorers = [m for m in managed["manipulators"]
+                 if m["from"].get("key_code") == command_key and "to_after_key_up" in m]
+    for original in ("com.tencent.inputmethod.wetype.pinyin", "com.apple.inputmethod.SCIM.ITABC"):
+        assert any(re.fullmatch(action.get("select_input_source", {}).get("input_source_id", ""), original)
+                   for m in restorers for action in m["to_after_key_up"]), f"missing exact restoration: {original}"
+    assert all("key_code" not in action and "shell_command" not in action
+               for m in restorers for action in m["to_after_key_up"]), "restoration must not emit global shortcuts"
 
 with tempfile.TemporaryDirectory() as directory:
     config = Path(directory) / "karabiner.json"
