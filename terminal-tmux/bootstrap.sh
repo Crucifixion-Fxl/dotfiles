@@ -11,24 +11,23 @@ set -euo pipefail
 #
 # 可复现策略：
 #   - pre-commit/colorls/tmux/lazygit/glab/delta/fzf/zoxide/Yazi 及 shell 插件由 versions.lock 锁定。
-#   - 官方 Todoist CLI 和它在 Linux 上使用的 Node.js LTS 由 versions.lock 锁定。
+#   - Codex / MCP 共用的 Linux Node.js LTS 运行时由 versions.lock 锁定。
 #   - Release 下载包校验 SHA256，Git 插件校验完整 commit。
-#   - Codex CLI 首次安装官方最新稳定版，已有可用版本时跳过重复下载；
-#     Linux termscp 和 Fresh 使用各自官方通用安装脚本，这些工具均不锁版本。
+#   - Codex CLI 每次完整安装或更新都跟随官方最新稳定版；
+#     Fresh 使用官方通用安装脚本，这些工具均不锁版本。
 #   - 已有目标文件会先备份再链接，不静默覆盖用户配置。
 # =============================================================================
 
 DOTFILES_DIR=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 AGENT_SKILLS_SYNC="$DOTFILES_DIR/../agent-skills/sync.sh"
 FRESH_INSTALL_URL=https://raw.githubusercontent.com/sinelaw/fresh/refs/heads/master/scripts/install.sh
-TERMSCP_INSTALL_URL=https://termscp.rs/install.sh
 NEXT_AI_DRAWIO_MCP_PACKAGE='@next-ai-drawio/mcp-server@latest'
 # shellcheck source=versions.lock
 source "$DOTFILES_DIR/versions.lock"
 
 export PATH="$HOME/.local/bin:$PATH"
 # Homebrew 元数据只在用户显式执行 `brew update` 时刷新。该变量也会传递给
-# termscp/Fresh 的官方安装器，避免它们内部的 brew 调用触发自动更新。
+# Fresh 的官方安装器，避免它们内部的 brew 调用触发自动更新。
 export HOMEBREW_NO_AUTO_UPDATE=1
 
 log() {
@@ -140,27 +139,17 @@ codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
 }
 
-termscp_is_installed() {
-  command -v termscp >/dev/null 2>&1 &&
-    termscp -v 2>/dev/null | grep -Eq '^termscp v?[0-9]+\.[0-9]+\.[0-9]+'
-}
-
 fresh_is_installed() {
   command -v fresh >/dev/null 2>&1 &&
     fresh --version 2>/dev/null | grep -Eq '^fresh [0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$'
 }
 
-todoist_cli_is_locked_version() {
-  command -v td >/dev/null 2>&1 &&
-    [[ $(td --version 2>/dev/null) == "$TODOIST_CLI_VERSION" ]]
-}
-
-node_supports_todoist_cli() {
+node_runtime_is_supported() {
   command -v node >/dev/null 2>&1 &&
     node -e 'process.exit(Number(process.versions.node.split(".")[0]) < 24 ? 1 : 0)' 2>/dev/null
 }
 
-npm_supports_todoist_cli() {
+npm_runtime_is_supported() {
   local major
   command -v npm >/dev/null 2>&1 || return 1
   major=$(npm --version 2>/dev/null | cut -d. -f1)
@@ -877,28 +866,6 @@ configure_codex_mcp_servers() {
   drawio_mcp_is_configured || fail "Next AI Draw.io MCP server configuration verification failed"
 }
 
-install_termscp() {
-  if [[ "$PLATFORM_OS" == darwin ]]; then
-    # termscp-mac 实际在 SSH 服务器或容器中运行；Mac 只提供反向转发后的 SFTP
-    # 服务，不需要安装会拉取大量 Homebrew 依赖的 termscp CLI。
-    log "Skipping termscp CLI on macOS; install it on remote Linux hosts"
-    return 0
-  fi
-
-  if termscp_is_installed; then
-    # Linux 上重复执行 bootstrap 时保留已有可用版本，避免无意义地重跑安装器。
-    log "termscp is already installed; skipping installer"
-    return 0
-  fi
-
-  log "Installing termscp with its official universal installer"
-  curl --proto '=https' --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 \
-    "$TERMSCP_INSTALL_URL" | sh -s -- --yes
-  hash -r
-  termscp_is_installed || fail "termscp installation verification failed"
-  log "Installed $(termscp -v)"
-}
-
 uninstall_druk() {
   if [[ -e "$HOME/.local/bin/druk" || -d "$HOME/.local/lib/node_modules/druk" ]]; then
     command -v npm >/dev/null 2>&1 || fail "npm is required to uninstall the old Druk package"
@@ -1149,10 +1116,10 @@ node_asset() {
   esac
 }
 
-install_node_for_todoist() {
-  node_supports_todoist_cli && return 0
+install_node_runtime() {
+  node_runtime_is_supported && return 0
   [[ "$PLATFORM_OS" == linux ]] || \
-    fail "Todoist CLI requires Node.js 24 or newer; update Homebrew node and rerun bootstrap"
+    fail "The shared CLI runtime requires Node.js 24 or newer; update Homebrew node and rerun bootstrap"
 
   local work archive source_dir target binary
   node_asset
@@ -1161,7 +1128,7 @@ install_node_for_todoist() {
   target="$HOME/.local/share/node-v$NODE_VERSION"
   trap 'rm -rf "$work"' RETURN
 
-  log "Installing Node.js $NODE_VERSION for Todoist CLI"
+  log "Installing Node.js $NODE_VERSION for Codex and MCP"
   download "https://nodejs.org/dist/v$NODE_VERSION/$ASSET" "$archive"
   verify_sha256 "$archive" "$ASSET_SHA256"
   tar -xJf "$archive" -C "$work"
@@ -1176,20 +1143,7 @@ install_node_for_todoist() {
 
   trap - RETURN
   rm -rf "$work"
-  node_supports_todoist_cli || fail "Node.js $NODE_VERSION installation verification failed"
-}
-
-install_todoist_cli() {
-  node_supports_todoist_cli || fail "Todoist CLI requires Node.js 24 or newer"
-  npm_supports_todoist_cli || fail "Todoist CLI requires npm 11 or newer"
-  if ! todoist_cli_is_locked_version; then
-    log "Installing official Todoist CLI $TODOIST_CLI_VERSION"
-    npm install --global --prefix "$HOME/.local" \
-      "@doist/todoist-cli@$TODOIST_CLI_VERSION"
-    hash -r
-  fi
-  todoist_cli_is_locked_version || \
-    fail "Todoist CLI $TODOIST_CLI_VERSION installation verification failed"
+  node_runtime_is_supported || fail "Node.js $NODE_VERSION installation verification failed"
 }
 
 remove_legacy_todo_bridge() {
@@ -1211,15 +1165,55 @@ remove_legacy_todo_bridge() {
   fi
 }
 
+# Upgrade-only cleanup. Keep task history, credentials and worktrees intact.
+remove_legacy_todoist() {
+  local service enabled link name package
+  service="$HOME/.config/systemd/user/todo-agent.service"
+  enabled="$HOME/.config/systemd/user/default.target.wants/todo-agent.service"
+  if [[ -L "$service" && $(readlink "$service") == "$DOTFILES_DIR/systemd/todo-agent.service" ]]; then
+    if todo_agent_systemd_available; then
+      # The checkout may already have removed the unit file. Stop a loaded
+      # unit before unlinking; an unknown, inactive unit needs no stop.
+      if [[ $(systemctl --user show todo-agent.service -p LoadState --value) != not-found ]]; then
+        systemctl --user stop todo-agent.service || fail "could not stop retired todo-agent service"
+      fi
+    fi
+    if [[ -L "$enabled" && ( $(readlink "$enabled") == "$service" ||
+      $(readlink "$enabled") == "$DOTFILES_DIR/systemd/todo-agent.service" ||
+      $(readlink "$enabled") == ../todo-agent.service ) ]]; then
+      rm -f "$enabled"
+    fi
+    rm -f "$service"
+    if todo_agent_systemd_available; then
+      systemctl --user daemon-reload
+    fi
+  fi
+  stop_todo_agent_fallback
+  for name in todo todo-agent; do
+    link="$HOME/.local/bin/$name"
+    if [[ -L "$link" && $(readlink "$link") == "$DOTFILES_DIR/bin/$name" ]]; then
+      rm -f "$link"
+    fi
+  done
+  # Only the npm prefix previously owned by this bootstrap, never another td.
+  package="$HOME/.local/lib/node_modules/@doist/todoist-cli"
+  link="$HOME/.local/bin/td"
+  if [[ -d "$package" && ! -L "$package" ]] && python3 -c \
+    'import json,sys; sys.exit(json.load(open(sys.argv[1])).get("name") != "@doist/todoist-cli")' \
+    "$package/package.json"; then
+    if [[ -L "$link" && ( $(readlink "$link") == ../lib/node_modules/@doist/todoist-cli/* ||
+      $(readlink "$link") == "$package/"* ) ]]; then
+      rm -f "$link"
+    fi
+    rm -rf "$package"
+    hash -r
+  fi
+}
+
 install_links() {
   backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
-  backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"
-  backup_and_link "$DOTFILES_DIR/bin/termscp-bridge-relay" "$HOME/.local/bin/termscp-bridge-relay"
-  backup_and_link "$DOTFILES_DIR/bin/termscp-key-authorizer" "$HOME/.local/bin/termscp-key-authorizer"
-  backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"
-  backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
   backup_and_link "$DOTFILES_DIR/yazi/init.lua" "$HOME/.config/yazi/init.lua"
   backup_and_link "$DOTFILES_DIR/yazi/package.toml" "$HOME/.config/yazi/package.toml"
@@ -1254,48 +1248,6 @@ install_shell_links() {
   fi
 }
 
-install_todo_agent_service() {
-  [[ "$PLATFORM_OS" == linux ]] || return 0
-
-  backup_and_link \
-    "$DOTFILES_DIR/systemd/todo-agent.service" \
-    "$HOME/.config/systemd/user/todo-agent.service"
-
-  if ! todo_agent_has_enabled_projects; then
-    if todo_agent_fallback_running; then
-      stop_todo_agent_fallback
-    fi
-    if todo_agent_systemd_available; then
-      systemctl --user disable --now todo-agent.service >/dev/null 2>&1 || true
-    fi
-    log "Skipping todo-agent watcher because no enabled projects are configured"
-    return 0
-  fi
-
-  if todo_agent_systemd_available; then
-    systemctl --user daemon-reload
-    systemctl --user enable todo-agent.service
-    if todo_agent_fallback_running; then
-      stop_todo_agent_fallback
-    fi
-    systemctl --user restart todo-agent.service
-    systemctl --user is-active --quiet todo-agent.service || \
-      fail "todo-agent systemd service failed to restart"
-    log "todo-agent systemd watcher is enabled and running with the current code"
-    return 0
-  fi
-
-  restart_todo_agent_fallback
-}
-
-todo_agent_has_enabled_projects() {
-  local output
-  if ! output=$("$HOME/.local/bin/todo-agent" project list 2>&1); then
-    fail "cannot read todo-agent project configuration: $output"
-  fi
-  grep -Eq $'\tenabled$' <<< "$output"
-}
-
 todo_agent_systemd_available() {
   command -v systemctl >/dev/null 2>&1 && \
     systemctl --user show-environment >/dev/null 2>&1
@@ -1326,17 +1278,13 @@ todo_agent_fallback_running() {
   IFS= read -r pid < "$pid_file"
   todo_agent_pid_running "$pid" || return 1
 
-  # Contract tests run in a restricted macOS sandbox where neither /proc nor
-  # process command inspection is available. Production callers never set
-  # this test-only switch.
-  [[ ${TODO_AGENT_SKIP_CMDLINE_CHECK:-0} == 1 ]] && return 0
-
   if [[ -r "/proc/$pid/cmdline" ]]; then
     command_line=$(tr '\0' ' ' < "/proc/$pid/cmdline")
   else
     command_line=$(ps -p "$pid" -o command= 2>/dev/null || true)
   fi
-  [[ "$command_line" == *"todo-agent watch"* ]]
+  [[ "$command_line" == *"$HOME/.local/bin/todo-agent watch"* ||
+    "$command_line" == *"$DOTFILES_DIR/bin/todo-agent watch"* ]]
 }
 
 stop_todo_agent_fallback() {
@@ -1357,47 +1305,6 @@ stop_todo_agent_fallback() {
   todo_agent_pid_running "$pid" && \
     fail "todo-agent fallback watcher PID $pid did not stop"
   unlink "$pid_file"
-}
-
-start_todo_agent_fallback() {
-  local log_file pid pid_file state_directory
-  state_directory="$HOME/.local/state/todoist-codex"
-  pid_file="$state_directory/watcher.pid"
-  log_file="$state_directory/watcher.log"
-
-  mkdir -p "$state_directory"
-  chmod 700 "$state_directory"
-  if todo_agent_fallback_running; then
-    IFS= read -r pid < "$pid_file"
-    log "todo-agent fallback watcher is already running with PID $pid"
-    return 0
-  fi
-
-  log "Starting todo-agent fallback watcher in the background"
-  nohup "$HOME/.local/bin/todo-agent" watch --interval 10 \
-    >> "$log_file" 2>&1 < /dev/null &
-  pid=$!
-  printf '%s\n' "$pid" > "$pid_file"
-  chmod 600 "$pid_file"
-  sleep 1
-  todo_agent_pid_running "$pid" || \
-    fail "todo-agent fallback watcher failed to start; inspect $log_file"
-  todo_agent_fallback_running || \
-    fail "todo-agent fallback watcher PID verification failed"
-  log "todo-agent fallback watcher is running with PID $pid"
-}
-
-restart_todo_agent_fallback() {
-  stop_todo_agent_fallback
-  start_todo_agent_fallback
-}
-
-todo_agent_background_running() {
-  if todo_agent_systemd_available && \
-    systemctl --user is-active --quiet todo-agent.service; then
-    return 0
-  fi
-  todo_agent_fallback_running
 }
 
 # --- Shell 持久环境 ---------------------------------------------------------
@@ -1530,7 +1437,6 @@ validate() {
   local iterm2_profile iterm2_destination pre_commit_link pre_commit_wrapper
   local login_shell login_user zsh_config zsh_config_destination zsh_path
   local zsh_window_name_config zsh_window_name_destination
-  local todo_agent_link todo_agent_service todo_agent_service_destination
   local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination
@@ -1550,13 +1456,9 @@ validate() {
   colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"
   codex_is_installed || fail "Codex CLI is required"
   drawio_mcp_is_configured || fail "Next AI Draw.io MCP server must be configured"
-  if [[ "$PLATFORM_OS" == linux ]]; then
-    termscp_is_installed || fail "termscp is required on Linux"
-  fi
   fresh_is_installed || fail "Fresh is required"
-  node_supports_todoist_cli || fail "Todoist CLI requires Node.js 24 or newer"
-  npm_supports_todoist_cli || fail "Todoist CLI requires npm 11 or newer"
-  todoist_cli_is_locked_version || fail "expected Todoist CLI $TODOIST_CLI_VERSION"
+  node_runtime_is_supported || fail "The shared CLI runtime requires Node.js 24 or newer"
+  npm_runtime_is_supported || fail "The shared CLI runtime requires npm 11 or newer"
   [[ ! -e "$HOME/.local/libexec/todo-reminders" ]] || \
     fail "obsolete Todo EventKit backend is still installed"
   [[ ! -e "$HOME/.local/bin/todo-bridge" && ! -L "$HOME/.local/bin/todo-bridge" ]] || \
@@ -1594,15 +1496,6 @@ validate() {
   bash -n "$DOTFILES_DIR/bootstrap.sh"
   bash -n "$DOTFILES_DIR/bin/remote-dev-entry"
   bash -n "$DOTFILES_DIR/bin/connect-remote-dev"
-  bash -n "$DOTFILES_DIR/bin/termscp-mac"
-  python3 "$DOTFILES_DIR/bin/termscp-bridge-relay" --help >/dev/null
-  python3 "$DOTFILES_DIR/bin/termscp-key-authorizer" --help >/dev/null
-  python3 "$DOTFILES_DIR/bin/todo" --help >/dev/null
-  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' \
-    "$DOTFILES_DIR/bin/todo"
-  python3 "$DOTFILES_DIR/bin/todo-agent" --help >/dev/null
-  python3 -c 'import pathlib, sys; compile(pathlib.Path(sys.argv[1]).read_text(), sys.argv[1], "exec")' \
-    "$DOTFILES_DIR/bin/todo-agent"
   bash -n "$DOTFILES_DIR/bin/ghostty-dev"
   bash -n "$DOTFILES_DIR/bin/ghostty-tab-command"
   bash -n "$DOTFILES_DIR/bin/pre-commit"
@@ -1611,12 +1504,7 @@ validate() {
   bash -n "$DOTFILES_DIR/codex/notify-tmux.sh"
   bash "$DOTFILES_DIR/tests/test-remote-dev-entry.sh"
   bash "$DOTFILES_DIR/tests/test-connect-remote-dev.sh"
-  bash "$DOTFILES_DIR/tests/test-termscp-mac.sh"
-  bash "$DOTFILES_DIR/tests/test-termscp-bridge-relay.sh"
-  bash "$DOTFILES_DIR/tests/test-termscp-key-authorizer.sh"
   bash "$DOTFILES_DIR/tests/test-zsh-autosuggestions.sh"
-  python3 "$DOTFILES_DIR/tests/test-todo-tui.py"
-  python3 "$DOTFILES_DIR/tests/test-todo-agent.py"
   bash "$DOTFILES_DIR/tests/test-ghostty-dev.sh"
   sh "$DOTFILES_DIR/tests/test-lazygit-safe.sh"
 
@@ -1624,20 +1512,6 @@ validate() {
   pre_commit_link="$HOME/.local/bin/pre-commit"
   [[ -L "$pre_commit_link" && $(readlink "$pre_commit_link") == "$pre_commit_wrapper" ]] || \
     fail "pre-commit launcher link is missing"
-
-  todo_agent_link="$HOME/.local/bin/todo-agent"
-  [[ -L "$todo_agent_link" && $(readlink "$todo_agent_link") == "$DOTFILES_DIR/bin/todo-agent" ]] || \
-    fail "todo-agent launcher link is missing"
-  if [[ "$PLATFORM_OS" == linux ]]; then
-    todo_agent_service="$DOTFILES_DIR/systemd/todo-agent.service"
-    todo_agent_service_destination="$HOME/.config/systemd/user/todo-agent.service"
-    [[ -L "$todo_agent_service_destination" &&
-      $(readlink "$todo_agent_service_destination") == "$todo_agent_service" ]] || \
-      fail "todo-agent systemd service link is missing"
-    if todo_agent_has_enabled_projects; then
-      todo_agent_background_running || fail "todo-agent background watcher is not running"
-    fi
-  fi
 
   vim_config="$DOTFILES_DIR/vim/vimrc"
   vim_config_destination="$HOME/.vimrc"
@@ -1761,8 +1635,11 @@ main() {
   ensure_shell_path
   ensure_shell_locale
   remove_legacy_iris
+  remove_legacy_todo_bridge
+  remove_legacy_todoist
   install_agent_skills_on_macos
   install_prerequisites
+  python3 "$DOTFILES_DIR/migrations/retire-file-transfer.py"
   configure_login_shell
   install_ghostty
   # 新 Mac 上先让 Ghostty 配置落地，避免后续网络安装失败或被中断时，
@@ -1782,12 +1659,9 @@ main() {
   install_yazi
   install_pre_commit
   install_colorls
-  install_node_for_todoist
+  install_node_runtime
   install_codex
   configure_codex_mcp_servers
-  install_termscp
-  install_todoist_cli
-  remove_legacy_todo_bridge
   uninstall_druk
   install_fresh
   install_oh_my_zsh
@@ -1797,7 +1671,6 @@ main() {
   install_agent_skills_on_linux
 
   install_links
-  install_todo_agent_service
   install_yazi_packages
   seed_zoxide_history
   install_iterm2_profile
@@ -1811,7 +1684,6 @@ main() {
   log "Installation complete"
   printf '%s\n' 'Start the managed login shell now with: exec zsh -l'
   printf '%s\n' 'Connect with menu: connect-remote-dev <host>'
-  printf '%s\n' 'Transfer between the SSH server and this Mac: termscp-mac'
   printf '%s\n' 'Ghostty stable app and managed config are ready on macOS'
   printf '%s\n' 'If Ghostty was already open, reload with Cmd+Shift+, or quit and reopen it'
   printf '%s\n' 'Choose an SSH host and open the remote menu in Ghostty: ghostty-dev'

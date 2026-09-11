@@ -3,12 +3,11 @@
 #
 # bootstrap.sh 会 source 此文件。升级 Release 时必须同时更新对应平台的
 # SHA256，不要只改版本号。插件使用完整 Git commit，避免上游分支漂移。
-# Codex CLI 始终跟随官方最新稳定版；Linux termscp 和 Fresh 由各自官方
+# Codex CLI 始终跟随官方最新稳定版；Fresh 由官方
 # 通用安装脚本管理，这些工具均不在此锁定。
 # =============================================================================
 
-# --- Todoist CLI 及其最低 Node.js LTS 运行时 ------------------------------
-TODOIST_CLI_VERSION=3.1.2
+# --- Codex / MCP 共用的 Node.js LTS 运行时 -------------------------------
 NODE_VERSION=24.18.0
 NODE_SHA256_LINUX_ARM64=58c9520501f6ae2b52d5b210444e24b9d0c029a58c5011b797bc1fe7105886f6
 NODE_SHA256_LINUX_X86_64=55aa7153f9d88f28d765fcdad5ae6945b5c0f98a36881703817e4c450fa76742

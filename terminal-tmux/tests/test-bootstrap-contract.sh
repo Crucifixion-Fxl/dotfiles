@@ -6,18 +6,13 @@ ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 README="$ROOT/../README.md"
 BOOTSTRAP="$ROOT/bootstrap.sh"
 ZSH_CONFIG="$ROOT/shell/zshrc"
-WORKFLOW_IMAGE="$ROOT/assets/dotfiles-workflow.png"
+WORKFLOW_IMAGE="$ROOT/assets/terminal-workflow.drawio.png"
 ITERM_PROFILE="$ROOT/iterm2/dev.json"
 GHOSTTY_CONFIG="$ROOT/ghostty/config.ghostty"
 GHOSTTY_TERMINFO="$ROOT/terminfo/xterm-ghostty.terminfo"
 GHOSTTY_LAUNCHER="$ROOT/bin/ghostty-dev"
 GHOSTTY_APPLESCRIPT="$ROOT/ghostty/open-tab.applescript"
 GHOSTTY_CLOSE_APPLESCRIPT="$ROOT/ghostty/close-tab.applescript"
-TERMSCP_LAUNCHER="$ROOT/bin/termscp-mac"
-TERMSCP_AUTHORIZER="$ROOT/bin/termscp-key-authorizer"
-TODO_TUI="$ROOT/bin/todo"
-TODO_AGENT="$ROOT/bin/todo-agent"
-TODO_AGENT_SERVICE="$ROOT/systemd/todo-agent.service"
 VERSIONS="$ROOT/versions.lock"
 TMUX_CONFIG="$ROOT/tmux/tmux.conf"
 AGENT_SKILLS_ROOT="$ROOT/../agent-skills"
@@ -29,11 +24,7 @@ bash -n "$BOOTSTRAP"
 bash -n "$ZSH_AUTOSUGGESTIONS_TEST"
 bash -n "$TMUX_FRESH_MACHINE_TEST"
 [[ -s "$WORKFLOW_IMAGE" ]]
-grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/dotfiles-workflow.png)' "$README"
-grep -Fq '### 平台安装边界' "$README"
-grep -Fq '| termscp | 不安装；Mac 仅提供反向转发后的 SFTP 服务' "$README"
-grep -Fq '| Fresh | 直接通过 Homebrew 安装 `fresh-editor`' "$README"
-grep -Fq '| Todo Agent 后台服务 |' "$README"
+grep -Fq '![dotfiles 整体工作流](terminal-tmux/assets/terminal-workflow.drawio.png)' "$README"
 grep -q 'ncurses-base' "$BOOTSTRAP"
 grep -q 'bubblewrap' "$BOOTSTRAP"
 grep -q 'btop' "$BOOTSTRAP"
@@ -73,12 +64,10 @@ grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
-grep -q '^install_termscp()' "$BOOTSTRAP"
 grep -q '^uninstall_druk()' "$BOOTSTRAP"
 grep -q '^install_fresh()' "$BOOTSTRAP"
 grep -q '^install_ghostty()' "$BOOTSTRAP"
-grep -q '^install_node_for_todoist()' "$BOOTSTRAP"
-grep -q '^install_todoist_cli()' "$BOOTSTRAP"
+grep -q '^install_node_runtime()' "$BOOTSTRAP"
 grep -q '^remove_legacy_todo_bridge()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^install_agent_skills()' "$BOOTSTRAP"
@@ -91,28 +80,14 @@ grep -Fq -- '--skills-only' "$BOOTSTRAP"
 grep -q '^remind_ssh_key()' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
 grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo" "$HOME/.local/bin/todo"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/todo-agent" "$HOME/.local/bin/todo-agent"' "$BOOTSTRAP"
-grep -q '^install_todo_agent_service()' "$BOOTSTRAP"
-grep -q '^todo_agent_systemd_available()' "$BOOTSTRAP"
-grep -q '^todo_agent_pid_running()' "$BOOTSTRAP"
-grep -q '^todo_agent_fallback_running()' "$BOOTSTRAP"
-grep -q '^stop_todo_agent_fallback()' "$BOOTSTRAP"
-grep -q '^start_todo_agent_fallback()' "$BOOTSTRAP"
-grep -q '^restart_todo_agent_fallback()' "$BOOTSTRAP"
-grep -q '^todo_agent_background_running()' "$BOOTSTRAP"
-grep -Fq 'systemctl --user enable todo-agent.service' "$BOOTSTRAP"
-grep -Fq 'systemctl --user restart todo-agent.service' "$BOOTSTRAP"
-grep -Fq 'nohup "$HOME/.local/bin/todo-agent" watch --interval 10' "$BOOTSTRAP"
-grep -Fq 'watch.add_argument("--interval", type=int, default=10' "$TODO_AGENT"
-grep -Fq 'python3-venv' "$BOOTSTRAP"
-grep -Fq '"@doist/todoist-cli@$TODOIST_CLI_VERSION"' "$BOOTSTRAP"
-grep -Eq '^TODOIST_CLI_VERSION=[0-9]+\.[0-9]+\.[0-9]+$' "$VERSIONS"
 grep -Eq '^NODE_VERSION=24\.[0-9]+\.[0-9]+$' "$VERSIONS"
-python3 "$TODO_TUI" --help >/dev/null
-python3 "$TODO_AGENT" --help >/dev/null
-grep -Fq 'ExecStart=%h/.local/bin/todo-agent watch' "$TODO_AGENT_SERVICE"
-grep -Fq 'Restart=always' "$TODO_AGENT_SERVICE"
+grep -q '^remove_legacy_todoist()' "$BOOTSTRAP"
+if grep -Eq '^install_todo|^install_termscp|^TERMSCP_INSTALL_URL=|^TODOIST_CLI_VERSION=' "$BOOTSTRAP" "$VERSIONS"; then
+  printf '%s\n' 'retired tools must not be installed' >&2
+  exit 1
+fi
+[[ ! -e "$ROOT/bin/todo" && ! -e "$ROOT/bin/todo-agent" ]]
+[[ ! -e "$ROOT/systemd/todo-agent.service" ]]
 [[ $(grep -Fc '  hash -r' "$BOOTSTRAP") -ge 2 ]]
 [[ $(grep -Fc 'run_as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y' "$BOOTSTRAP") -eq 2 ]]
 grep -Fqx 'export HOMEBREW_NO_AUTO_UPDATE=1' "$BOOTSTRAP"
@@ -130,8 +105,6 @@ grep -Fq 'colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"'
 grep -Fq "alias ls='colorls --sd'" "$ZSH_CONFIG"
 grep -Fq "alias ll='colorls -lA --sd'" "$ZSH_CONFIG"
 grep -Fq "alias la='colorls -A --sd'" "$ZSH_CONFIG"
-grep -Fq '`font-symbols-only-nerd-font`' "$README"
-grep -Fq '本仓库不托管 Linux GUI 终端字体设置' "$README"
 if grep -Eq '(^|[[:space:]])(fzf|zoxide)($|[[:space:]])' <<< "$prerequisite_function"; then
   printf '%s\n' 'fzf and zoxide must come from pinned official releases, not apt or Homebrew' >&2
   exit 1
@@ -168,9 +141,7 @@ grep -Fq 'tic -x -o "$HOME/.terminfo" "$source_file"' "$BOOTSTRAP"
 # before applying its assignments, so dependent values must be assigned on a
 # later line.
 TEST_HOME=$(mktemp -d)
-FALLBACK_HOME=$(mktemp -d)
-UNCONFIGURED_HOME=$(mktemp -d)
-trap 'rm -rf "$TEST_HOME" "$FALLBACK_HOME" "$UNCONFIGURED_HOME"' EXIT
+trap 'rm -rf "$TEST_HOME"' EXIT
 TEST_PLUGIN_COMMIT=0123456789abcdef
 
 # shellcheck source=../bootstrap.sh
@@ -298,64 +269,8 @@ fi
   exit 1
 }
 
-# A fresh container has no Todoist project mapping or token yet. Bootstrap
-# must still complete instead of starting a watcher that exits immediately.
-mkdir -p "$UNCONFIGURED_HOME/.local/bin"
-ln -s "$TODO_AGENT" "$UNCONFIGURED_HOME/.local/bin/todo-agent"
-(
-  HOME=$UNCONFIGURED_HOME
-  PLATFORM_OS=linux
-  ! todo_agent_has_enabled_projects
-  install_todo_agent_service
-  ! todo_agent_background_running
-)
-
-# Linux containers without a user systemd manager receive one persistent nohup
-# watcher. Starting is idempotent, while restarting replaces the old process so
-# a repeated bootstrap loads the current dispatcher code.
-mkdir -p "$FALLBACK_HOME/.local/bin"
-printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'while :; do sleep 60; done' \
-  > "$FALLBACK_HOME/.local/bin/todo-agent"
-chmod +x "$FALLBACK_HOME/.local/bin/todo-agent"
-(
-  HOME=$FALLBACK_HOME
-  TODO_AGENT_SKIP_CMDLINE_CHECK=1
-  export TODO_AGENT_SKIP_CMDLINE_CHECK
-  start_todo_agent_fallback
-  todo_agent_fallback_running
-  first_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
-  start_todo_agent_fallback
-  second_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
-  [[ "$first_pid" == "$second_pid" ]]
-  restart_todo_agent_fallback
-  third_pid=$(sed -n '1p' "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid")
-  [[ "$third_pid" != "$first_pid" ]]
-  stop_todo_agent_fallback
-  [[ ! -e "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid" ]]
-)
-
-# Some containers do not reap orphaned children. After bootstrap sends TERM,
-# the old watcher can therefore remain as a zombie: kill -0 still succeeds,
-# but the process no longer owns the dispatcher lock and must not block the
-# replacement watcher from starting.
-(
-  HOME=$FALLBACK_HOME
-  TODO_AGENT_SKIP_CMDLINE_CHECK=1
-  export TODO_AGENT_SKIP_CMDLINE_CHECK
-  zombie_pid=424242
-  kill() {
-    return 0
-  }
-  ps() {
-    printf '%s\n' Z
-  }
-  printf '%s\n' "$zombie_pid" \
-    > "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid"
-  stop_todo_agent_fallback
-  [[ ! -e "$FALLBACK_HOME/.local/state/todoist-codex/watcher.pid" ]]
-)
+bash "$ROOT/tests/test-retired-tools.sh"
+python3 "$ROOT/tests/test-retired-file-transfer.py"
 
 # A fresh macOS checkout can report a tracked script as modified when only its
 # executable bit drifted. Managed pinned checkouts should restore that metadata
@@ -787,11 +702,9 @@ linux_skills_line=$(grep -n '^  install_agent_skills_on_linux$' "$BOOTSTRAP" | c
 continuum_line=$(grep -n '^  install_plugin tmux-continuum ' "$BOOTSTRAP" | cut -d: -f1)
 [[ $macos_skills_line -lt $prerequisites_line ]]
 [[ $linux_skills_line -gt $continuum_line ]]
-termscp_install_line=$(grep -n '^  install_termscp$' "$BOOTSTRAP" | cut -d: -f1)
 fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
 codex_install_line=$(grep -n '^  install_codex$' "$BOOTSTRAP" | cut -d: -f1)
 drawio_config_line=$(grep -n '^  configure_codex_mcp_servers$' "$BOOTSTRAP" | cut -d: -f1)
-[[ $ghostty_config_line -lt $termscp_install_line ]]
 [[ $ghostty_config_line -lt $fresh_install_line ]]
 [[ $codex_install_line -lt $drawio_config_line ]]
 
@@ -802,15 +715,11 @@ CODEX_INSTALLED_FILE="$TEST_HOME/codex-installed"
 CODEX_INSTALL_CALLS_FILE="$TEST_HOME/codex-install-calls"
 CODEX_MCP_CONFIG_FILE="$TEST_HOME/codex-drawio-mcp.json"
 CODEX_MCP_ADD_CALLS_FILE="$TEST_HOME/codex-mcp-add-calls"
-TD_VERSION=
 npm() {
   NPM_ARGS="$*"
   if [[ $1 == --version ]]; then
     printf '%s\n' '11.0.0'
     return 0
-  fi
-  if [[ $* == *'@doist/todoist-cli@'* ]]; then
-    TD_VERSION=$TODOIST_CLI_VERSION
   fi
   if [[ $* == *'@openai/codex@latest'* ]]; then
     touch "$CODEX_INSTALLED_FILE"
@@ -838,9 +747,6 @@ codex() {
     return 1
   fi
 }
-td() {
-  printf '%s\n' "${TD_VERSION:-not-installed}"
-}
 
 HOME=$TEST_HOME install_codex
 [[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @openai/codex@latest" ]]
@@ -867,9 +773,6 @@ HOME=$TEST_HOME configure_codex_mcp_servers
   exit 1
 }
 
-HOME=$TEST_HOME install_todoist_cli
-[[ $NPM_ARGS == "install --global --prefix $TEST_HOME/.local @doist/todoist-cli@$TODOIST_CLI_VERSION" ]]
-todoist_cli_is_locked_version
 
 # Locked Yazi packages install once, then a repeated bootstrap verifies the
 # recorded revision locally without invoking the package installer again.
@@ -895,39 +798,6 @@ HOME=$YAZI_PACKAGE_TEST_HOME install_yazi_packages
   exit 1
 }
 unset -f ya
-
-# termscp runs only on the SSH server/container side of the reverse-SFTP flow.
-# macOS must skip the installer; Linux installs once and then stays idempotent.
-(
-  TERMSCP_CURL_ARGS_FILE="$TEST_HOME/termscp-curl-args"
-  TERMSCP_INSTALLED_FILE="$TEST_HOME/termscp-installed"
-  termscp_is_installed() {
-    [[ -e "$TERMSCP_INSTALLED_FILE" ]]
-  }
-  termscp() {
-    [[ -e "$TERMSCP_INSTALLED_FILE" ]] || return 127
-    printf '%s\n' 'termscp v999.0.0 - test build'
-  }
-  curl() {
-    printf '%s\n' "$*" > "$TERMSCP_CURL_ARGS_FILE"
-    printf 'touch %q\n' "$TERMSCP_INSTALLED_FILE"
-  }
-
-  rm -f "$TERMSCP_CURL_ARGS_FILE" "$TERMSCP_INSTALLED_FILE"
-  PLATFORM_OS=darwin HOME=$TEST_HOME install_termscp
-  [[ ! -e "$TERMSCP_CURL_ARGS_FILE" ]]
-  [[ ! -e "$TERMSCP_INSTALLED_FILE" ]]
-
-  PLATFORM_OS=linux HOME=$TEST_HOME install_termscp
-  grep -Fq -- "--proto =https --tlsv1.2 -sSLf --retry 3 --connect-timeout 15 $TERMSCP_INSTALL_URL" \
-    "$TERMSCP_CURL_ARGS_FILE"
-  [[ -e "$TERMSCP_INSTALLED_FILE" ]]
-
-  rm -f "$TERMSCP_CURL_ARGS_FILE"
-  PLATFORM_OS=linux HOME=$TEST_HOME install_termscp
-  [[ ! -e "$TERMSCP_CURL_ARGS_FILE" ]]
-)
-grep -Fq '| sh -s -- --yes' "$BOOTSTRAP"
 
 mkdir -p \
   "$TEST_HOME/.druk/bin" \
@@ -1001,9 +871,6 @@ grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"' "$B
 grep -Eq '^[[:space:]]*set[[:space:]]+number([[:space:]]|$)' "$ROOT/vim/vimrc"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/termscp-mac" "$HOME/.local/bin/termscp-mac"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/termscp-bridge-relay" "$HOME/.local/bin/termscp-bridge-relay"' "$BOOTSTRAP"
-grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/termscp-key-authorizer" "$HOME/.local/bin/termscp-key-authorizer"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/lazygit-safe" "$HOME/.local/bin/lazygit-safe"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/pre-commit" "$HOME/.local/bin/pre-commit"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"' "$BOOTSTRAP"
@@ -1035,7 +902,6 @@ grep -Fq '  install_glow' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
 grep -Fq '  install_pre_commit' "$BOOTSTRAP"
-grep -Fq '  install_termscp' "$BOOTSTRAP"
 grep -Fq '  uninstall_druk' "$BOOTSTRAP"
 grep -Fq '  install_fresh' "$BOOTSTRAP"
 grep -Fq '  configure_git_identity' "$BOOTSTRAP"
@@ -1049,15 +915,11 @@ python3 "$ROOT/tests/test-tmux-shortcuts.py"
 python3 "$ROOT/tests/test-tmux-input-source.py"
 bash -n "$ROOT/bin/remote-dev-entry"
 bash -n "$ROOT/bin/connect-remote-dev"
-bash -n "$TERMSCP_LAUNCHER"
-python3 "$ROOT/bin/termscp-bridge-relay" --help >/dev/null
-python3 "$TERMSCP_AUTHORIZER" --help >/dev/null
 bash -n "$ROOT/bin/ghostty-dev"
 bash -n "$ROOT/bin/ghostty-tab-command"
 bash -n "$ROOT/bin/pre-commit"
 sh -n "$ROOT/bin/lazygit-safe"
 bash "$ROOT/tests/test-ghostty-dev.sh"
-bash "$ROOT/tests/test-termscp-mac.sh"
 bash "$AGENT_SKILLS_ROOT/tests/test-sync.sh"
 
 # Git identity setup is machine-local: preserve existing values and never
