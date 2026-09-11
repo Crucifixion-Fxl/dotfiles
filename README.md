@@ -83,6 +83,9 @@ Codex Agent，并在用户审核完成后清理隔离 worktree、分支和运行
 
 ## 提供的行为
 
+- `Prefix` 为 `Ctrl+b`。`Prefix + c` 新建 window，`Prefix + s` 打开 session
+  tree；按完前缀后仍按住 Ctrl 再按 c/s 也可以，无需先点击 pane。
+  状态栏出现 `[Ctrl-b]` 表示前缀已收到，正在等待下一键。
 - `Prefix + t`：在当前目录打开 zsh popup。
 - `Prefix + g`：在当前目录打开 lazygit popup。
 - `Prefix + G`：在当前目录创建 lazygit window，退出后自动关闭。
