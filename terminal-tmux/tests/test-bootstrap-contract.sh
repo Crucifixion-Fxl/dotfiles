@@ -176,6 +176,29 @@ TEST_PLUGIN_COMMIT=0123456789abcdef
 # shellcheck source=../bootstrap.sh
 source "$BOOTSTRAP"
 
+# A moved checkout leaves ~/.zshrc pointing at a missing old directory.
+# Exercise main through shell setup, stopping before any installer runs.
+broken_link_home="$TEST_HOME/broken-link-home"
+moved_checkout="$TEST_HOME/moved-checkout"
+mkdir -p "$broken_link_home" "$moved_checkout"
+cp -R "$ROOT/shell" "$ROOT/tmux" "$ROOT/bin" "$moved_checkout/"
+ln -s "$TEST_HOME/removed-checkout/shell/zshrc" "$broken_link_home/.zshrc"
+env HOME="$broken_link_home" bash -c '
+  source "$1"
+  DOTFILES_DIR=$2
+  detect_platform() { PLATFORM_OS=linux; }
+  tmux() { return 1; }
+  remove_legacy_iris() { exit 0; }
+  main
+' bootstrap-link-test "$BOOTSTRAP" "$moved_checkout"
+[[ $(readlink "$broken_link_home/.zshrc") == "$moved_checkout/shell/zshrc" ]]
+[[ -f "$broken_link_home/.zshrc" ]]
+broken_link_backups=("$broken_link_home"/.zshrc.backup.*)
+[[ ${#broken_link_backups[@]} -eq 1 ]]
+[[ $(readlink "${broken_link_backups[0]}") == "$TEST_HOME/removed-checkout/shell/zshrc" ]]
+grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$broken_link_home/.zshrc"
+grep -Fqx 'export LANG=zh_CN.UTF-8' "$broken_link_home/.zshrc"
+
 # macOS syncs before the long download chain; Linux keeps the original late
 # ordering. The platform wrappers must call the shared installer exactly once.
 (

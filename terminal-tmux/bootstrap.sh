@@ -1751,11 +1751,13 @@ main() {
   fi
 
   mkdir -p "$HOME/.local/bin"
+  # 仓库移动后旧 ~/.zshrc 可能成为断链，必须先备份并重建链接，
+  # 再 touch/写入环境配置，否则会在修复链接之前退出。
+  install_shell_links
   # PATH/locale 必须在可能失败的下载之前持久化。bootstrap 子进程无法改变
   # 已打开的父 shell，但后续新 shell 会立即获得 ~/.local/bin 和正确 locale。
   ensure_shell_path
   ensure_shell_locale
-  install_shell_links
   remove_legacy_iris
   install_agent_skills_on_macos
   install_prerequisites
