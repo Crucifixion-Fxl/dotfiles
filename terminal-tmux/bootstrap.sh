@@ -1129,6 +1129,8 @@ install_ghostty_config() {
   bash -n "$wrapper"
   backup_and_link "$config" "$destination"
   backup_and_link "$launcher" "$launcher_destination"
+  # Karabiner is optional. Merge only our rule when a user profile already exists.
+  python3 "$DOTFILES_DIR/bin/install-tmux-input-source"
 }
 
 node_asset() {

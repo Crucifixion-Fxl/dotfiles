@@ -1,0 +1,59 @@
+#!/usr/bin/env python3
+"""Merge the managed Ghostty input-source rule into the active Karabiner profile."""
+
+import argparse
+import json
+import os
+from pathlib import Path
+import shutil
+import tempfile
+import time
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=Path.home() / ".config/karabiner/karabiner.json")
+    args = parser.parse_args()
+    config = args.config.resolve()
+    if not config.exists():
+        print("Karabiner is not configured; skipping tmux input-source rule")
+        return
+    source = Path(__file__).resolve().parents[1] / "karabiner/tmux-input-source.json"
+    rule = json.loads(source.read_text())["rules"][0]
+    original = config.read_bytes()
+    data = json.loads(original)
+    selected = [profile for profile in data.get("profiles", []) if profile.get("selected")]
+    if len(selected) != 1:
+        raise SystemExit("Expected one selected Karabiner profile; configuration left unchanged")
+    modifications = selected[0].setdefault("complex_modifications", {})
+    rules = modifications.setdefault("rules", [])
+    # Only replace our named rule. Keep all user rules and inactive profiles.
+    matching = [index for index, existing in enumerate(rules)
+                if existing.get("description") == rule["description"]]
+    if matching:
+        if len(matching) != 1:
+            raise SystemExit("Duplicate managed rules; configuration left unchanged")
+        if rules[matching[0]] == rule:
+            print("Karabiner tmux input-source rule is already current")
+            return
+        rules[matching[0]] = rule
+    else:
+        rules.insert(0, rule)
+    updated = (json.dumps(data, ensure_ascii=False, indent=4) + "\n").encode()
+    descriptor, temporary = tempfile.mkstemp(prefix=".tmux-input-source-", dir=config.parent)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(updated)
+        shutil.copymode(config, temporary)
+        if config.read_bytes() != original:
+            raise SystemExit("Karabiner configuration changed during update; retry")
+        backup = config.with_name(config.name + f".backup.{time.time_ns()}")
+        shutil.copy2(config, backup)
+        os.replace(temporary, config)
+        print(f"Enabled tmux input-source rule in {selected[0]['name']}; backup: {backup}")
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+if __name__ == "__main__":
+    main()
