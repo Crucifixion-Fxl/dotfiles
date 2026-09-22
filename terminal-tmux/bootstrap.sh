@@ -1402,34 +1402,6 @@ remind_gitlab_auth() {
   printf '%s\n' 'Paste a GitLab token with api scope only into the interactive prompt; do not put it in shell history.'
 }
 
-remind_ssh_key() {
-  local candidate public_key= git_email
-  for candidate in \
-    "$HOME/.ssh/id_ed25519.pub" \
-    "$HOME/.ssh/id_ecdsa.pub" \
-    "$HOME/.ssh/id_rsa.pub"; do
-    if [[ -f "$candidate" ]]; then
-      public_key=$candidate
-      break
-    fi
-  done
-
-  log "SSH key reminder"
-  if [[ -n "$public_key" ]]; then
-    printf 'Existing public key: %s\n' "$public_key"
-    printf 'Display it with: cat "%s"\n' "$public_key"
-  else
-    git_email=$(git config --global --get user.email 2>/dev/null || true)
-    if [[ -n "$git_email" ]]; then
-      printf 'Generate a key with: ssh-keygen -t ed25519 -C "%s"\n' "$git_email"
-    else
-      printf '%s\n' 'Generate a key with: ssh-keygen -t ed25519 -C "you@example.com"'
-    fi
-  fi
-  printf '%s\n' 'Add the public key to the remote repository account before using SSH Git URLs.'
-  printf '%s\n' 'For this GitHub repository, verify access with: ssh -T git@github.com'
-}
-
 # --- 安装后合同验证 ---------------------------------------------------------
 validate() {
   local prefix_bindings
@@ -1688,7 +1660,6 @@ main() {
   printf '%s\n' 'If Ghostty was already open, reload with Cmd+Shift+, or quit and reopen it'
   printf '%s\n' 'Choose an SSH host and open the remote menu in Ghostty: ghostty-dev'
   remind_gitlab_auth
-  remind_ssh_key
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
