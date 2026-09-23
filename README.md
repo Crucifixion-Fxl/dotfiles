@@ -114,8 +114,15 @@ bash ~/.dotfiles/terminal-tmux/bootstrap.sh --check
 bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only
 ```
 
-Skills 同步至 `~/.agents/skills`，更新后开启新的 Agent 会话。
-Codex CLI 在每次完整更新时跟随最新版。
+Skills 由 `skills-manager-cli` 从中央 Git 技能库拉取，并部署到当前机器上已安装且启用的 Agent。dotfiles 已写入共享的 Skills Manager 备份仓库，新机器首次同步直接运行：
+
+```sh
+bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only
+```
+
+也可以通过 `SKILLS_MANAGER_GIT_REMOTE` 临时覆盖默认远端。以后直接运行 `bash ~/.dotfiles/terminal-tmux/bootstrap.sh --skills-only` 即可拉取并重新部署 Preset。更新后开启新的 Agent 会话。Codex CLI 在每次完整更新时跟随最新版。
+
+Skills Manager CLI 会保留在 `~/.local/bin/skills-manager-cli`；带界面的机器如果已安装 Skills Manager，则优先使用它发布到 `~/.skills-manager/bin/` 的同版本 CLI。
 
 [安装脚本](terminal-tmux/bootstrap.sh) · [版本锁定](terminal-tmux/versions.lock) · [回归检查](terminal-tmux/tests)
 

@@ -44,12 +44,13 @@ fail() {
 }
 
 install_agent_skills() {
+  install_skills_manager_cli
   [[ -x "$AGENT_SKILLS_SYNC" ]] || fail "Agent Skills sync script is missing or not executable"
   bash "$AGENT_SKILLS_SYNC" sync
 }
 
-# A fresh Mac performs many Homebrew and Release downloads. Sync Skills before
-# that network chain so an unrelated tool failure cannot prevent their setup.
+# Skills are synchronized after the Agent CLI and prerequisites are installed,
+# so the manager can discover the real Agent directories on a fresh machine.
 install_agent_skills_on_macos() {
   [[ "$PLATFORM_OS" == darwin ]] || return 0
   install_agent_skills
@@ -84,6 +85,62 @@ verify_sha256() {
 download() {
   local url=$1 destination=$2
   curl -fL --retry 3 --connect-timeout 15 "$url" -o "$destination"
+}
+
+skills_manager_cli_path() {
+  local bundled="$HOME/.skills-manager/bin/skills-manager-cli"
+  local path_cli configured_cli=${SKILLS_MANAGER_CLI:-}
+
+  if [[ -n "$configured_cli" ]]; then
+    [[ -x "$configured_cli" ]] || fail "SKILLS_MANAGER_CLI is not executable: $configured_cli"
+    printf '%s\n' "$configured_cli"
+    return 0
+  fi
+
+  if [[ -s "$HOME/.skills-manager/bin/.version" && -x "$bundled" ]]; then
+    printf '%s\n' "$bundled"
+    return 0
+  fi
+  if [[ -e "$bundled" || -s "$HOME/.skills-manager/bin/.version" ]]; then
+    fail "Skills Manager CLI bridge is incomplete; open Skills Manager once to republish it"
+  fi
+  path_cli=$(command -v skills-manager-cli 2>/dev/null || true)
+  [[ -n "$path_cli" && -x "$path_cli" ]] || return 1
+  printf '%s\n' "$path_cli"
+}
+
+skills_manager_cli_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64) ASSET="skills-manager-cli-macOS-arm64"; ASSET_SHA256=$SKILLS_MANAGER_CLI_SHA256_MACOS_ARM64 ;;
+    darwin/x86_64) ASSET="skills-manager-cli-macOS-x64"; ASSET_SHA256=$SKILLS_MANAGER_CLI_SHA256_MACOS_X64 ;;
+    linux/arm64) ASSET="skills-manager-cli-Linux-arm64"; ASSET_SHA256=$SKILLS_MANAGER_CLI_SHA256_LINUX_ARM64 ;;
+    linux/x86_64) ASSET="skills-manager-cli-Linux-x64"; ASSET_SHA256=$SKILLS_MANAGER_CLI_SHA256_LINUX_X64 ;;
+    *) fail "Skills Manager CLI has no release asset for $PLATFORM_OS/$PLATFORM_ARCH" ;;
+  esac
+}
+
+install_skills_manager_cli() {
+  local existing work archive destination
+  if existing=$(skills_manager_cli_path 2>/dev/null); then
+    "$existing" --version >/dev/null 2>&1 || fail "installed Skills Manager CLI does not run: $existing"
+    return 0
+  fi
+
+  skills_manager_cli_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  destination="$HOME/.local/bin/skills-manager-cli"
+  trap 'rm -rf "$work"' RETURN
+  log "Installing Skills Manager CLI $SKILLS_MANAGER_CLI_VERSION into $HOME/.local/bin"
+  download "https://github.com/xingkongliang/skills-manager/releases/download/v$SKILLS_MANAGER_CLI_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  mkdir -p "$HOME/.local/bin"
+  install -m 0755 "$archive" "$destination"
+  hash -r
+  trap - RETURN
+  rm -rf "$work"
+  "$destination" --version | grep -Fq "skills-manager-cli $SKILLS_MANAGER_CLI_VERSION" ||
+    fail "Skills Manager CLI installation verification failed"
 }
 
 run_as_root() {
@@ -1584,6 +1641,8 @@ main() {
   if (( skills_only == 1 )); then
     command -v bash >/dev/null 2>&1 || fail "bash is required for --skills-only"
     command -v git >/dev/null 2>&1 || fail "git is required for --skills-only"
+    detect_platform
+    mkdir -p "$HOME/.local/bin"
     if (( check_only == 1 )); then
       check_agent_skills
     else
@@ -1609,7 +1668,6 @@ main() {
   remove_legacy_iris
   remove_legacy_todo_bridge
   remove_legacy_todoist
-  install_agent_skills_on_macos
   install_prerequisites
   python3 "$DOTFILES_DIR/migrations/retire-file-transfer.py"
   configure_login_shell
@@ -1634,6 +1692,7 @@ main() {
   install_node_runtime
   install_codex
   configure_codex_mcp_servers
+  install_agent_skills_on_macos
   uninstall_druk
   install_fresh
   install_oh_my_zsh

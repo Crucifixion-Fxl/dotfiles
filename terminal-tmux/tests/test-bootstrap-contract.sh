@@ -71,12 +71,15 @@ grep -q '^install_node_runtime()' "$BOOTSTRAP"
 grep -q '^remove_legacy_todo_bridge()' "$BOOTSTRAP"
 grep -q '^configure_git_identity()' "$BOOTSTRAP"
 grep -q '^install_agent_skills()' "$BOOTSTRAP"
+grep -q '^install_skills_manager_cli()' "$BOOTSTRAP"
 grep -q '^check_agent_skills()' "$BOOTSTRAP"
 grep -q '^install_agent_skills_on_macos()' "$BOOTSTRAP"
 grep -q '^install_agent_skills_on_linux()' "$BOOTSTRAP"
 grep -Fq 'install_agent_skills' "$BOOTSTRAP"
 grep -Fq 'check_agent_skills' "$BOOTSTRAP"
 grep -Fq -- '--skills-only' "$BOOTSTRAP"
+grep -q '^SKILLS_MANAGER_CLI_VERSION=' "$VERSIONS"
+grep -q 'skills-manager-cli' "$BOOTSTRAP"
 grep -Fq 'Configure the missing Git identity now? [y/N]:' "$BOOTSTRAP"
 grep -Fq 'bootstrap will ask again next time' "$BOOTSTRAP"
 grep -Eq '^NODE_VERSION=24\.[0-9]+\.[0-9]+$' "$VERSIONS"
@@ -169,8 +172,8 @@ broken_link_backups=("$broken_link_home"/.zshrc.backup.*)
 grep -Fqx 'export PATH="$HOME/.local/bin:$PATH"' "$broken_link_home/.zshrc"
 grep -Fqx 'export LANG=zh_CN.UTF-8' "$broken_link_home/.zshrc"
 
-# macOS syncs before the long download chain; Linux keeps the original late
-# ordering. The platform wrappers must call the shared installer exactly once.
+# Both platforms sync after the prerequisites and Agent installation. The
+# platform wrappers must call the shared installer exactly once.
 (
   skills_calls=0
   install_agent_skills() { skills_calls=$((skills_calls + 1)); }
@@ -699,10 +702,10 @@ macos_skills_line=$(grep -n '^  install_agent_skills_on_macos$' "$BOOTSTRAP" | c
 prerequisites_line=$(grep -n '^  install_prerequisites$' "$BOOTSTRAP" | cut -d: -f1)
 linux_skills_line=$(grep -n '^  install_agent_skills_on_linux$' "$BOOTSTRAP" | cut -d: -f1)
 continuum_line=$(grep -n '^  install_plugin tmux-continuum ' "$BOOTSTRAP" | cut -d: -f1)
-[[ $macos_skills_line -lt $prerequisites_line ]]
+codex_install_line=$(grep -n '^  install_codex$' "$BOOTSTRAP" | cut -d: -f1)
+[[ $macos_skills_line -gt $codex_install_line ]]
 [[ $linux_skills_line -gt $continuum_line ]]
 fresh_install_line=$(grep -n '^  install_fresh$' "$BOOTSTRAP" | cut -d: -f1)
-codex_install_line=$(grep -n '^  install_codex$' "$BOOTSTRAP" | cut -d: -f1)
 drawio_config_line=$(grep -n '^  configure_codex_mcp_servers$' "$BOOTSTRAP" | cut -d: -f1)
 [[ $ghostty_config_line -lt $fresh_install_line ]]
 [[ $codex_install_line -lt $drawio_config_line ]]

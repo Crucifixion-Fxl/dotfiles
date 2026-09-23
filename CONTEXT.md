@@ -1,73 +1,60 @@
 # Agent Skills Management
 
-本仓库记录个人开发环境所需 Agent Skills 的来源，并在新机器或服务器上恢复这些 Skills。
+本仓库使用 [Skills Manager](https://github.com/xingkongliang/skills-manager)
+统一管理 Agent Skills。`agent-skills/sync.sh` 是 bootstrap 保留的稳定入口，
+但实际同步、Preset 管理和 Agent 部署全部交给 `skills-manager-cli`。
 
 ## Language
 
-**External Skill Source**:
-由独立 Git 仓库维护、安装时始终获取其最新可用版本的 Skill 唯一来源；仓库内容构成该来源的完整 Skills 集合。
-_Avoid_: Pinned skill, vendored skill
+**Skills Manager CLI**:
+无界面机器使用的命令行程序。带界面的机器优先使用应用发布到
+`~/.skills-manager/bin/skills-manager-cli` 的版本；服务器使用同版本的独立二进制，
+通常放在 `~/.local/bin/skills-manager-cli`。
+_Avoid_: 直接把 Skill 复制到某个 Agent 目录并绕过中央库
 
-**Source Platform Scope**:
-External Skill Source 可选的目标平台集合，由 `SOURCE_PLATFORMS` 声明为 `darwin`、`linux` 或二者；未声明时默认同时启用。禁用平台既不拉取该来源，也不接受对应 Installed Skills。
-_Avoid_: Runtime cleanup rule, hard-coded source exception
+**Central Skill Library**:
+Skills Manager 在 `~/.skills-manager/skills` 中维护的中央技能库。技能的来源、标签、
+Preset 成员关系和部署状态由 Skills Manager 的数据库与库内元数据管理。
+_Avoid_: dotfiles 自己整体替换 Agent 的 Skill 目录
 
-**Temporary Source Clone**:
-Skill Sync 为 External Skill Source 创建的临时仓库副本；它跟随远程默认分支，并在本次同步结束后删除，不作为机器持久状态。
-_Avoid_: Persistent cache, Git submodule, installation directory, development clone
+**Skills Manager Backup Repository**:
+由 GUI 机器配置的 Git 远端。当前默认值写在 `agent-skills/sync.sh` 中，服务器首次
+运行时直接克隆，之后使用已保存的 remote 执行 `git pull`；也可通过
+`SKILLS_MANAGER_GIT_REMOTE` 临时覆盖。
+凭据只存在机器的 SSH agent、credential helper 或系统密钥存储中。
+_Avoid_: 将 Token、PAT 或完整凭据写入 dotfiles
 
-**Required Source**:
-必须成功获取才能完成 Skill Sync 的 External Skill Source；失败时保留上一次完整安装结果并令同步失败。
-_Avoid_: Optional source, best-effort source
+**Preset**:
+Skills Manager 中的命名技能集合。同步时逐个调用
+`skills-manager-cli presets deploy`，把每个 Preset 部署到当前机器已安装且启用的
+coding Agent；Preset 成员变化本身不会自动改写 Agent 文件。
+_Avoid_: 依赖已废弃的单一 active preset exclusive sync
 
-**Optional Source**:
-无法获取最新内容时允许 Skill Sync 警告后继续的 External Skill Source；已有对应 Installed Skills 时保留上次版本，新机器没有旧安装时跳过。
-_Avoid_: Required source
-
-**Whole-source Installation**:
-一个 External Skill Source 由其 Source Installer 定义完整的期望安装集合；配置范围内上游以后新增的 Skills 会自动纳入。Matt 来源的范围是 `skills/engineering/` 全部 Skills 以及 6 个明确的 productivity 依赖，而不是整个仓库。
-_Avoid_: Per-machine selection, ad hoc installation
-
-**Source Prefix**:
-由唯一的 Source Name 直接确定的命名空间；安装时将它添加到每个上游 Skill 的安装目录、frontmatter `name` 和 UI display name，但不改写 Skill 正文中的命令或名称引用。上游名称已经带有相同前缀时不重复添加。
-_Avoid_: Automatic prefix, source precedence
-
-**Source Name**:
-External Skill Source 在 dotfiles 中的目录名，同时用作其 Source Checkout 名称和 Source Prefix，例如 `company` 或 `matt`。
-_Avoid_: Source ID, separately configured prefix
-
-**Native Skill**:
-源文件直接由本 dotfiles 仓库维护，并通过暂存与复制流程安装的 Skill。
-_Avoid_: External skill, linked skill
-
-**Source Installer**:
-由本 dotfiles 仓库维护、与一个 External Skill Source 对应的确定性 Bash 脚本；它通过统一的 `sync` 和 `check` 接口接收来源路径、安装目标与前缀，并负责发现、加前缀和安装该来源配置范围内的全部 Skills。
-_Avoid_: POSIX sh script, discovery rule, upstream installer, generic installer
-
-**Installed Skill**:
-完成暂存、修正与验证后，由 bootstrap 复制到 `~/.agents/skills`、可在当前机器上被兼容工具发现的 Skill。
-_Avoid_: Source skill, managed source
-
-**Staged Skill**:
-位于扁平暂存根目录的直接子目录中、正在等待完成 identity 修正、嵌套路径调整和验证的自包含 Skill；上游的嵌套父子 Skills 必须拆成平级 Staged Skills。它不得含有软链接或嵌套 `SKILL.md`，只有完整通过后才能成为 Installed Skill。
-_Avoid_: Source checkout, installed skill, symlink
-
-**Installed Projection**:
-Source Installer 从 External Skill Source 自动生成的安装副本；它为安装目录、frontmatter `name` 和 UI display name 添加 Source Prefix，并只为嵌套 Skill 扁平化调整失效的相对文件路径，不改写普通正文或语义引用，也不修改上游仓库。
-_Avoid_: Vendored copy, source checkout, renamed symlink
-
-**Managed Skill**:
-由任一 External Skill Source 或 `native/` 提供的 Installed Skill；Skill Installation Directory 中不存在独立的未受管类别。
-_Avoid_: State-file ownership, manually installed skill
-
-**Skill Installation Directory**:
-当前用户所有 Skills 的唯一安装目标，即 `~/.agents/skills`；它整体属于 dotfiles，可由完整暂存结果替换。
-_Avoid_: `~/.codex/skills`, per-agent skill directory
+**Global Agent Deployment**:
+Skills Manager 根据 `agents list` 为 Codex、Claude Code、Cursor 等 Agent 管理的真实
+技能目录，例如 `~/.codex/skills`、`~/.claude/skills`。本仓库不再把
+`~/.agents/skills` 当作唯一安装目标，也不清理其他 Agent 的目录。
+_Avoid_: per-agent 目录外的整体安装投影
 
 **Skill Sync**:
-拉取所有 External Skill Sources 的最新版本，由 Source Installers 与 `native/` 共同生成完整暂存结果，验证后整体替换 Skill Installation Directory；正常 bootstrap 自动执行，也可独立运行。
-_Avoid_: Version restore, check mode
+`agent-skills/sync.sh sync` 先确保中央 Git 仓库存在，拉取最新内容，再把全部 Preset
+部署到已安装且启用的 Agent。首次在新机器运行时使用脚本中的默认 remote，也可通过
+`SKILLS_MANAGER_GIT_REMOTE` 覆盖。
+_Avoid_: 从 `agent-skills/sources/` 临时克隆多个上游并整体替换目录
 
 **Skill Check**:
-只读验证当前 Skills 的配置、脚本、结构与名称，不联网、不更新内容，也不判断远程仓库是否已有更新。
-_Avoid_: Skill sync, repair
+`agent-skills/sync.sh check` 或 `bootstrap.sh --skills-only --check` 的只读检查。它
+验证中央库存在、库中有 Skill、并且至少有一个已安装且启用的 Agent；它不拉取、不更新、
+不删除文件。
+
+**Upstream Skill Update**:
+对中央库中带 Git 来源的 Skill 执行 `skills-manager-cli skills check --all` 与
+`skills-manager-cli skills update --all`。这是上游 Skill 更新，不等同于把中央库部署到
+本机 Agent。
+
+## Bootstrap contract
+
+- `bash terminal-tmux/bootstrap.sh --skills-only`：安装或复用 CLI，拉取中央库并部署 Preset。
+- `bash terminal-tmux/bootstrap.sh --skills-only --check`：只读验证 Skills Manager 状态。
+- 完整 bootstrap 在 CLI 已安装后调用同一同步入口；它不再执行旧的 source installer。
+- `agent-skills/sources/` 和旧的 `lib.sh` 仅保留作历史迁移参考，不属于运行时同步路径。
