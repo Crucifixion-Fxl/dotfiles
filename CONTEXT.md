@@ -26,8 +26,8 @@ _Avoid_: 将 Token、PAT 或完整凭据写入 dotfiles
 
 **Preset**:
 Skills Manager 中的命名技能集合。同步时逐个调用
-`skills-manager-cli presets deploy`，把每个 Preset 部署到当前机器已安装且启用的
-coding Agent；Preset 成员变化本身不会自动改写 Agent 文件。
+`skills-manager-cli skills sync --preset`，按 Preset 中记录的 Agent 映射同步到当前机器；
+Preset 成员变化本身不会自动改写 Agent 文件。
 _Avoid_: 依赖已废弃的单一 active preset exclusive sync
 
 **Global Agent Deployment**:

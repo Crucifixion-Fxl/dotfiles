@@ -8,7 +8,7 @@ set -euo pipefail
 # SKILLS_MANAGER_GIT_REMOTE only when overriding the default remote; the remote
 # is persisted in the manager repository after that.
 
-DEFAULT_SKILLS_MANAGER_GIT_REMOTE='https://github.com/Crucifixion-Fxl/skills-manager-backup.git'
+DEFAULT_SKILLS_MANAGER_GIT_REMOTE='git@github.com:Crucifixion-Fxl/skills-manager-backup.git'
 
 log() {
   printf 'agent-skills: %s\n' "$*"

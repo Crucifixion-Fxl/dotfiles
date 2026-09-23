@@ -95,6 +95,6 @@ bash "$ROOT/sync.sh" check
 unset SKILLS_MANAGER_GIT_REMOTE
 rm -f "$FAKE_CLI_REPO_READY"
 bash "$ROOT/sync.sh" sync
-grep -Fqx 'git clone https://github.com/Crucifixion-Fxl/skills-manager-backup.git' "$LOG_FILE"
+grep -Fqx 'git clone git@github.com:Crucifixion-Fxl/skills-manager-backup.git' "$LOG_FILE"
 
 printf '%s\n' 'skills-manager sync tests passed'

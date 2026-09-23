@@ -18,9 +18,13 @@ Set `SKILLS_MANAGER_GIT_REMOTE` only when you intentionally need to override
 that default remote.
 
 The CLI clones the repository into `~/.skills-manager`, pulls it on later runs,
-and deploys every Preset to installed and enabled coding Agents. Git credentials
+and syncs every Preset according to its Agent mapping. Git credentials
 remain in the machine's SSH agent, credential helper, or token configuration;
 they are never stored in this repository.
+
+The default remote uses GitHub SSH authentication. On a headless machine, add
+its SSH key as a repository deploy key before the first sync. Set
+`SKILLS_MANAGER_GIT_REMOTE` when using a different remote or HTTPS credentials.
 
 ## Migrating an existing legacy installation
 
