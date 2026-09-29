@@ -62,6 +62,8 @@ grep -q '^remove_legacy_iris()' "$BOOTSTRAP"
 grep -q '^install_shell_links()' "$BOOTSTRAP"
 grep -q '^install_glow()' "$BOOTSTRAP"
 grep -q '^install_yazi()' "$BOOTSTRAP"
+grep -q '^install_neovim()' "$BOOTSTRAP"
+grep -q '^neovim_asset()' "$BOOTSTRAP"
 grep -q '^install_yazi_packages()' "$BOOTSTRAP"
 grep -q '^install_pre_commit()' "$BOOTSTRAP"
 grep -q '^uninstall_druk()' "$BOOTSTRAP"
@@ -104,6 +106,7 @@ prerequisite_function=$(sed -n '/^install_prerequisites()/,/^}/p' "$BOOTSTRAP")
 [[ $(grep -Eoc '(^|[[:space:]])ruby($|[[:space:]])' <<< "$prerequisite_function") -eq 2 ]]
 grep -Fq 'command -v btop >/dev/null 2>&1 || fail "btop is required"' "$BOOTSTRAP"
 grep -Fq 'colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"' "$BOOTSTRAP"
+grep -Fq 'neovim_is_locked_version || fail "expected Neovim $NEOVIM_VERSION"' "$BOOTSTRAP"
 grep -Fq "alias ls='colorls --sd'" "$ZSH_CONFIG"
 grep -Fq "alias ll='colorls -lA --sd'" "$ZSH_CONFIG"
 grep -Fq "alias la='colorls -A --sd'" "$ZSH_CONFIG"
@@ -507,6 +510,46 @@ ya() {
 }
 yazi_is_locked_version
 
+nvim() {
+  printf 'NVIM v%s\n' "$NEOVIM_VERSION"
+}
+neovim_is_locked_version
+unset -f nvim
+
+# Neovim follows the node-runtime layout: a versioned install under
+# ~/.local/share plus a bin symlink in ~/.local/bin. The release tarball's
+# top-level directory must match the asset name; a second run must not
+# download anything once the locked version is present.
+NEOVIM_TEST_ROOT="$TEST_HOME/neovim-fixture"
+mkdir -p "$NEOVIM_TEST_ROOT/nvim-macos-arm64/bin"
+cat > "$NEOVIM_TEST_ROOT/nvim-macos-arm64/bin/nvim" <<SH
+#!/usr/bin/env bash
+printf 'NVIM v%s\n' '$NEOVIM_VERSION'
+SH
+chmod +x "$NEOVIM_TEST_ROOT/nvim-macos-arm64/bin/nvim"
+tar -czf "$NEOVIM_TEST_ROOT/nvim-macos-arm64.tar.gz" -C "$NEOVIM_TEST_ROOT" nvim-macos-arm64
+ORIGINAL_NEOVIM_SHA256_MACOS_ARM64=$NEOVIM_SHA256_MACOS_ARM64
+NEOVIM_SHA256_MACOS_ARM64=$(sha256_file "$NEOVIM_TEST_ROOT/nvim-macos-arm64.tar.gz")
+NEOVIM_DOWNLOAD_MARKER="$NEOVIM_TEST_ROOT/downloaded"
+download() {
+  touch "$NEOVIM_DOWNLOAD_MARKER"
+  cp "$NEOVIM_TEST_ROOT/nvim-macos-arm64.tar.gz" "$2"
+}
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 \
+  PATH="$TEST_HOME/.local/bin:$PATH" HOME=$TEST_HOME install_neovim
+[[ -e "$NEOVIM_DOWNLOAD_MARKER" ]]
+[[ -x "$TEST_HOME/.local/share/nvim-v$NEOVIM_VERSION/bin/nvim" ]]
+[[ $(readlink "$TEST_HOME/.local/bin/nvim") == "$TEST_HOME/.local/share/nvim-v$NEOVIM_VERSION/bin/nvim" ]]
+PATH="$TEST_HOME/.local/bin:$PATH" HOME=$TEST_HOME neovim_is_locked_version
+rm -f "$NEOVIM_DOWNLOAD_MARKER"
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 \
+  PATH="$TEST_HOME/.local/bin:$PATH" HOME=$TEST_HOME install_neovim
+[[ ! -e "$NEOVIM_DOWNLOAD_MARKER" ]]
+unset -f download
+unset NEOVIM_TEST_ROOT NEOVIM_DOWNLOAD_MARKER
+NEOVIM_SHA256_MACOS_ARM64=$ORIGINAL_NEOVIM_SHA256_MACOS_ARM64
+unset ORIGINAL_NEOVIM_SHA256_MACOS_ARM64
+
 # pre-commit uses the same checked zipapp on macOS and Linux. Its launcher
 # selects Python 3.10+ explicitly, which avoids an older /usr/bin/python3 on
 # macOS shadowing Homebrew Python.
@@ -603,6 +646,11 @@ for version_variable in \
   YAZI_SHA256_DARWIN_X86_64 \
   YAZI_SHA256_LINUX_ARM64 \
   YAZI_SHA256_LINUX_X86_64 \
+  NEOVIM_VERSION \
+  NEOVIM_SHA256_MACOS_ARM64 \
+  NEOVIM_SHA256_MACOS_X86_64 \
+  NEOVIM_SHA256_LINUX_ARM64 \
+  NEOVIM_SHA256_LINUX_X86_64 \
   PRE_COMMIT_VERSION \
   PRE_COMMIT_SHA256; do
   grep -q "^${version_variable}=" "$ROOT/versions.lock"
@@ -652,6 +700,19 @@ PLATFORM_OS=linux PLATFORM_ARCH=arm64 yazi_asset
 [[ $ASSET == yazi-aarch64-unknown-linux-gnu.zip ]]
 PLATFORM_OS=linux PLATFORM_ARCH=x86_64 yazi_asset
 [[ $ASSET == yazi-x86_64-unknown-linux-gnu.zip ]]
+
+PLATFORM_OS=darwin PLATFORM_ARCH=arm64 neovim_asset
+[[ $ASSET == nvim-macos-arm64.tar.gz ]]
+[[ $ASSET_SHA256 == "$NEOVIM_SHA256_MACOS_ARM64" ]]
+PLATFORM_OS=darwin PLATFORM_ARCH=x86_64 neovim_asset
+[[ $ASSET == nvim-macos-x86_64.tar.gz ]]
+[[ $ASSET_SHA256 == "$NEOVIM_SHA256_MACOS_X86_64" ]]
+PLATFORM_OS=linux PLATFORM_ARCH=arm64 neovim_asset
+[[ $ASSET == nvim-linux-arm64.tar.gz ]]
+[[ $ASSET_SHA256 == "$NEOVIM_SHA256_LINUX_ARM64" ]]
+PLATFORM_OS=linux PLATFORM_ARCH=x86_64 neovim_asset
+[[ $ASSET == nvim-linux-x86_64.tar.gz ]]
+[[ $ASSET_SHA256 == "$NEOVIM_SHA256_LINUX_X86_64" ]]
 
 # PATH setup must happen before fallible installation steps and cover both
 # supported interactive shells. Repeated runs must not duplicate entries.
@@ -869,6 +930,14 @@ fi
 
 grep -Fq 'backup_and_link "$DOTFILES_DIR/shell/zshrc" "$HOME/.zshrc"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"' "$BOOTSTRAP"
+grep -Fq 'backup_and_link "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"' "$BOOTSTRAP"
+[[ -s "$ROOT/nvim/init.lua" ]]
+[[ -s "$ROOT/nvim/lua/config/lazy.lua" ]]
+grep -Fq 'vim.opt.shell = "zsh"' "$ROOT/nvim/lua/config/options.lua"
+if grep -Fq 'vim.opt.shell = "fish"' "$ROOT/nvim/lua/config/options.lua"; then
+  printf '%s\n' 'nvim config must target the managed zsh shell, not fish' >&2
+  exit 1
+fi
 grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"' "$BOOTSTRAP"
 grep -Eq '^[[:space:]]*set[[:space:]]+number([[:space:]]|$)' "$ROOT/vim/vimrc"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
@@ -901,6 +970,7 @@ grep -Fq '  install_fzf' "$BOOTSTRAP"
 grep -Fq '  install_zoxide' "$BOOTSTRAP"
 grep -Fq '  remove_legacy_iris' "$BOOTSTRAP"
 grep -Fq '  install_glow' "$BOOTSTRAP"
+grep -Fq '  install_neovim' "$BOOTSTRAP"
 grep -Fq '  install_yazi' "$BOOTSTRAP"
 grep -Fq '  install_yazi_packages' "$BOOTSTRAP"
 grep -Fq '  install_pre_commit' "$BOOTSTRAP"

@@ -192,6 +192,11 @@ yazi_is_locked_version() {
     [[ $(ya --version 2>/dev/null | awk '{print $1, $2}') == "Ya $YAZI_VERSION" ]]
 }
 
+neovim_is_locked_version() {
+  command -v nvim >/dev/null 2>&1 &&
+    [[ $(nvim --version 2>/dev/null | head -1) == "NVIM v$NEOVIM_VERSION" ]]
+}
+
 codex_is_installed() {
   command -v codex >/dev/null 2>&1 && codex --version 2>/dev/null | grep -Eq '^codex-cli [0-9]'
 }
@@ -1203,6 +1208,54 @@ install_node_runtime() {
   node_runtime_is_supported || fail "Node.js $NODE_VERSION installation verification failed"
 }
 
+# Neovim resolves $VIMRUNTIME through the real binary path, so the versioned
+# install stays self-contained even when invoked via the ~/.local/bin symlink.
+neovim_asset() {
+  case "$PLATFORM_OS/$PLATFORM_ARCH" in
+    darwin/arm64)
+      ASSET="nvim-macos-arm64.tar.gz"
+      ASSET_SHA256=$NEOVIM_SHA256_MACOS_ARM64
+      ;;
+    darwin/x86_64)
+      ASSET="nvim-macos-x86_64.tar.gz"
+      ASSET_SHA256=$NEOVIM_SHA256_MACOS_X86_64
+      ;;
+    linux/arm64)
+      ASSET="nvim-linux-arm64.tar.gz"
+      ASSET_SHA256=$NEOVIM_SHA256_LINUX_ARM64
+      ;;
+    linux/x86_64)
+      ASSET="nvim-linux-x86_64.tar.gz"
+      ASSET_SHA256=$NEOVIM_SHA256_LINUX_X86_64
+      ;;
+  esac
+}
+
+install_neovim() {
+  neovim_is_locked_version && return 0
+
+  local work archive source_dir target
+  neovim_asset
+  work=$(mktemp -d)
+  archive="$work/$ASSET"
+  target="$HOME/.local/share/nvim-v$NEOVIM_VERSION"
+  trap 'rm -rf "$work"' RETURN
+
+  log "Installing Neovim $NEOVIM_VERSION for the managed nvim config"
+  download "https://github.com/neovim/neovim/releases/download/v$NEOVIM_VERSION/$ASSET" "$archive"
+  verify_sha256 "$archive" "$ASSET_SHA256"
+  tar -xzf "$archive" -C "$work"
+  source_dir="$work/${ASSET%.tar.gz}"
+  mkdir -p "$target"
+  cp -R "$source_dir/." "$target/"
+  backup_and_link "$target/bin/nvim" "$HOME/.local/bin/nvim"
+  hash -r
+
+  trap - RETURN
+  rm -rf "$work"
+  neovim_is_locked_version || fail "Neovim $NEOVIM_VERSION installation verification failed"
+}
+
 remove_legacy_todo_bridge() {
   local bridge="$HOME/.local/bin/todo-bridge"
   local backend="$HOME/.local/libexec/todo-reminders"
@@ -1269,6 +1322,7 @@ remove_legacy_todoist() {
 
 install_links() {
   backup_and_link "$DOTFILES_DIR/vim/vimrc" "$HOME/.vimrc"
+  backup_and_link "$DOTFILES_DIR/nvim" "$HOME/.config/nvim"
   backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"
   backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"
   backup_and_link "$DOTFILES_DIR/yazi/yazi.toml" "$HOME/.config/yazi/yazi.toml"
@@ -1469,6 +1523,7 @@ validate() {
   local tmux_config tmux_config_destination
   local yazi_config yazi_config_destination yazi_init yazi_init_destination
   local yazi_package yazi_package_destination
+  local nvim_config nvim_config_destination
 
   log "Validating locked environment"
   tmux_is_locked_version || fail "expected tmux $TMUX_VERSION"
@@ -1481,6 +1536,7 @@ validate() {
     fail "obsolete dotfiles-managed Iris binary is still installed"
   glow_is_locked_version || fail "expected Glow $GLOW_VERSION"
   yazi_is_locked_version || fail "expected Yazi $YAZI_VERSION and matching ya CLI"
+  neovim_is_locked_version || fail "expected Neovim $NEOVIM_VERSION"
   pre_commit_is_locked_version || fail "expected pre-commit $PRE_COMMIT_VERSION"
   colorls_is_locked_version || fail "expected colorls $COLORLS_VERSION"
   codex_is_installed || fail "Codex CLI is required"
@@ -1548,6 +1604,12 @@ validate() {
     fail "Vim config link is missing"
   vim -Nu "$vim_config" -n -es -i NONE \
     -c 'if !&number | cquit | endif' -c 'qa!' || fail "Vim line numbers are not enabled"
+
+  nvim_config="$DOTFILES_DIR/nvim"
+  nvim_config_destination="$HOME/.config/nvim"
+  [[ -L "$nvim_config_destination" && $(readlink "$nvim_config_destination") == "$nvim_config" ]] || \
+    fail "Neovim config link is missing"
+  nvim --headless -u NONE +'qa' >/dev/null 2>&1 || fail "Neovim binary failed to start headless"
 
   yazi_config="$DOTFILES_DIR/yazi/yazi.toml"
   yazi_config_destination="$HOME/.config/yazi/yazi.toml"
@@ -1686,6 +1748,7 @@ main() {
   install_fzf
   install_zoxide
   install_glow
+  install_neovim
   install_yazi
   install_pre_commit
   install_colorls

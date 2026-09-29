@@ -95,13 +95,27 @@ Mac 启用 Karabiner 规则后，Ghostty 中按 Ctrl+B 临时切到英文，完�
 | `y` | Yazi 文件浏览，退出后进入选中的目录 |
 | `glow README.md` | Markdown 阅读；Yazi 预览也使用 Glow |
 | `vim` / `fresh` | 文本编辑 |
+| `nvim` | LazyVim 编辑器（craftzdog 配置，含 Copilot） |
 | `btop` | 系统资源监控 |
 
 </details>
 
 ## 配置与维护
 
-[tmux](terminal-tmux/tmux/tmux.conf) · [zsh](terminal-tmux/shell/zshrc) · [Ghostty](terminal-tmux/ghostty/config.ghostty) · [Yazi](terminal-tmux/yazi/yazi.toml) · [lazygit](terminal-tmux/lazygit/config.yml) · [Agent Skills](agent-skills/sources)
+[tmux](terminal-tmux/tmux/tmux.conf) · [zsh](terminal-tmux/shell/zshrc) · [Ghostty](terminal-tmux/ghostty/config.ghostty) · [Yazi](terminal-tmux/yazi/yazi.toml) · [lazygit](terminal-tmux/lazygit/config.yml) · [Neovim](terminal-tmux/nvim/init.lua) · [Agent Skills](agent-skills/sources)
+
+<details>
+<summary>Neovim（LazyVim）</summary>
+
+配置来自 [craftzdog/dotfiles](https://github.com/craftzdog/dotfiles)（LazyVim + solarized-osaka 配色，
+面向 TypeScript / Rust / Tailwind），仅把内置 shell 从 fish 改为 zsh。Neovim 本体与其他工具一样
+按 `versions.lock` 锁定版本安装到用户目录。
+
+- 首次启动会自动下载插件（lazy.nvim 自举），之后按 `terminal-tmux/nvim/lazy-lock.json` 锁定的 commit 安装。
+- 更新插件：在 nvim 中运行 `:Lazy`，完成后提交更新后的 `lazy-lock.json`，其他机器 bootstrap 后即保持一致。
+- Copilot 补全首次使用需 `:Copilot auth` 登录 GitHub。
+
+</details>
 
 <details>
 <summary>环境检查与 Skills 更新</summary>
