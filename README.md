@@ -95,7 +95,7 @@ Mac 启用 Karabiner 规则后，Ghostty 中按 Ctrl+B 临时切到英文，完�
 | `y` | Yazi 文件浏览，退出后进入选中的目录 |
 | `glow README.md` | Markdown 阅读；Yazi 预览也使用 Glow |
 | `vim` / `fresh` | 文本编辑 |
-| `nvim` | LazyVim 编辑器（craftzdog 配置，含 Copilot） |
+| `nvim` | LazyVim 编辑器（craftzdog 配置） |
 | `btop` | 系统资源监控 |
 
 </details>
@@ -114,7 +114,6 @@ Neovim 本体与其他工具一样按 `versions.lock` 锁定版本安装到用�
 
 - 首次启动会自动下载插件（lazy.nvim 自举），之后按 `terminal-tmux/nvim/lazy-lock.json` 锁定的 commit 安装。
 - 更新插件：在 nvim 中运行 `:Lazy`，完成后提交更新后的 `lazy-lock.json`，其他机器 bootstrap 后即保持一致。
-- Copilot 补全首次使用需 `:Copilot auth` 登录 GitHub。
 
 </details>
 
