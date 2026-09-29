@@ -109,8 +109,8 @@ Mac 启用 Karabiner 规则后，Ghostty 中按 Ctrl+B 临时切到英文，完�
 
 配置来自 [craftzdog/dotfiles](https://github.com/craftzdog/dotfiles)（LazyVim + solarized-osaka 配色），
 仅把内置 shell 从 fish 改为 zsh。LSP 覆盖 TypeScript / JavaScript、Python、C / C++、Go、Rust、
-Lua、JSON / YAML / HTML / CSS / Tailwind。Neovim 本体与其他工具一样按 `versions.lock`
-锁定版本安装到用户目录。
+Lua、JSON / YAML / HTML / CSS / Tailwind；断点调试（空格 `d` 菜单）覆盖 C / C++、Python、Go、Rust。
+Neovim 本体与其他工具一样按 `versions.lock` 锁定版本安装到用户目录。
 
 - 首次启动会自动下载插件（lazy.nvim 自举），之后按 `terminal-tmux/nvim/lazy-lock.json` 锁定的 commit 安装。
 - 更新插件：在 nvim 中运行 `:Lazy`，完成后提交更新后的 `lazy-lock.json`，其他机器 bootstrap 后即保持一致。
