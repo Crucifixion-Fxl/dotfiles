@@ -1,9 +1,13 @@
 return {
-	{ "nvim-treesitter/playground", cmd = "TSPlaygroundToggle" },
-
+	-- nvim-treesitter's main-branch rewrite no longer auto-installs
+	-- opts.ensure_installed and dropped the legacy `configs` module; LazyVim's
+	-- default spec owns parser installation and highlight attach. Only extend
+	-- the parser list here (lazy.nvim merges opts.ensure_installed via
+	-- opts_extend) and never override `config`, or installs and highlight
+	-- silently stop working. LazyVim's defaults already include lua, python,
+	-- c, tsx, typescript, json, html, markdown, yaml, bash, ...
 	{
 		"nvim-treesitter/nvim-treesitter",
-		build = ":TSUpdate",
 		opts = {
 			ensure_installed = {
 				"astro",
@@ -22,42 +26,9 @@ return {
 				"sql",
 				"svelte",
 			},
-
-			-- matchup = {
-			-- 	enable = true,
-			-- },
-
-			-- https://github.com/nvim-treesitter/playground#query-linter
-			query_linter = {
-				enable = true,
-				use_virtual_text = true,
-				lint_events = { "BufWrite", "CursorHold" },
-			},
-
-			playground = {
-				enable = true,
-				disable = {},
-				updatetime = 25, -- Debounced time for highlighting nodes in the playground from source code
-				persist_queries = true, -- Whether the query persists across vim sessions
-				keybindings = {
-					toggle_query_editor = "o",
-					toggle_hl_groups = "i",
-					toggle_injected_languages = "t",
-					toggle_anonymous_nodes = "a",
-					toggle_language_display = "I",
-					focus_language = "f",
-					unfocus_language = "F",
-					update = "R",
-					goto_node = "<cr>",
-					show_help = "?",
-				},
-			},
 		},
-		config = function(_, opts)
-			local TS = require("nvim-treesitter")
-			TS.setup(opts)
-
-			-- MDX
+		init = function()
+			-- MDX files reuse markdown highlighting (from the upstream config).
 			vim.filetype.add({
 				extension = {
 					mdx = "mdx",

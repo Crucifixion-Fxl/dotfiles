@@ -3,15 +3,29 @@ return {
 	{
 		"mason-org/mason.nvim",
 		opts = function(_, opts)
+			-- luacheck from the upstream config is dropped: its installer needs a
+			-- system-wide luarocks, and selene already covers Lua linting.
+			-- This LazyVim version does not auto-install packages for configured
+			-- servers, so every server used below (and by the enabled extras)
+			-- is listed explicitly.
 			vim.list_extend(opts.ensure_installed, {
 				"stylua",
 				"selene",
-				"luacheck",
 				"shellcheck",
 				"shfmt",
-				"tailwindcss-language-server",
+				"vtsls",
 				"typescript-language-server",
+				"tailwindcss-language-server",
 				"css-lsp",
+				"html-lsp",
+				"json-lsp",
+				"yaml-language-server",
+				"eslint-lsp",
+				"lua-language-server",
+				"pyright",
+				"clangd",
+				"gopls",
+				"rust-analyzer",
 			})
 		end,
 	},
@@ -24,6 +38,9 @@ return {
 			---@type lspconfig.options
 			servers = {
 				cssls = {},
+				pyright = {},
+				clangd = {},
+				gopls = {},
 				tailwindcss = {
 					root_dir = function(...)
 						return require("lspconfig.util").root_pattern(".git")(...)
