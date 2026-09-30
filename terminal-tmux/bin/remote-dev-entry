@@ -19,6 +19,18 @@ fail() {
   exit 1
 }
 
+set_terminal_title() {
+  # 更新外层 Ghostty tab 标题；转义序列会穿过 SSH 抵达本地终端。tmux 不接管
+  # 外层标题，因此进入 tmux 前设置一次即可保持整个会话。写入 /dev/tty 避免
+  # 污染 stdout，不可写时（测试环境）静默跳过。
+  printf '\033]0;%s\007' "$1" 2>/dev/null > /dev/tty || true
+}
+
+# 本地 connect-remote-dev 通过环境变量传入用户选择的 SSH alias；直接运行
+# remote-dev-entry 时回退到本机主机名，tab 标题依然可区分。
+DISPLAY_LABEL=${GHOSTTY_DEV_LABEL:-$(hostname -s 2>/dev/null || printf remote)}
+export DISPLAY_LABEL
+
 fallback_ghostty_term() {
   # Ghostty 使用 xterm-ghostty 描述完整终端能力。较旧的远端系统尚未内置
   # 该 terminfo 时再回退到普遍可用的 xterm-256color；已有条目时不降级。
@@ -75,7 +87,11 @@ enter_host_tmux() {
 
 enter_container_tmux() {
   local container_id=$1
+  local container_name=$2
   local -a docker_environment
+
+  # 标题升级为 host/container：进入容器 tmux 前设置一次即保持。
+  set_terminal_title "$DISPLAY_LABEL/$container_name"
 
   # 容器镜像可能通过 BASH_ENV/ENV 注入会产生输出的 shell 初始化脚本。tmux
   # 状态栏的 #() helper 是非交互子 shell；继承这些脚本会把终端控制序列当作
@@ -609,6 +625,10 @@ read_docker_choice() {
 }
 
 main() {
+  # 无论最终进宿主机还是容器，先把 tab 标题钉在目标主机上；容器分支会再
+  # 升级为 host/container。
+  set_terminal_title "$DISPLAY_LABEL"
+
   read_docker_choice
 
   case "$DOCKER_CHOICE" in

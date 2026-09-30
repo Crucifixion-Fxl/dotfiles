@@ -252,6 +252,12 @@ choose_ssh_host() {
   done
 }
 
+set_terminal_title() {
+  # 选择器运行期间标记 tab 状态；选中目标后由连接器覆盖为最终位置。
+  # 写入 /dev/tty 避免污染 stdout，不可写时（测试环境）静默跳过。
+  printf '\033]0;%s\007' "$1" 2>/dev/null > /dev/tty || true
+}
+
 launch_connector() {
   local script_dir=$1 host=$2 connector
 
@@ -268,6 +274,7 @@ run_server_selector() {
   local script_dir host
   script_dir=$(resolve_script_dir "${BASH_SOURCE[0]}")
 
+  set_terminal_title ghostty-dev
   host=$(choose_ssh_host)
   launch_connector "$script_dir" "$host"
 }

@@ -20,15 +20,28 @@ run_ssh() {
   exec ssh -t -- "$1" "$2"
 }
 
+set_terminal_title() {
+  # 外层 Ghostty tab 标题，与 connect-local-dev 同一套约定：写入 /dev/tty
+  # 避免污染 stdout，不可写时（测试环境）静默跳过。
+  printf '\033]0;%s\007' "$1" 2>/dev/null > /dev/tty || true
+}
+
 main() {
   local host script_dir entry payload remote_command
   [[ $# -eq 1 && -n $1 && $1 != -* ]] || fail "用法：connect-remote-dev <ssh-host>"
   host=$1
+  # host 会被内嵌进远端命令行，只允许 SSH alias 的安全字符集。
+  [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || \
+    fail "host 只允许字母、数字、点、下划线和连字符"
   script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   entry="$script_dir/remote-dev-entry"
   [[ -f "$entry" ]] || fail "找不到 $entry"
   command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
   command -v ssh >/dev/null 2>&1 || fail "本机未安装 ssh"
+
+  # Ghostty tab 标题先标记为目标主机；远端选中容器后 remote-dev-entry 会
+  # 通过 GHOSTTY_DEV_LABEL 把标题升级为 host/container。
+  set_terminal_title "$host"
 
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
   # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。
@@ -50,6 +63,8 @@ mv -f "$temporary" "$directory/remote-dev-entry"
 trap - 0 HUP INT TERM
 PATH="$directory:$PATH"
 export PATH
+GHOSTTY_DEV_LABEL='"'$host'"'
+export GHOSTTY_DEV_LABEL
 exec "$directory/remote-dev-entry"'
 
   run_ssh "$host" "$remote_command"

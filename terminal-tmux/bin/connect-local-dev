@@ -13,6 +13,13 @@ fail() {
 
 LOCAL_TMUX_SESSION=${LOCAL_TMUX_SESSION:-dev}
 
+set_terminal_title() {
+  # 外层 Ghostty tab 标题。tmux 不接管外层标题，内部程序也改不到它，因此
+  # 在 exec tmux 前设置一次即可在整个会话期间保持。写入 /dev/tty 避免污染
+  # stdout；不可写时（测试环境）静默跳过。
+  printf '\033]0;%s\007' "$1" 2>/dev/null > /dev/tty || true
+}
+
 main() {
   local shell_command
   [[ $# -le 1 ]] || fail "用法：connect-local-dev [local]"
@@ -20,6 +27,8 @@ main() {
 
   command -v tmux >/dev/null 2>&1 || fail "本机未安装 tmux"
   command -v zsh >/dev/null 2>&1 || fail "本机未安装 zsh"
+
+  set_terminal_title local
 
   shell_command=zsh
   if [[ -x "$HOME/.local/bin/tmux-zsh" ]]; then
