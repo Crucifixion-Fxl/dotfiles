@@ -20,8 +20,26 @@ set_terminal_title() {
   printf '\033]0;%s\007' "$1" 2>/dev/null > /dev/tty || true
 }
 
+prepare_path() {
+  # 本连接器可能由 Ghostty 的自定义 command 直接拉起（不经 login shell），
+  # PATH 里没有 ~/.local/bin 和 Homebrew 目录，会误报“未安装 tmux”。
+  # 与 ghostty-dev-default 相同的幂等补齐；独立在 shell 中运行时无副作用。
+  local directory
+  for directory in "$HOME/.local/bin" /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin; do
+    [[ -d "$directory" ]] || continue
+    case ":$PATH:" in
+      *":$directory:"*) ;;
+      *) PATH="$directory:$PATH" ;;
+    esac
+  done
+  export PATH
+}
+
 main() {
   local shell_command
+
+  prepare_path
+
   [[ $# -le 1 ]] || fail "用法：connect-local-dev [local]"
   [[ ${1:-local} == local ]] || fail "用法：connect-local-dev [local]"
 
@@ -44,4 +62,6 @@ main() {
   exec tmux new-session -A -s "$LOCAL_TMUX_SESSION" "$shell_command"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

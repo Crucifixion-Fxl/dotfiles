@@ -943,12 +943,23 @@ if grep -Fq 'vim.opt.shell = "fish"' "$ROOT/nvim/lua/config/options.lua"; then
   exit 1
 fi
 grep -Fq 'backup_and_link "$DOTFILES_DIR/tmux/tmux.conf" "$HOME/.tmux.conf"' "$BOOTSTRAP"
+# 滚轮应滚动 copy-mode 回滚区，而不是把 ↑/↓ 发给 shell 翻历史命令。
+grep -Fq 'WheelUpPane' "$TMUX_CONFIG"
+grep -Fq 'copy-mode -e' "$TMUX_CONFIG"
+grep -Fq '#{mouse_any_flag}||#{alternate_on}' "$TMUX_CONFIG"
+grep -Fq 'WheelUpPane' "$BOOTSTRAP"
 grep -Eq '^[[:space:]]*set[[:space:]]+number([[:space:]]|$)' "$ROOT/vim/vimrc"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/remote-dev-entry" "$HOME/.local/bin/remote-dev-entry"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-remote-dev" "$HOME/.local/bin/connect-remote-dev"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/connect-local-dev" "$HOME/.local/bin/connect-local-dev"' "$BOOTSTRAP"
 grep -Fq 'backup_and_link "$DOTFILES_DIR/bin/ghostty-dev-default" "$HOME/.local/bin/ghostty-dev-default"' "$BOOTSTRAP"
 grep -Fq 'connect-local-dev' "$GHOSTTY_LAUNCHER"
+# 三个入口都必须维护外层 Ghostty tab 标题：local / host / host+container。
+grep -Fq 'set_terminal_title local' "$ROOT/bin/connect-local-dev"
+grep -Fq 'set_terminal_title "$host"' "$ROOT/bin/connect-remote-dev"
+grep -Fq 'set_terminal_title "$DISPLAY_LABEL/$container_name"' "$ROOT/bin/remote-dev-entry"
+grep -Fq 'GHOSTTY_DEV_LABEL' "$ROOT/bin/connect-remote-dev"
+grep -Fq 'GHOSTTY_DEV_LABEL' "$ROOT/bin/remote-dev-entry"
 # 默认入口必须保留取消/失败时的 shell 落回，否则异常时 tab 会直接关闭。
 grep -Fq -- '--select-host' "$ROOT/bin/ghostty-dev-default"
 grep -Fq 'exec zsh -l' "$ROOT/bin/ghostty-dev-default"

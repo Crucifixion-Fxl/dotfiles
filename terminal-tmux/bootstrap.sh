@@ -1677,6 +1677,9 @@ validate() {
   [[ $(tmux -L terminal-tmux-check show-options -gqv status-interval) == 60 ]] || \
     fail "managed tmux status interval was not preserved"
   [[ $(tmux -L terminal-tmux-check show-options -gqv @continuum-restore) == off ]] || fail "tmux config validation failed"
+  wheel_bindings=$(tmux -L terminal-tmux-check list-keys -T root)
+  grep -Eq '^bind-key +-T root WheelUpPane .*copy-mode -e' <<< "$wheel_bindings" || \
+    fail "mouse wheel must scroll copy-mode instead of paging shell history"
   prefix_bindings=$(tmux -L terminal-tmux-check list-keys -T prefix)
   grep -Eq '^bind-key +(-r +)?-T prefix < +swap-window -d -t -1$' <<< "$prefix_bindings" || \
     fail "managed tmux Prefix+< binding was not preserved"

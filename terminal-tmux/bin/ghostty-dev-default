@@ -13,8 +13,25 @@ set -u
 # 不经过 AppleScript，也不创建额外 tab；手动输入 ghostty-dev 的新 tab 流程
 # 不受影响。
 
+prepare_path() {
+  # Ghostty 的自定义 command 不经过 login shell，PATH 只有系统目录，
+  # 看不到 ~/.local/bin 和 Homebrew 工具（tmux/zsh 等）。进入选择器链条前
+  # 补齐这些目录；已存在的条目不重复添加。
+  local directory
+  for directory in "$HOME/.local/bin" /opt/homebrew/bin /opt/homebrew/sbin /usr/local/bin; do
+    [[ -d "$directory" ]] || continue
+    case ":$PATH:" in
+      *":$directory:"*) ;;
+      *) PATH="$directory:$PATH" ;;
+    esac
+  done
+  export PATH
+}
+
 main() {
   local status
+
+  prepare_path
 
   if [[ -x "$HOME/.local/bin/ghostty-dev" ]]; then
     "$HOME/.local/bin/ghostty-dev" --select-host
