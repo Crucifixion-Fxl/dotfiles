@@ -175,6 +175,9 @@ choose_ssh_host() {
 
   ((${#hosts[@]} > 0)) || fail "SSH 配置中没有可选择的具体 Host alias"
 
+  # 菜单首位固定提供 local：不经过 SSH，直接进入本机的 tmux dev 会话。
+  hosts=(local "${hosts[@]}")
+
   selected_index=0
   for menu_index in "${!hosts[@]}"; do
     if [[ ${hosts[$menu_index]} == dev-4090 ]]; then
@@ -250,25 +253,30 @@ choose_ssh_host() {
 }
 
 launch_connector() {
-  local connector=$1 host=$2
+  local script_dir=$1 host=$2 connector
+
+  if [[ "$host" == local ]]; then
+    connector="$script_dir/connect-local-dev"
+  else
+    connector="$script_dir/connect-remote-dev"
+  fi
+  [[ -x "$connector" ]] || fail "找不到可执行入口 $connector"
   exec "$connector" "$host"
 }
 
 run_server_selector() {
-  local script_dir connector host
+  local script_dir host
   script_dir=$(resolve_script_dir "${BASH_SOURCE[0]}")
-  connector="$script_dir/connect-remote-dev"
-  [[ -x "$connector" ]] || fail "找不到可执行入口 $connector"
 
   host=$(choose_ssh_host)
-  launch_connector "$connector" "$host"
+  launch_connector "$script_dir" "$host"
 }
 
 main() {
   local host script_dir connector applescript close_script wrapper state_directory
   local initial_command initial_argument origin_tab_id_file origin_tab_id
 
-  [[ $# -le 1 ]] || fail "用法：ghostty-dev [ssh-host]"
+  [[ $# -le 1 ]] || fail "用法：ghostty-dev [ssh-host|local]"
   if [[ ${1:-} == --select-host ]]; then
     run_server_selector
     return
@@ -290,7 +298,10 @@ main() {
     fail "找不到 Ghostty.app"
   fi
 
-  if [[ -n "$host" ]]; then
+  if [[ "$host" == local ]]; then
+    initial_command="$script_dir/connect-local-dev"
+    initial_argument=local
+  elif [[ -n "$host" ]]; then
     initial_command=$connector
     initial_argument=$host
   else

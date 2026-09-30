@@ -59,6 +59,11 @@ clipboard-paste-bracketed-safe = true
 # --- Shell Integration ---
 shell-integration = zsh
 
+# --- Default Command ---
+# 新 window/tab 打开即进入 ghostty-dev 选择器（local 或 SSH 主机）。
+# 取消或异常时入口脚本落回 login shell；detach 后 tab 直接关闭。
+command = ~/.local/bin/ghostty-dev-default
+
 # --- Page Scroll ---
 keybind = super+page_up=scroll_page_up
 keybind = super+page_down=scroll_page_down

@@ -57,11 +57,13 @@ exec zsh -l
 **进入工作区**
 
 ```sh
-ghostty-dev                 # 新建标签页，选择 SSH 主机；发起命令的原标签页随之关闭
+ghostty-dev                 # 新建标签页，选择 local 或 SSH 主机；原标签页随之关闭
+ghostty-dev local           # 本机开发：进入本机 tmux dev 会话
 ghostty-dev dev-4090        # 直连 ~/.ssh/config 中的主机别名
 connect-remote-dev HOST     # 从当前终端连接
 ```
 
+新开 Ghostty window/tab 默认直接进入该选择器（`local` 固定在首位）；取消选择落回普通 shell。
 连接后选择宿主机或容器，进入对应的 `dev` tmux 会话。容器需先完成安装。
 
 **tmux 快捷键**

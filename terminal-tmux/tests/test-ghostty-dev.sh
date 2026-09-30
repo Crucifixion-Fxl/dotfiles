@@ -58,6 +58,12 @@ grep -Fq "<$ROOT/ghostty/close-tab.applescript>" <<< "$custom_output"
 grep -Fq "<$ROOT/bin/connect-remote-dev>" <<< "$custom_output"
 grep -Fq '<staging>' <<< "$custom_output"
 
+# 显式 local 参数直达本机连接器。
+local_output=$(HOME=$TEST_HOME TMPDIR=$TEST_HOME/tmp main local)
+grep -Fq "<$ROOT/ghostty/open-tab.applescript>" <<< "$local_output"
+grep -Fq "<$ROOT/bin/connect-local-dev>" <<< "$local_output"
+grep -Fq '<local>' <<< "$local_output"
+
 # 启动成功后必须关闭发起命令的原始 tab：open-tab 在创建新 tab 前记录的
 # origin-tab-id 会被交给 close 脚本精确关闭，读完即从状态目录移除。
 GHOSTTY_SCRIPT_LOG="$TEST_HOME/osascript.log"
@@ -97,11 +103,11 @@ mapfile_output=$(HOME=$TEST_HOME list_ssh_hosts)
 [[ $mapfile_output == $'dev-2080Ti\ndev-4090\ndev-data' ]]
 
 launch_connector() {
-  printf 'connector=%s\nhost=%s\n' "$1" "$2"
+  printf 'script_dir=%s\nhost=%s\n' "$1" "$2"
 }
 
 selected_output=$(printf '\033[A\n' | HOME=$TEST_HOME run_server_selector 2>>"$TEST_HOME/menu.log")
-grep -Fq "connector=$ROOT/bin/connect-remote-dev" <<< "$selected_output"
+grep -Fq "script_dir=$ROOT/bin" <<< "$selected_output"
 grep -Fq 'host=dev-2080Ti' <<< "$selected_output"
 
 default_selected_output=$(printf '\n' | HOME=$TEST_HOME run_server_selector 2>>"$TEST_HOME/menu.log")
@@ -109,6 +115,12 @@ grep -Fq 'host=dev-4090' <<< "$default_selected_output"
 
 down_output=$(printf '\033[B\n' | HOME=$TEST_HOME run_server_selector 2>>"$TEST_HOME/menu.log")
 grep -Fq 'host=dev-data' <<< "$down_output"
+
+local_selected_output=$(printf '\033[A\033[A\n' | HOME=$TEST_HOME run_server_selector 2>>"$TEST_HOME/menu.log")
+grep -Fq "script_dir=$ROOT/bin" <<< "$local_selected_output"
+grep -Fq 'host=local' <<< "$local_selected_output"
+
+grep -Fq 'local' "$TEST_HOME/menu.log"
 grep -Fq 'dev-2080Ti' "$TEST_HOME/menu.log"
 grep -Fq 'dev-4090' "$TEST_HOME/menu.log"
 grep -Fq 'dev-data' "$TEST_HOME/menu.log"
@@ -123,8 +135,9 @@ fi
 
 printf '\n' | HOME=$TEST_HOME LINES=20 COLUMNS=100 \
   run_server_selector 2>"$TEST_HOME/menu-large.log" >/dev/null
-grep -Fq $'\033[7;24H\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu-large.log"
-grep -Fq $'\033[8;42H\033[38;5;141m选择要连接的服务器' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[6;24H\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[7;42H\033[38;5;141m选择要连接的服务器' "$TEST_HOME/menu-large.log"
+grep -Fq $'\033[9;26H    local' "$TEST_HOME/menu-large.log"
 grep -Fq $'\033[11;26H\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu-large.log"
 grep -Fq $'\033[13;35H\033[38;5;245m↑/↓ 选择  Enter 连接  q/Esc 取消' \
   "$TEST_HOME/menu-large.log"
@@ -134,10 +147,10 @@ printf '\n' | HOME=$TEST_HOME LINES=11 COLUMNS=60 \
   run_server_selector 2>"$TEST_HOME/menu-small.log" >/dev/null
 grep -Fq $'\033[2;4H\033[38;5;141m╭─ SSH SERVERS ' "$TEST_HOME/menu-small.log"
 grep -Fq $'\033[3;22H\033[38;5;141m选择要连接的服务器' "$TEST_HOME/menu-small.log"
-grep -Fq $'\033[6;6H\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu-small.log"
-grep -Fq $'\033[8;15H\033[38;5;245m↑/↓ 选择  Enter 连接  q/Esc 取消' \
+grep -Fq $'\033[7;6H\033[1;38;5;231;48;5;55m  > dev-4090' "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[9;15H\033[38;5;245m↑/↓ 选择  Enter 连接  q/Esc 取消' \
   "$TEST_HOME/menu-small.log"
-grep -Fq $'\033[9;4H\033[38;5;141m╰' "$TEST_HOME/menu-small.log"
+grep -Fq $'\033[10;4H\033[38;5;141m╰' "$TEST_HOME/menu-small.log"
 
 if (HOME=$TEST_HOME TMPDIR=$TEST_HOME/tmp main one two) >/dev/null 2>&1; then
   printf '%s\n' 'ghostty-dev must accept at most one SSH host' >&2

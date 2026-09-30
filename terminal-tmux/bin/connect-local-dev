@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 本机开发入口：`connect-local-dev` 或 `ghostty-dev local` 选择本机时进入。
+# 与 remote-dev-entry 的宿主机分支保持同一体验：会话名 dev、受管 tmux-zsh
+# pane、已存在时先重载受管配置再附上；detach 后 wrapper 会关闭所在 tab。
+
+fail() {
+  printf 'connect-local-dev：%s\n' "$*" >&2
+  exit 1
+}
+
+LOCAL_TMUX_SESSION=${LOCAL_TMUX_SESSION:-dev}
+
+main() {
+  local shell_command
+  [[ $# -le 1 ]] || fail "用法：connect-local-dev [local]"
+  [[ ${1:-local} == local ]] || fail "用法：connect-local-dev [local]"
+
+  command -v tmux >/dev/null 2>&1 || fail "本机未安装 tmux"
+  command -v zsh >/dev/null 2>&1 || fail "本机未安装 zsh"
+
+  shell_command=zsh
+  if [[ -x "$HOME/.local/bin/tmux-zsh" ]]; then
+    shell_command="$HOME/.local/bin/tmux-zsh"
+  fi
+
+  # 已有会话说明 tmux server 正在跑：先同步最新的受管配置，再附加。
+  if tmux list-sessions >/dev/null 2>&1 && [[ -r "$HOME/.tmux.conf" ]]; then
+    tmux source-file "$HOME/.tmux.conf" || fail "无法重新加载 $HOME/.tmux.conf"
+  fi
+
+  # exec 让 tmux 取代入口脚本；-A 已有则附加、没有则新建。
+  exec tmux new-session -A -s "$LOCAL_TMUX_SESSION" "$shell_command"
+}
+
+main "$@"

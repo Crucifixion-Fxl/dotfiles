@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+set -u
+
+# Ghostty 默认 tab/window 的入口（config.ghostty 的 command）：打开即进入
+# ghostty-dev 的选择器（local 或 SSH 主机），连接器在同一个 tab 内运行。
+#
+# 退出约定：
+#   - 选中目标后 ghostty-dev 会 exec 成连接器；tmux detach 时整条进程链以 0
+#     退出，本脚本随之 exit 0，配合 wait-after-command=false 直接关闭 tab。
+#   - 取消选择（q/Esc，退出码 130）或任何异常都落回受管 login shell，
+#     保证任何情况下都有可用的终端，不会出现秒关的 tab。
+# 不经过 AppleScript，也不创建额外 tab；手动输入 ghostty-dev 的新 tab 流程
+# 不受影响。
+
+main() {
+  local status
+
+  if [[ -x "$HOME/.local/bin/ghostty-dev" ]]; then
+    "$HOME/.local/bin/ghostty-dev" --select-host
+    status=$?
+  else
+    printf 'ghostty-dev-default：找不到 %s\n' "$HOME/.local/bin/ghostty-dev" >&2
+    status=1
+  fi
+
+  if (( status == 0 )); then
+    exit 0
+  fi
+  exec zsh -l
+}
+
+main "$@"
