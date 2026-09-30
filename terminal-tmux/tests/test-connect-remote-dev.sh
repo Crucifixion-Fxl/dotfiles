@@ -13,10 +13,11 @@ output=$(main dev-4090)
 grep -Fq 'host=dev-4090' <<< "$output"
 grep -Fq 'mv -f "$temporary" "$directory/remote-dev-entry"' <<< "$output"
 grep -Fq 'exec "$directory/remote-dev-entry"' <<< "$output"
+grep -Fq "GHOSTTY_DEV_LABEL='dev-4090'" <<< "$output"
 payload=$(sed -n "s/^payload='\(.*\)'$/\1/p" <<< "$output")
 [[ -n "$payload" ]]
 printf '%s' "$payload" | base64 -d | cmp - "$ENTRY"
-for invalid in '' '-oProxyCommand=unexpected'; do
+for invalid in '' '-oProxyCommand=unexpected' 'evil;touch' 'bad host'; do
   if (main "$invalid") >/dev/null 2>&1; then
     printf '%s\n' 'connector accepted an invalid host' >&2
     exit 1
