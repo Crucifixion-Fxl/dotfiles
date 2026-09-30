@@ -25,8 +25,8 @@
 
 ## 核心体验
 
-- **一套环境** — 统一 Ghostty、tmux、zsh 和日常开发工具。
-- **直接进入工作区** — 选择 SSH 主机与容器，重连继续已有会话。
+- **一套环境** — 统一 Ghostty、tmux、zsh、Neovim（LazyVim）和日常开发工具。
+- **直接进入工作区** — 新开终端即选择本机或 SSH 主机与容器，重连继续已有会话。
 - **随处使用 Agent** — 同步 Agent Skills，更新 Codex CLI，查看任务状态。
 
 ## 快速开始
@@ -48,7 +48,8 @@ git -C ~/.dotfiles pull --ff-only && \
 exec zsh -l
 ```
 
-容器建议持久化开发用户的 HOME。Mac 字体由安装器配置，Linux GUI 终端字体需自行设置。
+容器建议持久化开发用户的 HOME。宿主机与每个容器各自持有 dotfiles 副本，
+更新需分别在对应环境执行同一命令。Mac 字体由安装器配置，Linux GUI 终端字体需自行设置。
 
 </details>
 
@@ -65,6 +66,7 @@ connect-remote-dev HOST     # 从当前终端连接
 
 新开 Ghostty window/tab 默认直接进入该选择器（`local` 固定在首位）；取消选择落回普通 shell。
 连接后选择宿主机或容器，进入对应的 `dev` tmux 会话。容器需先完成安装。
+Tab 标题标注当前位置：`local`、`<主机别名>` 或选中容器后的 `<主机别名>/<容器名>`。
 
 **tmux 快捷键**
 
@@ -84,6 +86,7 @@ connect-remote-dev HOST     # 从当前终端连接
 状态栏显示 `[Ctrl-b]` 表示前缀已收到，`c`、`s` 也兼容持续按住 Ctrl。
 Mac 启用 Karabiner 规则后，Ghostty 中按 Ctrl+B 临时切到英文，完成 `c` / `s` 后恢复原输入法。
 会话每 15 分钟自动保存，恢复由手动触发。
+鼠标滚轮滚动终端回滚区（copy-mode，滚到底自动退出）；lazygit、btop 等自身接管鼠标的程序不受影响。
 
 </details>
 
@@ -105,6 +108,19 @@ Mac 启用 Karabiner 规则后，Ghostty 中按 Ctrl+B 临时切到英文，完�
 ## 配置与维护
 
 [tmux](terminal-tmux/tmux/tmux.conf) · [zsh](terminal-tmux/shell/zshrc) · [Ghostty](terminal-tmux/ghostty/config.ghostty) · [Yazi](terminal-tmux/yazi/yazi.toml) · [lazygit](terminal-tmux/lazygit/config.yml) · [Neovim](terminal-tmux/nvim/init.lua) · [Agent Skills](agent-skills/sources)
+
+<details>
+<summary>Ghostty 外观</summary>
+
+主题为 Solarized Dark（`#031219` 底色），配 `background-opacity = 0.9` 与
+`background-blur-radius = 20` 的毛玻璃效果，与 Neovim 的 solarized-osaka 配色
+（`transparent = true`）成对出现；tmux 状态栏也保持默认背景以透出底色。
+
+调整透明度只改 `background-opacity` / `background-blur-radius` 两个值，
+`Cmd+Shift+,` 重载即时生效；定稿后把 `tests/test-bootstrap-contract.sh`
+中锁定的同名字面量改成一致即可。
+
+</details>
 
 <details>
 <summary>Neovim（LazyVim）</summary>
