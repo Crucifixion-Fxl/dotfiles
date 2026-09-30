@@ -18,6 +18,8 @@ source "$LAUNCHER"
 grep -Fq 'set surfaceCommand to quoted form of wrapperPath' "$APPLE_SCRIPT"
 grep -Fq 'set wait after command of surfaceConfig to false' "$APPLE_SCRIPT"
 grep -Fq 'set targetTabID to id of targetTab as text' "$APPLE_SCRIPT"
+grep -Fq 'set originTabID to id of (selected tab of targetWindow) as text' "$APPLE_SCRIPT"
+grep -Fq 'origin-tab-id' "$APPLE_SCRIPT"
 grep -Fq 'close tab candidateTab' "$CLOSE_SCRIPT"
 if grep -Fq 'shell:exec' "$APPLE_SCRIPT"; then
   printf '%s\n' 'Ghostty AppleScript command must not contain the config-only shell: prefix' >&2
@@ -55,6 +57,23 @@ grep -Fq "<$ROOT/bin/ghostty-tab-command>" <<< "$custom_output"
 grep -Fq "<$ROOT/ghostty/close-tab.applescript>" <<< "$custom_output"
 grep -Fq "<$ROOT/bin/connect-remote-dev>" <<< "$custom_output"
 grep -Fq '<staging>' <<< "$custom_output"
+
+# 启动成功后必须关闭发起命令的原始 tab：open-tab 在创建新 tab 前记录的
+# origin-tab-id 会被交给 close 脚本精确关闭，读完即从状态目录移除。
+GHOSTTY_SCRIPT_LOG="$TEST_HOME/osascript.log"
+GHOSTTY_ORIGIN_TAB_ID='origin-42'
+osascript() {
+  printf '<%s>\n' "$@" >> "$GHOSTTY_SCRIPT_LOG"
+  if [[ "${1##*/}" == "open-tab.applescript" ]]; then
+    printf '%s\n' "$GHOSTTY_ORIGIN_TAB_ID" > "$3/origin-tab-id"
+  fi
+  return 0
+}
+HOME=$TEST_HOME TMPDIR=$TEST_HOME/tmp main dev-4090 >/dev/null
+grep -Fq "<$ROOT/ghostty/open-tab.applescript>" "$GHOSTTY_SCRIPT_LOG"
+grep -Fq "<$CLOSE_SCRIPT>" "$GHOSTTY_SCRIPT_LOG"
+grep -Fq "<$GHOSTTY_ORIGIN_TAB_ID>" "$GHOSTTY_SCRIPT_LOG"
+[[ $(grep -Fc "<$GHOSTTY_ORIGIN_TAB_ID>" "$GHOSTTY_SCRIPT_LOG") -eq 1 ]]
 
 # wrapper 必须保留远端入口退出码、精确传递 tab ID，并在关闭前清理临时目录。
 wrapper_state=$(mktemp -d "$TEST_HOME/tmp/ghostty-dev.XXXXXX")

@@ -57,7 +57,7 @@ exec zsh -l
 **进入工作区**
 
 ```sh
-ghostty-dev                 # 新建标签页，选择 SSH 主机
+ghostty-dev                 # 新建标签页，选择 SSH 主机；发起命令的原标签页随之关闭
 ghostty-dev dev-4090        # 直连 ~/.ssh/config 中的主机别名
 connect-remote-dev HOST     # 从当前终端连接
 ```

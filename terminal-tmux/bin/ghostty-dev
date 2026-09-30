@@ -266,7 +266,7 @@ run_server_selector() {
 
 main() {
   local host script_dir connector applescript close_script wrapper state_directory
-  local initial_command initial_argument
+  local initial_command initial_argument origin_tab_id_file origin_tab_id
 
   [[ $# -le 1 ]] || fail "用法：ghostty-dev [ssh-host]"
   if [[ ${1:-} == --select-host ]]; then
@@ -306,6 +306,18 @@ main() {
     "$initial_command" "$initial_argument"; then
     rmdir "$state_directory" 2>/dev/null || true
     fail "无法在 Ghostty 中创建开发 tab；请检查 macOS Automation 权限"
+  fi
+
+  # 新的开发 tab 已经建立，发起命令的原始 tab 只剩下空闲 shell：把它关掉。
+  # ID 由 open-tab 在创建新 tab 之前记录。这是本脚本的最后一步 —— 关闭动作会
+  # 终止原始 tab 的 pty（包括本进程和其中的交互 shell），不能期待后续代码执行。
+  origin_tab_id_file="$state_directory/origin-tab-id"
+  if [[ -s "$origin_tab_id_file" ]]; then
+    IFS= read -r origin_tab_id < "$origin_tab_id_file"
+    unlink "$origin_tab_id_file" 2>/dev/null || true
+    if [[ -n "$origin_tab_id" ]]; then
+      osascript "$close_script" "$origin_tab_id" >/dev/null 2>&1 || true
+    fi
   fi
 }
 

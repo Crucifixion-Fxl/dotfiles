@@ -477,6 +477,8 @@ grep -Fq 'new tab in targetWindow with configuration surfaceConfig' "$GHOSTTY_AP
 grep -Fq 'if (count of windows) is 0' "$GHOSTTY_APPLESCRIPT"
 grep -Fq 'set wait after command of surfaceConfig to false' "$GHOSTTY_APPLESCRIPT"
 grep -Fq 'set targetTabID to id of targetTab as text' "$GHOSTTY_APPLESCRIPT"
+grep -Fq 'set originTabID to id of (selected tab of targetWindow) as text' "$GHOSTTY_APPLESCRIPT"
+grep -Fq 'origin-tab-id' "$GHOSTTY_LAUNCHER"
 grep -Fq 'close tab candidateTab' "$GHOSTTY_CLOSE_APPLESCRIPT"
 if grep -Fq '/Users/a4x' "$GHOSTTY_CONFIG"; then
   printf '%s\n' 'Ghostty config must not contain a machine-specific home path' >&2

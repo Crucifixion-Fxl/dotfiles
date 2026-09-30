@@ -15,12 +15,16 @@ on run argv
 		set command of surfaceConfig to surfaceCommand
 		set wait after command of surfaceConfig to false
 
+		set originTabID to ""
 		if (count of windows) is 0 then
 			-- Ghostty 尚未打开窗口时只能创建首个窗口；正常使用时走下面的新 tab 分支。
 			set targetWindow to new window with configuration surfaceConfig
 			set targetTab to selected tab of targetWindow
 		else
 			set targetWindow to front window
+			-- 创建新 tab 前记录当前选中的 tab（即发起 ghostty-dev 的原始 tab），
+			-- 启动成功后由 ghostty-dev 将其关闭，避免留下空闲 shell 的空壳 tab。
+			set originTabID to id of (selected tab of targetWindow) as text
 			set targetTab to new tab in targetWindow with configuration surfaceConfig
 			select tab targetTab
 			activate window targetWindow
@@ -31,6 +35,11 @@ on run argv
 		set targetTabID to id of targetTab as text
 		set tabIDFile to stateDirectory & "/tab-id"
 		do shell script "/usr/bin/printf '%s\\n' " & quoted form of targetTabID & " > " & quoted form of tabIDFile
+
+		if originTabID is not "" then
+			set originTabIDFile to stateDirectory & "/origin-tab-id"
+			do shell script "/usr/bin/printf '%s\\n' " & quoted form of originTabID & " > " & quoted form of originTabIDFile
+		end if
 
 		activate
 	end tell
