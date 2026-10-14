@@ -3,9 +3,9 @@
 set -euo pipefail
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
-COMMAND="$ROOT/bin/dev-container"
+COMMAND="$ROOT/bin/dc"
 
-# shellcheck source=../bin/dev-container
+# shellcheck source=../bin/dc
 source "$COMMAND"
 
 selection_state=$(mktemp -d)
@@ -42,21 +42,21 @@ enter_container_tmux() {
 }
 
 # 直接回车：不经任何询问就进入容器菜单并选中首位容器。
-container_output=$(printf '\n' | run_dev_container)
+container_output=$(printf '\n' | run_dc)
 grep -Fq 'selected:container:abc123:api-dev' <<< "$container_output"
 if grep -Fq '是否进入 Docker 容器' <<< "$container_output"; then
-  printf '%s\n' 'dev-container must skip the host/container prompt' >&2
+  printf '%s\n' 'dc must skip the host/container prompt' >&2
   exit 1
 fi
 
 # 菜单内按 h 仍可进入宿主机 tmux；j 移动后 Enter 选择第二项。
-host_output=$(printf 'h' | run_dev_container)
+host_output=$(printf 'h' | run_dc)
 grep -Fq 'selected:host:dev' <<< "$host_output"
-arrow_output=$(printf 'j\n' | DOCKER_TEST_MODE=multiple run_dev_container)
+arrow_output=$(printf 'j\n' | DOCKER_TEST_MODE=multiple run_dc)
 grep -Fq 'selected:container:def456:web-dev' <<< "$arrow_output"
 
 # 没有运行中的容器时回退宿主机 tmux，与 ghostty-dev 容器分支一致。
-empty_output=$(printf '\n' | DOCKER_TEST_MODE=empty run_dev_container)
+empty_output=$(printf '\n' | DOCKER_TEST_MODE=empty run_dc)
 grep -Fq 'selected:host:dev' <<< "$empty_output"
 
 # 实现必须复用 remote-dev-entry 的菜单，而不是复制一份。
@@ -66,9 +66,9 @@ grep -Fq 'choose_container' "$COMMAND"
 # 找不到 remote-dev-entry 时给出可行动的提示。
 missing_message=$(
   PATH=/usr/bin:/bin bash -c 'source "$1"; load_remote_dev_entry "$2"' \
-    dev-container-test "$COMMAND" "$selection_state/missing" 2>&1 >/dev/null || true
+    dc-test "$COMMAND" "$selection_state/missing" 2>&1 >/dev/null || true
 )
-grep -Fq 'dev-container：找不到 remote-dev-entry' <<< "$missing_message"
+grep -Fq 'dc：找不到 remote-dev-entry' <<< "$missing_message"
 grep -Fq 'ghostty-dev' <<< "$missing_message"
 
 # 同目录没有入口时回退到 PATH 中的 remote-dev-entry。
@@ -82,9 +82,9 @@ printf '%s\n' '#!/usr/bin/env bash' \
   > "$fallback_directory/remote-dev-entry"
 fallback_output=$(
   PATH="$fallback_directory:/usr/bin:/bin" bash -c \
-    'source "$1"; load_remote_dev_entry "$2"; run_dev_container' \
-    dev-container-fallback-test "$COMMAND" "$selection_state/no-entry-here" 2>&1
+    'source "$1"; load_remote_dev_entry "$2"; run_dc' \
+    dc-fallback-test "$COMMAND" "$selection_state/no-entry-here" 2>&1
 )
 grep -Fq 'fallback-entry-loaded' <<< "$fallback_output"
 
-printf '%s\n' 'dev-container tests passed'
+printf '%s\n' 'dc tests passed'

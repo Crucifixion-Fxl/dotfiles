@@ -5,7 +5,7 @@ set -euo pipefail
 # 本机 SSH 入口。用法：`connect-remote-dev <ssh-host>`。
 #
 # 设计意图：
-#   1. 每次连接都使用本机 dotfiles 中最新的 remote-dev-entry 与 dev-container。
+#   1. 每次连接都使用本机 dotfiles 中最新的 remote-dev-entry 与 dc。
 #   2. 在同一条 SSH 连接内原子写入远程 ~/.local/bin，不需要额外 scp。
 #   3. stdin 始终留给交互式菜单，因此脚本内容通过 Base64 嵌入远程命令。
 #
@@ -35,7 +35,7 @@ main() {
     fail "host 只允许字母、数字、点、下划线和连字符"
   script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
   entry="$script_dir/remote-dev-entry"
-  container_command="$script_dir/dev-container"
+  container_command="$script_dir/dc"
   [[ -f "$entry" ]] || fail "找不到 $entry"
   [[ -f "$container_command" ]] || fail "找不到 $container_command"
   command -v base64 >/dev/null 2>&1 || fail "本机未安装 base64"
@@ -46,8 +46,8 @@ main() {
   set_terminal_title "$host"
 
   # Base64 避免脚本内容被本地/远程 shell 二次解析，并让 stdin 保持连接 TTY。
-  # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。dev-container
-  # 运行时 source 同目录的 remote-dev-entry，两者一起保持最新。
+  # 远程先写临时文件再 mv，连接中断时不会留下半个入口脚本。dc 运行时
+  # source 同目录的 remote-dev-entry，两者一起保持最新。
   payload=$(base64 < "$entry" | tr -d '\r\n')
   container_payload=$(base64 < "$container_command" | tr -d '\r\n')
   remote_command='set -eu
@@ -57,7 +57,7 @@ command -v base64 >/dev/null 2>&1 || {
 }
 directory="$HOME/.local/bin"
 temporary="$directory/.remote-dev-entry.$$"
-container_temporary="$directory/.dev-container.$$"
+container_temporary="$directory/.dc.$$"
 payload='"'$payload'"'
 container_payload='"'$container_payload'"'
 umask 077
@@ -67,7 +67,7 @@ printf "%s" "$payload" | base64 -d > "$temporary"
 printf "%s" "$container_payload" | base64 -d > "$container_temporary"
 chmod 700 "$temporary" "$container_temporary"
 mv -f "$temporary" "$directory/remote-dev-entry"
-mv -f "$container_temporary" "$directory/dev-container"
+mv -f "$container_temporary" "$directory/dc"
 trap - 0 HUP INT TERM
 PATH="$directory:$PATH"
 export PATH

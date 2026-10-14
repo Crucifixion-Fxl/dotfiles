@@ -3,7 +3,7 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 CONNECTOR="$ROOT/bin/connect-remote-dev"
 ENTRY="$ROOT/bin/remote-dev-entry"
-CONTAINER_COMMAND="$ROOT/bin/dev-container"
+CONTAINER_COMMAND="$ROOT/bin/dc"
 source "$CONNECTOR"
 run_ssh() {
   [[ $# -eq 2 ]]
@@ -13,7 +13,7 @@ run_ssh() {
 output=$(main dev-4090)
 grep -Fq 'host=dev-4090' <<< "$output"
 grep -Fq 'mv -f "$temporary" "$directory/remote-dev-entry"' <<< "$output"
-grep -Fq 'mv -f "$container_temporary" "$directory/dev-container"' <<< "$output"
+grep -Fq 'mv -f "$container_temporary" "$directory/dc"' <<< "$output"
 grep -Fq 'exec "$directory/remote-dev-entry"' <<< "$output"
 grep -Fq "GHOSTTY_DEV_LABEL='dev-4090'" <<< "$output"
 payload=$(sed -n "s/^payload='\(.*\)'$/\1/p" <<< "$output")

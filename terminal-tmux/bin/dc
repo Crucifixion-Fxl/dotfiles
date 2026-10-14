@@ -10,11 +10,13 @@ set -euo pipefail
 # 使用习惯排序和进入容器的 tmux 行为始终与 ghostty-dev 一致，不复制菜单
 # 实现避免两份代码漂移。
 #
-# 用法：在安装了 remote-dev-entry 的机器上直接运行 dev-container。
+# 用法：在安装了 remote-dev-entry 的机器上直接运行 dc。
 # 菜单内按 h 仍可进入宿主机 tmux；没有运行中的容器时同样回退宿主机。
+# 注意：~/.local/bin 排在 PATH 前面，会遮蔽系统自带的 dc 计算器；需要计算
+# 器时用 /usr/bin/dc。
 
 fail() {
-  printf 'dev-container：%s\n' "$*" >&2
+  printf 'dc：%s\n' "$*" >&2
   exit 1
 }
 
@@ -56,7 +58,7 @@ load_remote_dev_entry() {
   source "$entry"
 }
 
-run_dev_container() {
+run_dc() {
   local script_dir
   script_dir=$(resolve_script_dir "${BASH_SOURCE[0]}")
   load_remote_dev_entry "$script_dir"
@@ -67,5 +69,5 @@ run_dev_container() {
 }
 
 if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
-  run_dev_container "$@"
+  run_dc "$@"
 fi
