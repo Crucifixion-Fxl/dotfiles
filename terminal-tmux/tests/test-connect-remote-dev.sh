@@ -3,6 +3,7 @@ set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
 CONNECTOR="$ROOT/bin/connect-remote-dev"
 ENTRY="$ROOT/bin/remote-dev-entry"
+CONTAINER_COMMAND="$ROOT/bin/dev-container"
 source "$CONNECTOR"
 run_ssh() {
   [[ $# -eq 2 ]]
@@ -12,11 +13,15 @@ run_ssh() {
 output=$(main dev-4090)
 grep -Fq 'host=dev-4090' <<< "$output"
 grep -Fq 'mv -f "$temporary" "$directory/remote-dev-entry"' <<< "$output"
+grep -Fq 'mv -f "$container_temporary" "$directory/dev-container"' <<< "$output"
 grep -Fq 'exec "$directory/remote-dev-entry"' <<< "$output"
 grep -Fq "GHOSTTY_DEV_LABEL='dev-4090'" <<< "$output"
 payload=$(sed -n "s/^payload='\(.*\)'$/\1/p" <<< "$output")
 [[ -n "$payload" ]]
 printf '%s' "$payload" | base64 -d | cmp - "$ENTRY"
+container_payload=$(sed -n "s/^container_payload='\(.*\)'$/\1/p" <<< "$output")
+[[ -n "$container_payload" ]]
+printf '%s' "$container_payload" | base64 -d | cmp - "$CONTAINER_COMMAND"
 for invalid in '' '-oProxyCommand=unexpected' 'evil;touch' 'bad host'; do
   if (main "$invalid") >/dev/null 2>&1; then
     printf '%s\n' 'connector accepted an invalid host' >&2

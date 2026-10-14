@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# 远程机器内置命令：跳过“是否进入 Docker 容器”询问，直接打开容器选择菜单。
+#
+# ghostty-dev 连接后出现的容器菜单与这里是同一份实现：connect-remote-dev
+# 每次连接都会把最新的 remote-dev-entry 原子写入 ~/.local/bin，本命令在
+# 运行时 source 同一份入口并直接调用 choose_container，因此菜单排版、
+# 使用习惯排序和进入容器的 tmux 行为始终与 ghostty-dev 一致，不复制菜单
+# 实现避免两份代码漂移。
+#
+# 用法：在安装了 remote-dev-entry 的机器上直接运行 dev-container。
+# 菜单内按 h 仍可进入宿主机 tmux；没有运行中的容器时同样回退宿主机。
+
+fail() {
+  printf 'dev-container：%s\n' "$*" >&2
+  exit 1
+}
+
+resolve_script_dir() {
+  local source_path=$1 source_dir link_target
+
+  # bootstrap 把本脚本链接到 ~/.local/bin，connect-remote-dev 则写入真实
+  # 文件；沿符号链接回到仓库 bin/，两种安装方式都能找到同目录的
+  # remote-dev-entry。
+  while [[ -L "$source_path" ]]; do
+    source_dir=$(CDPATH= cd -P -- "$(dirname -- "$source_path")" && pwd)
+    link_target=$(readlink "$source_path")
+    if [[ "$link_target" == /* ]]; then
+      source_path=$link_target
+    else
+      source_path="$source_dir/$link_target"
+    fi
+  done
+
+  CDPATH= cd -P -- "$(dirname -- "$source_path")" && pwd
+}
+
+load_remote_dev_entry() {
+  local script_dir=$1 entry
+
+  # 已加载过（例如测试先加载入口再注入桩函数）时直接返回，避免运行时
+  # 重新 source 覆盖调用方注入的 docker/enter 桩。
+  if declare -F choose_container >/dev/null 2>&1; then
+    return 0
+  fi
+
+  entry="$script_dir/remote-dev-entry"
+  if [[ ! -f "$entry" ]]; then
+    entry=$(command -v remote-dev-entry 2>/dev/null || true)
+  fi
+  [[ -n "$entry" && -f "$entry" ]] || \
+    fail "找不到 remote-dev-entry；请先用 ghostty-dev 连接本机一次"
+  # shellcheck source=remote-dev-entry
+  source "$entry"
+}
+
+run_dev_container() {
+  local script_dir
+  script_dir=$(resolve_script_dir "${BASH_SOURCE[0]}")
+  load_remote_dev_entry "$script_dir"
+  # 与 remote-dev-entry 的 main 一致：先把 tab 标题钉在目标主机上，选中
+  # 容器后由 enter_container_tmux 升级为 host/container。
+  set_terminal_title "$DISPLAY_LABEL"
+  choose_container
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  run_dev_container "$@"
+fi
